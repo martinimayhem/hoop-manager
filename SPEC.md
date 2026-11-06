@@ -8,7 +8,6 @@
 
 ## 1. Purpose and audience
 
-- **Who:** Jeroen and his son. Private family game, not for publication.
 - **Modes:** Player vs AI, and Player vs Player on the same device (hot-seat).
 - **Feel:** Quick to play (a match takes about 5–8 minutes including timeouts), fun to watch, and
   **skill-based**: the better manager should win more often, not the one who spent the most on
