@@ -68,10 +68,10 @@ export function MainMenu({ onStart }: { onStart: (setup: Setup) => void }) {
       <div className="panel row">
         <h3 style={{ margin: 0 }}>Match speed</h3>
         <button className={speed === 'normal' ? 'active' : ''} onClick={() => setSpeed('normal')}>
-          Normal (~2 min per quarter)
+          Normal (~7.5 min per quarter)
         </button>
         <button className={speed === 'fast' ? 'active' : ''} onClick={() => setSpeed('fast')}>
-          Fast (~1 min per quarter)
+          Fast (~4 min per quarter)
         </button>
         <div className="spacer" />
         <button

@@ -380,10 +380,75 @@ tr.taken {
   gap: 8px;
   min-height: 0;
 }
-canvas.court {
-  width: 100%;
+.match .panel {
+  border-color: #31504d;
+  border-radius: 3px;
+}
+.match .scoreboard {
+  background: #0d191b;
+  box-shadow: inset 0 0 0 2px #071112;
+}
+.match .sb-clock {
+  color: #ffe58a;
+  font: 800 28px/1.2 ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  letter-spacing: 0.06em;
+}
+.match .sb-score {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+.match .momentum {
+  height: 6px;
+  border-radius: 0;
+  border: 1px solid #26433b;
+}
+.match .momentum .needle {
+  border-radius: 0;
+}
+/* The court takes all the room it can: the page limit is lifted, and it stops at the screen height. */
+.app:has(> .match) {
+  max-width: none;
+}
+.court-box {
+  background: #05090b;
+  border: 2px solid #174b43;
+  box-shadow: 0 5px 0 #087a7e, 0 9px 22px #0009;
+  width: min(100%, calc((100vh - 240px) * 2));
+  margin: 0 auto;
+}
+.court-box .feeds {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 52px;
+  height: 45%;
+  padding: 8px;
+  background: rgba(5, 9, 11, 0.9);
+  z-index: 2;
+}
+.count {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 4px;
   border-radius: 8px;
-  border: 2px solid #4a3216;
+  background: var(--warn);
+  color: #000;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+canvas.court {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  border: 0;
+  border-radius: 0;
+  image-rendering: auto;
+}
+.match .controls button {
+  border-radius: 2px;
+}
+.match .feed {
+  border-radius: 3px;
 }
 .controls {
   display: flex;
@@ -687,4 +752,22 @@ tr.group-row td {
 }
 tr.picked-row td {
   background: #ffc83d30 !important;
+}
+
+/* Shown while a routine possession is fast-forwarding. */
+.ff-badge {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffe57a;
+  font-size: 18px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.ff-badge[hidden] {
+  display: none;
 }

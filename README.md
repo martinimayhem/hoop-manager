@@ -22,7 +22,7 @@ Open the address it prints (usually http://localhost:5173).
    2 guards, 2 wings and 2 bigs. *Auto-pick* chooses a sensible player for you.
 3. **Game plan**: pick your starting five, bench order, offence, defence, tempo and key matchup,
    using the scouting report on the right. In hot-seat mode each player sets their plan in secret.
-4. **Match**: watch it live. Change tactics and lineups at timeouts and quarter breaks.
+4. **Match**: watch the action on a crisp, high-resolution isometric court. Change tactics and lineups at timeouts and quarter breaks.
 
 | Key | Action |
 |---|---|

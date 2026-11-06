@@ -4,6 +4,7 @@
 
 import { describe as commentate, namesFor, type Names } from '../../engine/commentary';
 import { callTimeout, canCallTimeout, createMatch, setGamePlan, stepPossession } from '../../engine/match';
+import { composite } from '../../engine/ratings';
 import { emit, other } from '../../engine/state';
 import type { DefenceCall, GamePlan, MatchState, OffenceCall, PlayerGameState, PossessionCalls, Side, Team, TimedEvent } from '../../engine/types';
 import { playerRating } from '../../engine/stats';
@@ -12,17 +13,27 @@ import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
 import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
-import { beatAt, beatDurations, buildScript, playerKey, type Frame, type Script } from '../court/animation';
+import { beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Script } from '../court/animation';
 import { Motion } from '../court/motion';
 
 export type Speed = 'normal' | 'fast';
 export type Phase = 'playing' | 'timeout' | 'break' | 'clutch' | 'final';
 
-/** Real seconds per game second, and per-possession clamps. Normal ≈ 2.4 min per quarter, Fast ≈ 1.2 min. */
+/**
+ * Game seconds per real second, and per-possession clamps. Normal plays at running speeds a real
+ * player could reach (≈ 7.5 min per quarter); Fast trades that for pace (≈ 4 min per quarter).
+ */
 const SPEEDS: Record<Speed, { div: number; min: number; max: number }> = {
-  normal: { div: 5, min: 2.2, max: 6 },
-  fast: { div: 10, min: 1.2, max: 3.2 },
+  normal: { div: 1.9, min: 4.5, max: 12 },
+  fast: { div: 4.5, min: 2, max: 5 },
 };
+
+/** How much faster bring-up and set-up play on a routine possession. */
+const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
+/** The last two minutes of a game this close is never routine. */
+const LATE_SECONDS = 120;
+const LATE_MARGIN = 8;
+const REBOUND_JUMP_FT = 2.6;
 
 export interface FeedItem {
   id: number;
@@ -78,6 +89,8 @@ export class LiveMatch {
   phase: Phase = 'playing';
   paused = false;
   speed: Speed;
+  /** Plays through bring-up and set-up quickly on routine possessions. */
+  fastForward = true;
   /** Timeouts requested, applied at the next dead ball. */
   pending: [boolean, boolean] = [false, false];
   timeoutSide: Side | null = null;
@@ -99,6 +112,7 @@ export class LiveMatch {
   private fx: Fx[] = [];
   private clutchCalls: PossessionCalls | null = null;
   private slowMo = false;
+  private routine = false;
   private captionBorn = 0;
   private startedBeat = -1;
 
@@ -124,6 +138,9 @@ export class LiveMatch {
     this.controllers = controllers;
     this.speed = speed;
     this.clock = this.s.clock;
+    const ratings: Record<string, number> = {};
+    for (const side of [0, 1] as const) for (const p of this.s.teams[side].team.players) ratings[playerKey(side, p.id)] = composite(p).speed;
+    this.motion.setSpeedRatings(ratings);
     this.view = [this.snapshotTeam(0), this.snapshotTeam(1)];
     this.flushEngineEvents();
   }
@@ -220,6 +237,19 @@ export class LiveMatch {
     this.bump();
   }
 
+  toggleFastForward(): void {
+    this.fastForward = !this.fastForward;
+    if (this.script) this.retime();
+    this.bump();
+  }
+
+  /** Whether the beat on screen right now is being fast-forwarded. */
+  isFastForwarding(): boolean {
+    const sc = this.script;
+    if (!sc || this.phase !== 'playing') return false;
+    return this.skips(sc.beats[beatAt(sc, this.durations, this.t).index]);
+  }
+
   /** Applies a changed game plan for one side (during a timeout or break). */
   applyPlan(side: Side, plan: GamePlan): void {
     const before = this.s.teams[side].plan;
@@ -266,13 +296,16 @@ export class LiveMatch {
     const { index, u } = beatAt(sc, this.durations, this.t);
     const beat = sc.beats[index];
     this.holder = beat.ball.kind === 'held' ? beat.ball.holder : null;
-    const speedScale = (this.speed === 'fast' ? 1.8 : 1) / (this.slowMo ? 1.8 : 1);
-    this.motion.update(beat.players, dt, speedScale, this.holder);
+    const speedScale = (this.speed === 'fast' ? 2.1 : 1) / (this.slowMo ? 1.8 : 1);
+    const rate = this.skips(beat) ? FAST_FORWARD[this.speed] : beat.slow ? 0.45 : 1;
+    this.motion.update(beat.players, dt * rate, speedScale, this.holder, beat.pace, beat.outOfBounds);
     const lift = this.motion.lift(beat.ball, u);
+    const jumps: Record<string, number> = lift ? { [lift.key]: lift.height } : {};
+    for (const k of beat.jump ?? []) jumps[k] = REBOUND_JUMP_FT * Math.sin(Math.PI * u);
     this.lastFrame = {
       players: { ...this.motion.pos },
       ball: this.motion.ball(beat.ball, u, sc.dir),
-      lift: lift ? { [lift.key]: lift.height } : {},
+      lift: jumps,
       shooter: beat.ball.kind === 'fromPlayer' && beat.ball.style !== 'throw' && u < 0.85 ? beat.ball.from : null,
     };
     if (this.firedBeats >= sc.beats.length) this.endPossession();
@@ -363,6 +396,9 @@ export class LiveMatch {
     const how = s.transition;
     const start = s.events.length;
     this.slowMo = false;
+    // Decided from the game situation alone: if the result decided it, slowing down would spoil it.
+    const margin = Math.abs(s.teams[0].score - s.teams[1].score);
+    this.routine = !isClutch(s) && !(s.quarter >= 4 && s.clock <= LATE_SECONDS && margin <= LATE_MARGIN);
     if (this.clutchCalls) {
       const calls = this.clutchCalls;
       this.clutchCalls = null;
@@ -375,8 +411,23 @@ export class LiveMatch {
     this.scriptEvents = s.events.slice(start);
     this.quarter = s.quarter;
     const name = (sd: Side, id: string) => this.names.player(sd, id);
+    const energy: Record<string, number> = {};
+    for (const side of [0, 1] as const) for (const id of lineups[side]) energy[playerKey(side, id)] = s.teams[side].players[id].energy;
+    this.motion.setEnergy(energy);
     this.script = buildScript(
-      { offence, quarter: s.quarter, lineups, defence, clockStart, clockEnd: s.clock, start: how, name },
+      {
+        offence,
+        quarter: s.quarter,
+        lineups,
+        focus: s.teams[offence].plan.offence,
+        defence,
+        keyMatchup: s.teams[other(offence)].plan.keyMatchup,
+        moveFactor: (key) => this.motion.moveFactor(key),
+        clockStart,
+        clockEnd: s.clock,
+        start: how,
+        name,
+      },
       this.scriptEvents,
       this.lastFrame,
     );
@@ -392,10 +443,15 @@ export class LiveMatch {
     const cfg = SPEEDS[this.speed];
     const real = Math.min(cfg.max, Math.max(cfg.min, (this.script.clockStart - this.script.clockEnd) / cfg.div)) * (this.slowMo ? 1.8 : 1);
     const fraction = this.beatEnds.length ? this.t / (this.beatEnds[this.beatEnds.length - 1] || 1) : 0;
-    this.durations = beatDurations(this.script, real, (this.slowMo ? 1.8 : 1) / (this.speed === 'fast' ? 1.6 : 1));
+    const beats = this.script.beats;
+    this.durations = beatDurations(this.script, real, (this.slowMo ? 1.8 : 1) / (this.speed === 'fast' ? 2.1 : 1)).map((d, i) => (this.skips(beats[i]) ? d / FAST_FORWARD[this.speed] : d));
     let acc = 0;
     this.beatEnds = this.durations.map((d) => (acc += d));
-    this.t = fraction * real;
+    this.t = fraction * acc;
+  }
+
+  private skips(beat: Beat): boolean {
+    return this.fastForward && this.routine && beat.phase !== 'play';
   }
 
   private endPossession(): void {

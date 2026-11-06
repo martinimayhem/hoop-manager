@@ -35,6 +35,7 @@ export function MatchScreen({
   if (!ref.current) ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed);
   const m = ref.current;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const badgeRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CourtRenderer | null>(null);
   if (!rendererRef.current) rendererRef.current = new CourtRenderer([TEAM_COLOURS[0], TEAM_COLOURS[1]]);
   const soundRef = useRef<Sound | null>(null);
@@ -42,6 +43,8 @@ export function MatchScreen({
   const sound = soundRef.current;
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   const [showBox, setShowBox] = useState(false);
+  const [showFeed, setShowFeed] = useState(false);
+  const [seenTip, setSeenTip] = useState(-1);
   const [muted, setMuted] = useState(sound.muted);
 
   // Animation loop: tick the controller, draw the court, re-render React when something changed.
@@ -49,6 +52,24 @@ export function MatchScreen({
     let raf = 0;
     let last = performance.now();
     let seen = -1;
+    const syncCanvasSize = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      // Sharper than the screen where it is cheap, but never below it; past 2560 wide it costs frames.
+      const pixelRatio = Math.min(3, Math.max(window.devicePixelRatio || 1, Math.min(2, 2560 / rect.width)));
+      const width = Math.round(rect.width * pixelRatio);
+      const height = Math.round(rect.height * pixelRatio);
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    };
+    const canvas = canvasRef.current;
+    const resizeObserver = canvas ? new ResizeObserver(syncCanvasSize) : null;
+    if (canvas) resizeObserver?.observe(canvas);
+    window.addEventListener('resize', syncCanvasSize);
+    syncCanvasSize();
     const loop = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
@@ -64,7 +85,8 @@ export function MatchScreen({
             dots[k] = { label: String(p.number), side, heightFt: p.heightCm / 30.48, hasBall: holder === k };
           }
         }
-        rendererRef.current!.draw(ctx, m.frame(), dots, m.caption?.key ?? null, now / 1000);
+        rendererRef.current!.draw(ctx, m.frame(), dots, now / 1000);
+        if (badgeRef.current) badgeRef.current.hidden = !m.isFastForwarding();
       }
       if (m.version !== seen) {
         seen = m.version;
@@ -75,6 +97,8 @@ export function MatchScreen({
     raf = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(raf);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', syncCanvasSize);
       sound.stop();
     };
   }, [m, sound]);
@@ -98,6 +122,8 @@ export function MatchScreen({
 
   const humanSides = ([0, 1] as const).filter((s) => controllers[s] === 'human');
   const momentumPct = 50 - m.s.momentum * 45;
+  const humanTips = m.tips.filter((t) => controllers[t.side] === 'human');
+  const unreadTips = showFeed ? 0 : humanTips.filter((t) => t.id > seenTip).length;
 
   return (
     <div className="match">
@@ -109,11 +135,42 @@ export function MatchScreen({
       <TeamPanel m={m} side={0} view={m.view[0]} human={controllers[0] === 'human'} />
       <div className="court-wrap">
         <div className="court-box">
+          <div className="ff-badge" ref={badgeRef} hidden>
+            »
+          </div>
           <canvas ref={canvasRef} className="court" width={CANVAS_W} height={CANVAS_H} />
           {m.caption && (
             <div className="caption">
               <div className="stripe" style={{ background: m.caption.side === 0 ? 'var(--home)' : m.caption.side === 1 ? 'var(--away)' : 'var(--muted)' }} />
               <div className={`text ${m.caption.kind}`}>{m.caption.text}</div>
+            </div>
+          )}
+          {showFeed && (
+            <div className="feeds">
+              <div className="panel feed">
+                {m.feed.map((f) => (
+                  <div key={f.id} className={f.kind}>
+                    <span className="t">
+                      {periodLabel(f.quarter)} {clockString(f.clock)}
+                    </span>
+                    <span className={f.side === 0 ? 'home' : f.side === 1 ? 'away' : ''}>{f.side !== null && f.kind !== 'info' ? '● ' : ''}</span>
+                    {f.text}
+                  </div>
+                ))}
+              </div>
+              <div className="panel feed">
+                <h3>Assistant coach</h3>
+                {humanTips.map((t) => (
+                  <div key={t.id} className="tip" style={{ borderColor: t.side === 0 ? 'var(--home)' : 'var(--away)' }}>
+                    <span className="t">
+                      {periodLabel(t.quarter)} {clockString(t.clock)}
+                    </span>
+                    {humanSides.length > 1 && <b className={t.side === 0 ? 'home' : 'away'}>{m.s.teams[t.side].team.abbr}: </b>}
+                    {t.text}
+                  </div>
+                ))}
+                {humanTips.length === 0 && <div className="muted small">Watching the game…</div>}
+              </div>
             </div>
           )}
         </div>
@@ -140,6 +197,13 @@ export function MatchScreen({
             Fast
           </button>
           <button
+            className={`small ${m.fastForward ? 'active' : ''}`}
+            title="Play bring-up and set-up quickly on routine possessions. Close finishes always play in full."
+            onClick={() => m.toggleFastForward()}
+          >
+            » Skip routine
+          </button>
+          <button
             className="small"
             onClick={() => {
               if (!m.paused && m.phase === 'playing') m.togglePause();
@@ -158,34 +222,16 @@ export function MatchScreen({
           >
             {muted ? '🔇' : '🔊'}
           </button>
-        </div>
-        <div className="feeds">
-          <div className="panel feed">
-            {m.feed.map((f) => (
-              <div key={f.id} className={f.kind}>
-                <span className="t">
-                  {periodLabel(f.quarter)} {clockString(f.clock)}
-                </span>
-                <span className={f.side === 0 ? 'home' : f.side === 1 ? 'away' : ''}>{f.side !== null && f.kind !== 'info' ? '● ' : ''}</span>
-                {f.text}
-              </div>
-            ))}
-          </div>
-          <div className="panel feed">
-            <h3>Assistant coach</h3>
-            {m.tips
-              .filter((t) => controllers[t.side] === 'human')
-              .map((t) => (
-                <div key={t.id} className="tip" style={{ borderColor: t.side === 0 ? 'var(--home)' : 'var(--away)' }}>
-                  <span className="t">
-                    {periodLabel(t.quarter)} {clockString(t.clock)}
-                  </span>
-                  {humanSides.length > 1 && <b className={t.side === 0 ? 'home' : 'away'}>{m.s.teams[t.side].team.abbr}: </b>}
-                  {t.text}
-                </div>
-              ))}
-            {m.tips.length === 0 && <div className="muted small">Watching the game…</div>}
-          </div>
+          <button
+            className={`small ${showFeed ? 'active' : ''}`}
+            onClick={() => {
+              setShowFeed(!showFeed);
+              setSeenTip(humanTips[0]?.id ?? seenTip);
+            }}
+          >
+            Commentary &amp; coach
+            {unreadTips > 0 && <span className="count">{unreadTips}</span>}
+          </button>
         </div>
       </div>
       <TeamPanel m={m} side={1} view={m.view[1]} human={controllers[1] === 'human'} />
