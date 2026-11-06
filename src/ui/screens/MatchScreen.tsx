@@ -82,7 +82,7 @@ export function MatchScreen({
         for (const side of [0, 1] as const) {
           for (const p of m.s.teams[side].team.players) {
             const k = playerKey(side, p.id);
-            dots[k] = { label: String(p.number), side, heightFt: p.heightCm / 30.48, hasBall: holder === k };
+            dots[k] = { label: String(p.number), side, heightM: p.heightCm / 100, hasBall: holder === k };
           }
         }
         rendererRef.current!.draw(ctx, m.frame(), dots, now / 1000);

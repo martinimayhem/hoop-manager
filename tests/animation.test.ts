@@ -5,10 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
 import { createMatch, stepPossession } from '../src/engine/match';
 import { other, playerOf } from '../src/engine/state';
-import { PACE_FT_S, beatDurations, beatAt, buildScript, playerKey, type Frame, type Pace, type Script } from '../src/ui/court/animation';
-import { BODY_FT, FORMATIONS, HOOP, MIN_SPACING_FT, ZONE, insideCourt } from '../src/ui/court/formations';
-import { Motion, speedFactor } from '../src/ui/court/motion';
-import { spriteScale } from '../src/ui/court/render';
+import { PACE_M_S, beatDurations, beatAt, buildScript, playerKey, type Frame, type Pace, type Script } from '../src/ui/court/animation';
+import { BODY_M, COURT, FORMATIONS, HOOP, MIN_SPACING_M, ZONE, insideCourt } from '../src/ui/court/formations';
+import { Motion, angleDiff, facingScene, speedFactor } from '../src/ui/court/motion';
+import { CANVAS_H, CANVAS_W, bodyView, project, spriteScale } from '../src/ui/court/render';
 import { LiveMatch } from '../src/ui/match/controller';
 import type { DefenceScheme, GamePlan, MatchState, OffensiveFocus, TimedEvent } from '../src/engine/types';
 
@@ -63,52 +63,52 @@ describe('animation scripts', () => {
           if (beat.ball.kind === 'fromPlayer') expect(beat.ball.from).toBe(playerKey(ev.side, ev.shooterId));
         });
         const last = script.beats[script.beats.length - 1];
-        prev = { players: last.players, ball: { x: 47, y: 25, z: 3 } };
+        prev = { players: last.players, ball: { x: 14, y: 7.5, z: 0.9 } };
       }
     }
   });
 
   it('players accelerate smoothly and respect a top speed; a dribbled ball bounces', () => {
     const m = new Motion();
-    m.update({ a: { x: 5, y: 10 } }, 0.016, 1, 'a');
+    m.update({ a: { x: 1.5, y: 3 } }, 0.016, 1, 'a');
     let maxStep = 0;
-    let lastX = 5;
+    let lastX = 1.5;
     const heights: number[] = [];
     for (let i = 0; i < 300; i++) {
-      m.update({ a: { x: 85, y: 10 } }, 0.016, 1, 'a');
+      m.update({ a: { x: 25.5, y: 3 } }, 0.016, 1, 'a');
       maxStep = Math.max(maxStep, m.pos.a.x - lastX);
       lastX = m.pos.a.x;
       heights.push(m.ball({ kind: 'held', holder: 'a', dribble: true }, 0, 1).z);
     }
-    expect(maxStep / 0.016).toBeLessThanOrEqual(PACE_FT_S.sprint + 0.01);
-    expect(m.pos.a.x).toBeGreaterThan(70);
-    expect(Math.min(...heights)).toBeLessThan(0.8);
-    expect(Math.max(...heights)).toBeGreaterThan(2.8);
+    expect(maxStep / 0.016).toBeLessThanOrEqual(PACE_M_S.sprint + 0.003);
+    expect(m.pos.a.x).toBeGreaterThan(21);
+    expect(Math.min(...heights)).toBeLessThan(0.24);
+    expect(Math.max(...heights)).toBeGreaterThan(0.85);
   });
 
   it('pace and speed rating set the top speed, and nobody overshoots their spot', () => {
     const top = (pace: Pace, rating: number) => {
       const m = new Motion();
       m.setSpeedRatings({ a: rating });
-      m.update({ a: { x: 5, y: 10 } }, 0.016, 1, 'a');
+      m.update({ a: { x: 1.5, y: 3 } }, 0.016, 1, 'a');
       let best = 0;
       let furthest = 0;
       for (let i = 0; i < 900; i++) {
-        m.update({ a: { x: 60, y: 10 } }, 0.016, 1, 'a', { a: pace });
+        m.update({ a: { x: 18, y: 3 } }, 0.016, 1, 'a', { a: pace });
         best = Math.max(best, m.vel.a.x);
         furthest = Math.max(furthest, m.pos.a.x);
       }
-      expect(furthest).toBeLessThan(60.2);
+      expect(furthest).toBeLessThan(18.06);
       return best;
     };
     expect(top('jog', 70)).toBeLessThan(top('sprint', 70));
     expect(top('sprint', 40)).toBeLessThan(top('sprint', 90));
-    expect(top('sprint', 99)).toBeLessThan(30);
+    expect(top('sprint', 99)).toBeLessThan(9.1);
   });
 
   it('the dribble keeps time with the stride and the ball never jumps sideways', () => {
     const m = new Motion();
-    m.update({ 'home:a': { x: 5, y: 10 }, 'away:b': { x: 40, y: 25 } }, 0.016, 1, 'home:a');
+    m.update({ 'home:a': { x: 1.5, y: 3 }, 'away:b': { x: 12, y: 7.5 } }, 0.016, 1, 'home:a');
     const action = { kind: 'held' as const, holder: 'home:a', dribble: true };
     let floors = 0;
     let lastZ = m.ball(action, 0, 1).z;
@@ -116,7 +116,7 @@ describe('animation scripts', () => {
     let last = m.ball(action, 0, 1);
     let biggest = 0;
     for (let i = 0; i < 125; i++) {
-      m.update({ 'home:a': { x: 90, y: 40 }, 'away:b': { x: 40, y: 25 } }, 0.016, 1, 'home:a');
+      m.update({ 'home:a': { x: 27, y: 12 }, 'away:b': { x: 12, y: 7.5 } }, 0.016, 1, 'home:a');
       const b = m.ball(action, 0, 1);
       if (falling && b.z > lastZ) floors++;
       falling = b.z < lastZ;
@@ -127,7 +127,7 @@ describe('animation scripts', () => {
     // Two seconds of running: one bounce every two steps, not a frantic drum roll.
     expect(floors).toBeGreaterThanOrEqual(2);
     expect(floors).toBeLessThanOrEqual(5);
-    expect(biggest).toBeLessThan(0.9);
+    expect(biggest).toBeLessThan(0.27);
   });
 
   it('steals are shown as a move with a key moment, not a blink', () => {
@@ -164,15 +164,15 @@ describe('animation scripts', () => {
 
   it('shooters jump: in the air at release, back on the floor after; dunks go above the rim', () => {
     const m = new Motion();
-    m.update({ s: { x: 84, y: 25 } }, 0.016, 1, 's');
-    const rim = { x: 88.35, y: 25, z: 10.3 };
+    m.update({ s: { x: 25.2, y: 7.5 } }, 0.016, 1, 's');
+    const rim = { x: 26.5, y: 7.5, z: 3.14 };
     const jumper = { kind: 'fromPlayer' as const, from: 's', to: rim, arc: 5, style: 'jumper' as const };
     expect(m.lift(jumper, 0)!.height).toBe(0);
-    expect(m.lift(jumper, 0.32)!.height).toBeCloseTo(2, 1);
+    expect(m.lift(jumper, 0.32)!.height).toBeCloseTo(0.6, 1);
     expect(m.lift(jumper, 0.9)!.height).toBe(0);
     const dunk = { kind: 'fromPlayer' as const, from: 's', to: rim, arc: 0, style: 'dunk' as const };
-    expect(m.ball(dunk, 0.73, 1).z).toBeGreaterThan(10.3);
-    expect(m.ball(dunk, 1, 1).z).toBeCloseTo(10.3, 1);
+    expect(m.ball(dunk, 0.73, 1).z).toBeGreaterThan(3.14);
+    expect(m.ball(dunk, 1, 1).z).toBeCloseTo(3.14, 1);
   });
 });
 
@@ -207,7 +207,7 @@ function eachScript(
       );
       check(script, events, s, lineups);
       const last = script.beats[script.beats.length - 1];
-      prev = { players: last.players, ball: { x: 47, y: 25, z: 3 } };
+      prev = { players: last.players, ball: { x: 14, y: 7.5, z: 0.9 } };
     }
   }
 }
@@ -218,17 +218,17 @@ const planWith = (patch: Partial<GamePlan>): [GamePlan, GamePlan] => [
 ];
 const FOCI: OffensiveFocus[] = ['inside', 'balanced', 'three', 'pickAndRoll', 'fastBreak'];
 const SCHEMES: DefenceScheme[] = ['man', 'zone', 'press'];
-/** The hoop the offence attacks, in absolute feet. */
-const hoopOf = (script: Script) => (script.dir === 1 ? HOOP : { x: 94 - HOOP.x, y: HOOP.y });
+/** The hoop the offence attacks, in absolute metres. */
+const hoopOf = (script: Script) => (script.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y });
 const apart = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
 describe('floor spacing and positions', () => {
-  it('every formation keeps its five 13 ft apart and inside the court', () => {
+  it('every formation keeps its five 4 m apart and inside the court', () => {
     for (const spots of Object.values(FORMATIONS)) {
       expect(spots).toHaveLength(5);
       spots.forEach(([x, y], i) => {
         expect(insideCourt({ x, y })).toEqual({ x, y });
-        for (let j = i + 1; j < 5; j++) expect(Math.hypot(x - spots[j][0], y - spots[j][1])).toBeGreaterThanOrEqual(MIN_SPACING_FT);
+        for (let j = i + 1; j < 5; j++) expect(Math.hypot(x - spots[j][0], y - spots[j][1])).toBeGreaterThanOrEqual(MIN_SPACING_M);
       });
     }
   });
@@ -245,7 +245,7 @@ describe('floor spacing and positions', () => {
           keys.forEach((a, i) => {
             for (const b of keys.slice(i + 1)) {
               if (beat.contact?.includes(a) && beat.contact.includes(b)) continue;
-              expect(apart(beat.players[a], beat.players[b])).toBeGreaterThanOrEqual(MIN_SPACING_FT - 0.05);
+              expect(apart(beat.players[a], beat.players[b])).toBeGreaterThanOrEqual(MIN_SPACING_M - 0.015);
             }
           });
         }
@@ -293,7 +293,7 @@ describe('floor spacing and positions', () => {
           checked++;
           expect(apart(d, hoop)).toBeLessThan(apart(man, hoop));
           // On the line: going via the defender is barely longer than going straight.
-          expect(apart(man, d) + apart(d, hoop)).toBeLessThan(apart(man, hoop) + 0.5);
+          expect(apart(man, d) + apart(d, hoop)).toBeLessThan(apart(man, hoop) + 0.15);
           if (manKey === holder) {
             onBall += apart(man, d);
           } else offBall += apart(man, d) / 4;
@@ -313,8 +313,8 @@ describe('floor spacing and positions', () => {
         lineups[def].forEach((id, i) => {
           const p = beat.players[playerKey(def, id)];
           if (!p) return;
-          const norm = script.dir === 1 ? p : { x: 94 - p.x, y: p.y };
-          expect(apart(norm, { x: ZONE[i][0], y: ZONE[i][1] })).toBeLessThan(3);
+          const norm = script.dir === 1 ? p : { x: COURT.w - p.x, y: p.y };
+          expect(apart(norm, { x: ZONE[i][0], y: ZONE[i][1] })).toBeLessThan(0.9);
           zone++;
         });
       }
@@ -328,7 +328,7 @@ describe('floor spacing and positions', () => {
       if (!beat || beat.ball.kind !== 'held') return;
       const handler = beat.players[beat.ball.holder];
       const defenders = Object.entries(beat.players).filter(([k]) => !k.startsWith(`${script.offence}:`));
-      expect(Math.min(...defenders.map(([, p]) => apart(p, handler)))).toBeLessThan(5);
+      expect(Math.min(...defenders.map(([, p]) => apart(p, handler)))).toBeLessThan(1.5);
       picked++;
     });
     expect(picked).toBeGreaterThan(50);
@@ -354,7 +354,7 @@ describe('possession phases', () => {
         seen = s;
         for (const [k, p] of Object.entries(beat.players)) {
           checked++;
-          if (apart(inner.motion.pos[k], p) > 4) late++;
+          if (apart(inner.motion.pos[k], p) > 1.2) late++;
         }
       }
     }
@@ -394,9 +394,9 @@ describe('the ball', () => {
         const at = script.beats.findIndex((b) => b.fire.includes(i));
         const ball = script.beats[at].ball;
         if (ball.kind !== 'fromPlayer') throw new Error('a shot must leave a player');
-        expect(apart(ball.to, hoop)).toBeLessThan(1.6);
-        expect(ball.to.z).toBeGreaterThan(10);
-        if (ev.shotType === 'three') expect(ball.arc).toBeGreaterThan(3);
+        expect(apart(ball.to, hoop)).toBeLessThan(0.49);
+        expect(ball.to.z).toBeGreaterThan(3.05);
+        if (ev.shotType === 'three') expect(ball.arc).toBeGreaterThan(0.9);
         const rebound = events[i + 1];
         if (ev.made || rebound?.type !== 'rebound') return;
         misses++;
@@ -417,12 +417,278 @@ describe('the ball', () => {
       for (const b of script.beats) {
         if (b.ball.kind !== 'pass' || b.slow) continue;
         passes++;
-        expect(b.ball.arc).toBeLessThanOrEqual(0.3);
+        expect(b.ball.arc).toBeLessThanOrEqual(0.09);
         expect(b.minSeconds).toBeGreaterThanOrEqual(0.3);
       }
     });
     expect(passes).toBeGreaterThan(300);
   });
+});
+
+describe('court space', () => {
+  it('the court is 28 x 15 m and every script stays in those metres', () => {
+    expect(COURT).toEqual({ w: 28, h: 15 });
+    eachScript(planWith({}), 1, (script) => {
+      for (const beat of script.beats) {
+        for (const [k, p] of Object.entries(beat.players)) {
+          if (k === beat.outOfBounds) continue;
+          expect(p.x).toBeGreaterThanOrEqual(0);
+          expect(p.x).toBeLessThanOrEqual(COURT.w);
+          expect(p.y).toBeGreaterThanOrEqual(0);
+          expect(p.y).toBeLessThanOrEqual(COURT.h);
+        }
+      }
+    });
+  });
+
+  it('the whole court lands on the canvas, and nearer the camera is lower on the screen', () => {
+    for (const [x, y] of [[0, 0], [COURT.w, 0], [0, COURT.h], [COURT.w, COURT.h]]) {
+      const p = project(x, y);
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x).toBeLessThanOrEqual(CANVAS_W);
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(CANVAS_H);
+    }
+    // The draw order sorts on y - x, so a larger y - x has to mean closer to the bottom of the screen.
+    expect(project(10, 8).y).toBeGreaterThan(project(10, 7).y);
+    expect(project(9, 7).y).toBeGreaterThan(project(10, 7).y);
+    expect(project(10, 7, 3).y).toBeLessThan(project(10, 7).y);
+  });
+
+  it('even the highest shot, from the far corner, stays on the canvas', () => {
+    let shots = 0;
+    eachScript(planWith({ offence: 'three' }), 2, (script) => {
+      for (const b of script.beats) {
+        if (b.ball.kind !== 'fromPlayer' || b.ball.style === 'throw') continue;
+        shots++;
+        const from = b.players[b.ball.from];
+        const peak = (2.9 + b.ball.to.z) / 2 + b.ball.arc;
+        const mid = project((from.x + b.ball.to.x) / 2, (from.y + b.ball.to.y) / 2, peak);
+        expect(mid.y).toBeGreaterThan(0);
+      }
+    });
+    expect(shots).toBeGreaterThan(100);
+  });
+});
+
+describe('facing', () => {
+  const degrees = (a: number, b: number) => (Math.abs(angleDiff(a, b)) * 180) / Math.PI;
+  const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) => Math.atan2(to.y - from.y, to.x - from.x);
+
+  /** Plays whole matches frame by frame and tallies how often each rule holds. */
+  function audit(defence: DefenceScheme) {
+    const tally: Record<string, { ok: number; all: number }> = {};
+    const note = (rule: string, ok: boolean) => {
+      tally[rule] ??= { ok: 0, all: 0 };
+      tally[rule].all++;
+      if (ok) tally[rule].ok++;
+    };
+    let fastestTurn = 0;
+    const m = new Motion();
+    const dt = 1 / 30;
+    eachScript(planWith({ defence }), 1, (script) => {
+      const durations = beatDurations(script, 8);
+      const total = durations.reduce((a, b) => a + b, 0);
+      const hoopFor = (k: string) => (k.startsWith(`${script.offence}:`) ? hoopOf(script) : { x: COURT.w - hoopOf(script).x, y: HOOP.y });
+      for (let t = 0; t < total; t += dt) {
+        const { index, u } = beatAt(script, durations, t);
+        const beat = script.beats[index];
+        const a = beat.ball;
+        const holder = a.kind === 'held' ? a.holder : null;
+        m.update(beat.players, dt, 1, holder, beat.pace, beat.outOfBounds);
+        const ball = m.ball(a, u, script.dir);
+        const before = { ...m.facing };
+        const scene = facingScene(script, durations, index, u, ball, 1);
+        m.updateFacing(scene, dt, 1);
+        // About to pass or shoot: the handler is already turning for it, which the rules for those cover.
+        const turningToAct = scene.next?.kind === 'pass' || scene.next?.kind === 'fromPlayer';
+        for (const [k, f] of Object.entries(m.facing)) {
+          if (before[k] !== undefined) fastestTurn = Math.max(fastestTurn, Math.abs(angleDiff(before[k], f)) / dt);
+          const me = m.pos[k];
+          const speed = Math.hypot(m.vel[k].x, m.vel[k].y);
+          if (a.kind === 'fromPlayer' && a.style !== 'throw') {
+            if (u > 0.6) note(k === a.from ? 'shooter faces the hoop' : 'everyone watches the shot', degrees(f, angleTo(me, k === a.from ? hoopFor(k) : ball)) < (k === a.from ? 30 : 90));
+          } else if (a.kind === 'pass') {
+            if (u > 0.5 && k === a.from) note('passer faces the receiver', degrees(f, angleTo(me, m.pos[a.to])) < 45);
+            if (u > 0.5 && k === a.to) note('receiver faces the ball', degrees(f, angleTo(me, ball)) < 60);
+          } else if (a.kind === 'held' && holder && u > 0.5) {
+            const sameTeam = k.slice(0, 2) === holder.slice(0, 2);
+            if (k === holder && speed > 3.5 && !turningToAct) note('handler faces the way they go', degrees(f, Math.atan2(m.vel[k].y, m.vel[k].x)) < 45);
+            if (k === holder && speed < 0.5 && !turningToAct) note('standing handler faces the basket', degrees(f, angleTo(me, hoopFor(k))) < 45);
+            if (k !== holder && sameTeam && speed < 1) note('off-ball attackers face the ball', degrees(f, angleTo(me, ball)) < 60);
+            if (!sameTeam && apart(me, m.pos[holder]) < 1.5) note('on-ball defender never turns their back', degrees(f, angleTo(me, m.pos[holder])) < 90);
+            const man = script.guards[k];
+            if (!sameTeam && man && man !== holder && speed < 1 && apart(me, m.pos[holder]) > 3) note('off-ball defenders see man and ball', degrees(f, angleTo(me, { x: (m.pos[man].x + ball.x) / 2, y: (m.pos[man].y + ball.y) / 2 })) < 60);
+          }
+        }
+      }
+    });
+    return { tally, fastestTurn };
+  }
+
+  it('in real possessions everyone looks the right way, and nobody turns faster than 360 degrees a second', () => {
+    const { tally, fastestTurn } = audit('man');
+    expect(fastestTurn).toBeLessThanOrEqual(Math.PI * 2 + 0.001);
+    const rates = Object.fromEntries(Object.entries(tally).map(([rule, { ok, all }]) => [rule, ok / all]));
+    for (const rule of ['shooter faces the hoop', 'passer faces the receiver', 'receiver faces the ball', 'handler faces the way they go', 'standing handler faces the basket', 'off-ball attackers face the ball', 'on-ball defender never turns their back', 'off-ball defenders see man and ball', 'everyone watches the shot']) {
+      expect(tally[rule]?.all ?? 0, rule).toBeGreaterThan(20);
+      expect(rates[rule], rule).toBeGreaterThan(0.9);
+    }
+  }, 60000);
+
+  it('a zone defender watches the ball', () => {
+    const { tally } = audit('zone');
+    expect(tally['on-ball defender never turns their back'].ok / tally['on-ball defender never turns their back'].all).toBeGreaterThan(0.9);
+    expect(tally['off-ball defenders see man and ball']).toBeUndefined();
+  }, 60000);
+
+  it('the on-ball defender stands about 1 m away, between the handler and the basket', () => {
+    let checked = 0;
+    eachScript(planWith({ defence: 'man' }), 1, (script) => {
+      for (const beat of script.beats) {
+        if (beat.phase !== 'setUp' || beat.ball.kind !== 'held') continue;
+        const holder = beat.ball.holder;
+        const guard = Object.keys(script.guards).find((d) => script.guards[d] === holder);
+        if (!guard) continue;
+        checked++;
+        expect(apart(beat.players[guard], beat.players[holder])).toBeCloseTo(1, 1);
+        expect(apart(beat.players[guard], hoopOf(script))).toBeLessThan(apart(beat.players[holder], hoopOf(script)));
+      }
+    });
+    expect(checked).toBeGreaterThan(50);
+  });
+
+  it('a defender moving backwards backpedals: the turn never catches up with the run', () => {
+    const m = new Motion();
+    const scene = (ball: { x: number; y: number }) => ({ action: { kind: 'held' as const, holder: '0:h', dribble: true }, ball, offence: 0 as const, dir: 1 as const, guards: { '1:d': '0:h' } });
+    m.update({ '0:h': { x: 15, y: 7.5 }, '1:d': { x: 16, y: 7.5 } }, 1 / 60, 1, '0:h');
+    for (let i = 0; i < 60; i++) {
+      const h = { x: 15 + i * 0.05, y: 7.5 };
+      m.update({ '0:h': h, '1:d': { x: h.x + 1, y: 7.5 } }, 1 / 60, 1, '0:h', { '0:h': 'run', '1:d': 'run' });
+      m.updateFacing(scene(h), 1 / 60, 1);
+    }
+    // Retreating towards +x while facing back towards the handler at -x.
+    expect(m.vel['1:d'].x).toBeGreaterThan(1);
+    expect(Math.abs(angleDiff(m.facing['1:d'], Math.PI))).toBeLessThan(0.3);
+  });
+
+  it('the sprite turns the way the court says: its view matches the projection at every angle', () => {
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const { side, toward } = bodyView(a);
+      const from = project(10, 7);
+      const to = project(10 + Math.cos(a), 7 + Math.sin(a));
+      expect(Math.sign(Math.round((to.x - from.x) * 1000)) + 0).toBe(Math.sign(Math.round(side * 1000)) + 0);
+      expect(Math.sign(Math.round((to.y - from.y) * 1000)) + 0).toBe(Math.sign(Math.round(toward * 1000)) + 0);
+    }
+  });
+});
+
+describe('contesting and rebounding', () => {
+  /** Plays a match frame by frame, as the controller does, and reports each frame of shots and rebounds. */
+  function play(check: (f: { script: Script; beat: Script['beats'][number]; u: number; m: Motion; ball: { x: number; y: number; z: number }; lift: Record<string, number> }) => void) {
+    const m = new Motion();
+    const dt = 1 / 30;
+    eachScript(planWith({}), 2, (script) => {
+      const durations = beatDurations(script, 8);
+      const total = durations.reduce((a, b) => a + b, 0);
+      for (let t = 0; t < total; t += dt) {
+        const { index, u } = beatAt(script, durations, t);
+        const beat = script.beats[index];
+        m.update(beat.players, dt, 1, beat.ball.kind === 'held' ? beat.ball.holder : null, beat.pace, beat.outOfBounds);
+        const ball = m.ball(beat.ball, u, script.dir);
+        m.updateFacing(facingScene(script, durations, index, u, ball, 1), dt, 1);
+        m.updateArms(beat, ball, u, dt, 1);
+        check({ script, beat, u, m, ball, lift: m.jumps(beat, u) });
+      }
+    });
+  }
+
+  it('every shot from the field is challenged by a defender', () => {
+    let shots = 0;
+    eachScript(planWith({}), 2, (script, events) => {
+      events.forEach((ev, i) => {
+        if (ev.type !== 'shot') return;
+        const beat = script.beats.find((b) => b.fire.includes(i))!;
+        shots++;
+        expect(beat.contest?.startsWith(`${other(script.offence)}:`)).toBe(true);
+        if (ev.blockerId) {
+          expect(beat.contest).toBe(playerKey(other(script.offence), ev.blockerId));
+          expect(beat.block).toBe(true);
+        }
+      });
+    });
+    expect(shots).toBeGreaterThan(200);
+  });
+
+  it('the challenger gets their hands up and jumps at most shots; a blocker always leaves the floor', () => {
+    const seen = new Map<object, { handsUp: boolean; jumped: boolean; block: boolean }>();
+    play(({ beat, m, lift }) => {
+      if (!beat.contest || beat.ball.kind !== 'fromPlayer') return;
+      const s = seen.get(beat) ?? { handsUp: false, jumped: false, block: !!beat.block };
+      s.handsUp ||= (m.reach[beat.contest] ?? 0) > 0.9;
+      s.jumped ||= (lift[beat.contest] ?? 0) > 0.3;
+      seen.set(beat, s);
+    });
+    const all = [...seen.values()];
+    expect(all.length).toBeGreaterThan(100);
+    expect(all.filter((s) => s.handsUp).length / all.length).toBeGreaterThan(0.75);
+    expect(all.filter((s) => s.jumped).length / all.length).toBeGreaterThan(0.6);
+    const blocks = all.filter((s) => s.block);
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks.every((s) => s.jumped)).toBe(true);
+  }, 60000);
+
+  it('a blocker is on the shooter with hands up at the moment of release', () => {
+    const blocks = new Map<object, { close: boolean; handsUp: boolean; air: number }>();
+    play(({ beat, m, u, lift }) => {
+      if (!beat.block || !beat.contest || beat.ball.kind !== 'fromPlayer') return;
+      const release = { jumper: 0.32, hook: 0.36, layup: 0.55, dunk: 0.74, set: 0.3, throw: 0.05 }[beat.ball.style];
+      if (u < release) return;
+      if (blocks.has(beat)) return;
+      blocks.set(beat, { close: apart(m.pos[beat.contest], m.pos[beat.ball.from]) < 2, handsUp: (m.reach[beat.contest] ?? 0) > 0.9, air: lift[beat.contest] ?? 0 });
+    });
+    const all = [...blocks.values()];
+    expect(all.length).toBeGreaterThan(5);
+    expect(all.filter((b) => b.close).length / all.length).toBeGreaterThan(0.9);
+    expect(all.filter((b) => b.handsUp).length / all.length).toBeGreaterThan(0.9);
+    expect(all.filter((b) => b.air > 0.6).length / all.length).toBeGreaterThan(0.9);
+  }, 60000);
+
+  it('rebounders have their hands up while the ball is high, and the winner takes it overhead', () => {
+    let reaching = 0;
+    let highest = 0;
+    let lowAndUp = 0;
+    let frames = 0;
+    play(({ beat, m, ball, u }) => {
+      if (!beat.reach) return;
+      for (const k of beat.reach) {
+        frames++;
+        const close = apart(m.pos[k], ball) < 2;
+        if (ball.z > 2.2 && close && (m.reach[k] ?? 0) > 0.9) reaching++;
+        // The ball has come down well below their hands: they are not still reaching a beat later.
+        if (ball.z < 1 && (m.reach[k] ?? 0) > 0.5) lowAndUp++;
+      }
+      if (beat.ball.kind === 'toPlayer' && beat.ball.high && Math.abs(u - 0.5) < 0.05) highest = Math.max(highest, ball.z);
+    });
+    expect(frames).toBeGreaterThan(200);
+    expect(reaching).toBeGreaterThan(100);
+    expect(lowAndUp).toBe(0);
+    expect(highest).toBeGreaterThan(3.05);
+  }, 60000);
+
+  it('hands stay down for everyone else, and go up smoothly', () => {
+    let last: Record<string, number> = {};
+    let biggestStep = 0;
+    play(({ beat, m }) => {
+      for (const [k, v] of Object.entries(m.reach)) {
+        biggestStep = Math.max(biggestStep, Math.abs(v - (last[k] ?? 0)));
+        expect(beat.contest === k || !!beat.reach?.includes(k) || v < 1).toBe(true);
+      }
+      last = { ...m.reach };
+    });
+    expect(biggestStep).toBeLessThanOrEqual(8 / 30 + 0.001);
+  }, 60000);
 });
 
 describe('bodies', () => {
@@ -448,7 +714,7 @@ describe('bodies', () => {
           frames++;
           const entries = Object.entries(m.pos);
           entries.forEach(([k, p], i) => {
-            if (free <= 0 && k !== beat.outOfBounds) furthestOut = Math.max(furthestOut, apart(insideCourt(p, 1), p));
+            if (free <= 0 && k !== beat.outOfBounds) furthestOut = Math.max(furthestOut, apart(insideCourt(p, 0.3), p));
             for (let j = i + 1; j < entries.length; j++) closest = Math.min(closest, apart(p, entries[j][1]));
           });
         }
@@ -456,8 +722,8 @@ describe('bodies', () => {
       });
     }
     expect(frames).toBeGreaterThan(5000);
-    expect(closest).toBeGreaterThan(BODY_FT * 0.6);
-    expect(furthestOut).toBeLessThan(0.6);
+    expect(closest).toBeGreaterThan(BODY_M * 0.6);
+    expect(furthestOut).toBeLessThan(0.18);
   }, 30000);
 
   it('the Speed attribute and fatigue both change how fast a player runs', () => {
@@ -465,10 +731,10 @@ describe('bodies', () => {
       const m = new Motion();
       m.setSpeedRatings({ a: rating });
       m.setEnergy({ a: energy });
-      m.update({ a: { x: 5, y: 10 } }, 1 / 60, 1, 'a');
+      m.update({ a: { x: 1.5, y: 3 } }, 1 / 60, 1, 'a');
       let best = 0;
       for (let i = 0; i < 300; i++) {
-        m.update({ a: { x: 90, y: 10 } }, 1 / 60, 1, 'a', { a: 'run' });
+        m.update({ a: { x: 27, y: 3 } }, 1 / 60, 1, 'a', { a: 'run' });
         best = Math.max(best, m.vel.a.x);
       }
       return best;
@@ -479,9 +745,9 @@ describe('bodies', () => {
   });
 
   it('sprites scale with height', () => {
-    expect(spriteScale(7.2)).toBeGreaterThan(1.12);
-    expect(spriteScale(5.9)).toBeLessThan(0.9);
-    expect(spriteScale(6.5)).toBe(1);
+    expect(spriteScale(2.19)).toBeGreaterThan(1.12);
+    expect(spriteScale(1.8)).toBeLessThan(0.9);
+    expect(spriteScale(1.98)).toBe(1);
   });
 });
 

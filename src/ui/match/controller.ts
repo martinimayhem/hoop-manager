@@ -14,7 +14,7 @@ import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
 import { beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Script } from '../court/animation';
-import { Motion } from '../court/motion';
+import { Motion, facingScene } from '../court/motion';
 
 export type Speed = 'normal' | 'fast';
 export type Phase = 'playing' | 'timeout' | 'break' | 'clutch' | 'final';
@@ -33,7 +33,6 @@ const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
 /** The last two minutes of a game this close is never routine. */
 const LATE_SECONDS = 120;
 const LATE_MARGIN = 8;
-const REBOUND_JUMP_FT = 2.6;
 
 export interface FeedItem {
   id: number;
@@ -299,13 +298,15 @@ export class LiveMatch {
     const speedScale = (this.speed === 'fast' ? 2.1 : 1) / (this.slowMo ? 1.8 : 1);
     const rate = this.skips(beat) ? FAST_FORWARD[this.speed] : beat.slow ? 0.45 : 1;
     this.motion.update(beat.players, dt * rate, speedScale, this.holder, beat.pace, beat.outOfBounds);
-    const lift = this.motion.lift(beat.ball, u);
-    const jumps: Record<string, number> = lift ? { [lift.key]: lift.height } : {};
-    for (const k of beat.jump ?? []) jumps[k] = REBOUND_JUMP_FT * Math.sin(Math.PI * u);
+    const ball = this.motion.ball(beat.ball, u, sc.dir);
+    this.motion.updateFacing(facingScene(sc, this.durations, index, u, ball, rate * speedScale), dt * rate, speedScale);
+    this.motion.updateArms(beat, ball, u, dt * rate, speedScale);
     this.lastFrame = {
       players: { ...this.motion.pos },
-      ball: this.motion.ball(beat.ball, u, sc.dir),
-      lift: jumps,
+      ball,
+      facing: { ...this.motion.facing },
+      reach: { ...this.motion.reach },
+      lift: this.motion.jumps(beat, u),
       shooter: beat.ball.kind === 'fromPlayer' && beat.ball.style !== 'throw' && u < 0.85 ? beat.ball.from : null,
     };
     if (this.firedBeats >= sc.beats.length) this.endPossession();

@@ -1,28 +1,38 @@
-// Isometric illustrated presentation for the live match. Simulation coordinates remain in feet;
-// this module only projects and paints the court, players, hoops and ball. Everything is vector,
+// Isometric illustrated presentation for the live match. The simulation runs in court metres and
+// knows nothing about the screen; this module alone projects and paints the court, players, hoops and ball. Everything is vector,
 // drawn in CANVAS_W x CANVAS_H logical units and scaled to the canvas's real pixel size.
 
-import { COURT, HOOP_X, ISO, RIM_HEIGHT, type Frame } from './animation';
+import { COURT, HOOP_X, MID_Y, RIM_HEIGHT, type Frame } from './animation';
 
 export const CANVAS_W = 1000;
 export const CANVAS_H = 500;
 
-const TILE_X = 6.3;
-const TILE_Y = ISO.tileY;
-const FLOOR_Y = ISO.floorY;
-const LIFT_Y = ISO.liftY;
-/** A circle of radius 1ft on the floor projects to an axis-aligned ellipse with these radii. */
+/** Screen pixels per court metre, along each isometric axis and upwards. */
+const TILE_X = 21;
+const TILE_Y = 10;
+const LIFT_Y = 23;
+const FLOOR_Y = 264;
+/** A circle of radius 1 m on the floor projects to an axis-aligned ellipse with these radii. */
 const FLOOR_RX = TILE_X * Math.SQRT2;
 const FLOOR_RY = TILE_Y * Math.SQRT2;
 
-const RIM_RADIUS = 1.6;
-const BOARD_INSET = 3.4;
-const POST_INSET = -2;
+const RIM_RADIUS = 0.49;
+const BOARD_INSET = 1.05;
+const POST_INSET = -0.6;
+/** FIBA markings. */
+const KEY_DEPTH = 5.8;
+const KEY_NEAR = MID_Y - 2.45;
+const KEY_FAR = MID_Y + 2.45;
+const CIRCLE_RADIUS = 1.8;
+const THREE_RADIUS = 6.75;
+const THREE_CORNER_Y = 0.9;
+const THREE_CORNER_DEPTH = 2.99;
+const NO_CHARGE_RADIUS = 1.25;
 
 export interface DotInfo {
   label: string;
   side: 0 | 1;
-  heightFt: number;
+  heightM: number;
   hasBall: boolean;
 }
 
@@ -40,7 +50,7 @@ interface Pt {
 type Floor = [number, number];
 type Space = [number, number, number];
 
-/** Court feet (x along the court, y across it, z up) to isometric screen pixels. */
+/** Court metres (x along the court, y across it, z up) to isometric screen pixels. The only way onto the screen. */
 export function project(x: number, y: number, z = 0): Pt {
   return {
     x: CANVAS_W / 2 + (x - COURT.w / 2) * TILE_X + (y - COURT.h / 2) * TILE_X,
@@ -54,6 +64,9 @@ const HAIR = ['#1d140e', '#3b2416', '#0f0f0f', '#5a3b1d', '#24170f'];
 const OUTLINE = '#14201f';
 const LINE = '#f5fff7';
 const POST = '#4d7f9c';
+const FACING_CAMERA = (Math.PI * 3) / 4;
+/** How much a distance across the floor shrinks on screen when it runs towards the camera. */
+const DEPTH = TILE_Y / TILE_X;
 
 function hash(s: string): number {
   let h = 2166136261;
@@ -81,9 +94,19 @@ function limb(ctx: CanvasRenderingContext2D, pts: Floor[], width: number, colour
   ctx.stroke();
 }
 
+/**
+ * How a facing angle in court space looks from the camera: `side` is +1 when facing screen right,
+ * `toward` is +1 when facing the camera. The sprite is posed from these two, so it turns smoothly.
+ */
+export function bodyView(angle: number): { side: number; toward: number } {
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle);
+  return { side: (fx + fy) / Math.SQRT2, toward: (fy - fx) / Math.SQRT2 };
+}
+
 /** Sprite size from a player's height, slightly exaggerated so a guard and a centre read at a glance. */
-export function spriteScale(heightFt: number): number {
-  return 1 + (heightFt / 6.5 - 1) * 1.5;
+export function spriteScale(heightM: number): number {
+  return 1 + (heightM / 1.98 - 1) * 1.5;
 }
 
 export class CourtRenderer {
@@ -91,8 +114,6 @@ export class CourtRenderer {
   private stride: Record<string, number> = {};
   private lastNow = 0;
   private frameSeconds = 1 / 60;
-  private faceX: Record<string, 1 | -1> = {};
-  private faceFront: Record<string, boolean> = {};
   /** The floor never changes, so it is painted once per canvas size. */
   private floor: HTMLCanvasElement | null = null;
 
@@ -109,12 +130,12 @@ export class CourtRenderer {
     type Item = { depth: number; draw: () => void };
     const items: Item[] = [];
     for (const end of [0, 1] as const) {
-      const at = (inset: number) => 25 - (end === 0 ? inset : COURT.w - inset);
+      const at = (inset: number) => MID_Y - (end === 0 ? inset : COURT.w - inset);
       const hoopX = end === 0 ? COURT.w - HOOP_X : HOOP_X;
       items.push({ depth: at(POST_INSET), draw: () => this.drawPost(ctx, end) });
       items.push({ depth: at(BOARD_INSET), draw: () => this.drawBoard(ctx, end) });
-      items.push({ depth: 25 - hoopX - 0.6, draw: () => this.drawRim(ctx, hoopX, Math.PI, Math.PI * 2) });
-      items.push({ depth: 25 - hoopX + 0.6, draw: () => this.drawRim(ctx, hoopX, 0, Math.PI) });
+      items.push({ depth: MID_Y - hoopX - 0.18, draw: () => this.drawRim(ctx, hoopX, Math.PI, Math.PI * 2) });
+      items.push({ depth: MID_Y - hoopX + 0.18, draw: () => this.drawRim(ctx, hoopX, 0, Math.PI) });
     }
 
     if (frame) {
@@ -126,11 +147,11 @@ export class CourtRenderer {
         this.drawMarker(ctx, p.x, p.y, lift, info.hasBall);
         items.push({
           depth: p.y - p.x,
-          draw: () => this.drawPlayer(ctx, key, p.x, p.y, info, ball, lift, frame.shooter === key),
+          draw: () => this.drawPlayer(ctx, key, p.x, p.y, info, ball, lift, frame.shooter === key, frame.facing?.[key] ?? FACING_CAMERA, frame.reach?.[key] ?? 0),
         });
       }
       this.drawBallShadow(ctx, ball.x, ball.y, ball.z);
-      items.push({ depth: ball.y - ball.x + 0.1, draw: () => this.drawBall(ctx, ball.x, ball.y, ball.z) });
+      items.push({ depth: ball.y - ball.x + 0.03, draw: () => this.drawBall(ctx, ball.x, ball.y, ball.z) });
     }
     items.sort((a, b) => a.depth - b.depth).forEach((item) => item.draw());
   }
@@ -155,9 +176,9 @@ export class CourtRenderer {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
     // Arena floor tiles, on the same axes as the court.
-    for (let n = -120; n <= 220; n += 10) {
-      this.line(ctx, [[n, -120], [n, 170]], 'rgba(150, 230, 225, 0.05)', 1);
-      this.line(ctx, [[-120, n], [220, n]], 'rgba(150, 230, 225, 0.05)', 1);
+    for (let n = -36; n <= 66; n += 3) {
+      this.line(ctx, [[n, -36], [n, 51]], 'rgba(150, 230, 225, 0.05)', 1);
+      this.line(ctx, [[-36, n], [66, n]], 'rgba(150, 230, 225, 0.05)', 1);
     }
   }
 
@@ -216,8 +237,8 @@ export class CourtRenderer {
   }
 
   private drawFloor(ctx: CanvasRenderingContext2D): void {
-    const m = 3;
-    this.box(ctx, -m, COURT.w + m, -m, COURT.h + m, -2.4, 0, '#0a6f73', '#0a8585', '#16aaa4');
+    const m = 0.9;
+    this.box(ctx, -m, COURT.w + m, -m, COURT.h + m, -0.7, 0, '#0a6f73', '#0a8585', '#16aaa4');
     this.line(ctx, [[-m, COURT.h + m], [COURT.w + m, COURT.h + m]], '#63ded0', 1.5);
     this.line(ctx, [[-m, -m], [-m, COURT.h + m]], '#63ded0', 1.5);
 
@@ -231,17 +252,18 @@ export class CourtRenderer {
 
     for (const end of [0, 1] as const) {
       const fx = (x: number) => (end === 0 ? x : COURT.w - x);
-      this.poly(ctx, [[fx(0), 17], [fx(19), 17], [fx(19), 33], [fx(0), 33]], '#cf9f4c');
+      this.poly(ctx, [[fx(0), KEY_NEAR], [fx(KEY_DEPTH), KEY_NEAR], [fx(KEY_DEPTH), KEY_FAR], [fx(0), KEY_FAR]], '#cf9f4c');
     }
-    this.poly(ctx, this.arcPts(COURT.w / 2, COURT.h / 2, 6, 0, Math.PI * 2), '#cf9f4c');
+    this.poly(ctx, this.arcPts(COURT.w / 2, MID_Y, CIRCLE_RADIUS, 0, Math.PI * 2), '#cf9f4c');
 
     // Boards run along the court with staggered joints; the tint is seeded so it never shimmers.
-    const plank = 2;
+    const plank = 0.6;
+    const length = 4.2;
     for (let row = 0; row * plank < COURT.h; row++) {
       const y = row * plank;
-      for (let x = -((row * 5) % 14); x < COURT.w; x += 14) {
+      for (let x = -((row * 1.5) % length); x < COURT.w; x += length) {
         const a = Math.max(0, x);
-        const b = Math.min(COURT.w, x + 14);
+        const b = Math.min(COURT.w, x + length);
         const tone = hash(`${row}:${x}`) % 100;
         const fill = tone < 50 ? `rgba(255, 255, 255, ${(tone / 50) * 0.045})` : `rgba(0, 0, 0, ${((tone - 50) / 50) * 0.05})`;
         this.poly(ctx, [[a, y], [b, y], [b, y + plank], [a, y + plank]], fill);
@@ -254,41 +276,41 @@ export class CourtRenderer {
       const fx = (x: number) => (end === 0 ? x : COURT.w - x);
       const hoopX = end === 0 ? COURT.w - HOOP_X : HOOP_X;
       const courtward = end === 0 ? 0 : Math.PI;
-      this.poly(ctx, [[fx(0), 17], [fx(19), 17], [fx(19), 33], [fx(0), 33]], undefined, LINE, 2);
+      this.poly(ctx, [[fx(0), KEY_NEAR], [fx(KEY_DEPTH), KEY_NEAR], [fx(KEY_DEPTH), KEY_FAR], [fx(0), KEY_FAR]], undefined, LINE, 2);
       // Free-throw circle: solid towards half court, dashed inside the lane.
-      this.line(ctx, this.arcPts(fx(19), 25, 6, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, 2);
+      this.line(ctx, this.arcPts(fx(KEY_DEPTH), MID_Y, CIRCLE_RADIUS, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, 2);
       ctx.setLineDash([5, 5]);
-      this.line(ctx, this.arcPts(fx(19), 25, 6, courtward + Math.PI / 2, courtward + (3 * Math.PI) / 2), LINE, 1.6);
+      this.line(ctx, this.arcPts(fx(KEY_DEPTH), MID_Y, CIRCLE_RADIUS, courtward + Math.PI / 2, courtward + (3 * Math.PI) / 2), LINE, 1.6);
       ctx.setLineDash([]);
-      this.line(ctx, this.arcPts(hoopX, 25, 4, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, 1.6);
+      this.line(ctx, this.arcPts(hoopX, MID_Y, NO_CHARGE_RADIUS, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, 1.6);
       // Lane markers.
-      for (const f of [7, 10, 13, 16]) {
-        this.line(ctx, [[fx(f), 17], [fx(f), 16.2]], LINE, 2);
-        this.line(ctx, [[fx(f), 33], [fx(f), 33.8]], LINE, 2);
+      for (const f of [2.1, 3, 3.9, 4.8]) {
+        this.line(ctx, [[fx(f), KEY_NEAR], [fx(f), KEY_NEAR - 0.25]], LINE, 2);
+        this.line(ctx, [[fx(f), KEY_FAR], [fx(f), KEY_FAR + 0.25]], LINE, 2);
       }
-      this.line(ctx, [[fx(0), 3], [fx(14), 3]], LINE, 2);
-      this.line(ctx, [[fx(0), 47], [fx(14), 47]], LINE, 2);
-      const a = Math.acos((25 - 3) / 23.75);
-      this.line(ctx, this.arcPts(hoopX, 25, 23.75, courtward - Math.PI / 2 + a, courtward + Math.PI / 2 - a), LINE, 2);
+      this.line(ctx, [[fx(0), THREE_CORNER_Y], [fx(THREE_CORNER_DEPTH), THREE_CORNER_Y]], LINE, 2);
+      this.line(ctx, [[fx(0), COURT.h - THREE_CORNER_Y], [fx(THREE_CORNER_DEPTH), COURT.h - THREE_CORNER_Y]], LINE, 2);
+      const a = Math.acos((MID_Y - THREE_CORNER_Y) / THREE_RADIUS);
+      this.line(ctx, this.arcPts(hoopX, MID_Y, THREE_RADIUS, courtward - Math.PI / 2 + a, courtward + Math.PI / 2 - a), LINE, 2);
     }
     this.line(ctx, [[COURT.w / 2, 0], [COURT.w / 2, COURT.h]], LINE, 2);
-    this.line(ctx, this.arcPts(COURT.w / 2, COURT.h / 2, 6, 0, Math.PI * 2), LINE, 2);
+    this.line(ctx, this.arcPts(COURT.w / 2, MID_Y, CIRCLE_RADIUS, 0, Math.PI * 2), LINE, 2);
     this.poly(ctx, [[0, 0], [COURT.w, 0], [COURT.w, COURT.h], [0, COURT.h]], undefined, LINE, 3);
   }
 
   private drawPost(ctx: CanvasRenderingContext2D, end: 0 | 1): void {
     const postX = end === 0 ? POST_INSET : COURT.w - POST_INSET;
     const boardX = end === 0 ? BOARD_INSET : COURT.w - BOARD_INSET;
-    const foot = project(postX, 25);
+    const foot = project(postX, MID_Y);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
     ctx.beginPath();
-    ctx.ellipse(foot.x + 2, foot.y + 1, 2.4 * FLOOR_RX, 2.4 * FLOOR_RY, 0, 0, Math.PI * 2);
+    ctx.ellipse(foot.x + 2, foot.y + 1, 0.73 * FLOOR_RX, 0.73 * FLOOR_RY, 0, 0, Math.PI * 2);
     ctx.fill();
-    this.box(ctx, postX - 1, postX + 1, 23.6, 26.4, 0, 1.4, '#274455', '#30566b', '#3d6c85');
+    this.box(ctx, postX - 0.3, postX + 0.3, MID_Y - 0.42, MID_Y + 0.42, 0, 0.43, '#274455', '#30566b', '#3d6c85');
 
-    const base = project(postX, 25, 1.4);
-    const top = project(postX, 25, 12.6);
-    const arm = project(boardX, 25, 11.2);
+    const base = project(postX, MID_Y, 0.43);
+    const top = project(postX, MID_Y, 3.85);
+    const arm = project(boardX, MID_Y, 3.41);
     limb(ctx, [[top.x, top.y], [arm.x, arm.y]], 4, darken(POST, 0.85));
     limb(ctx, [[base.x, base.y], [top.x, top.y]], 8, POST);
     limb(ctx, [[base.x - 2, base.y], [top.x - 2, top.y]], 1.5, '#9fd3ea');
@@ -300,17 +322,18 @@ export class CourtRenderer {
     const edge = hoopX + (end === 0 ? -RIM_RADIUS : RIM_RADIUS);
     // The near board stands between the camera and its rim, so its glass has to stay see-through.
     const glass = end === 0 ? 'rgba(226, 246, 250, 0.22)' : 'rgba(226, 246, 250, 0.62)';
-    this.poly3(ctx, [[x, 21, 13.4], [x, 29, 13.4], [x, 29, 9.2], [x, 21, 9.2]], glass, OUTLINE, 3.4);
-    this.poly3(ctx, [[x, 21, 13.4], [x, 29, 13.4], [x, 29, 9.2], [x, 21, 9.2]], undefined, '#ffffff', 2);
-    this.poly3(ctx, [[x, 23.8, 11.8], [x, 26.2, 11.8], [x, 26.2, RIM_HEIGHT], [x, 23.8, RIM_HEIGHT]], undefined, '#e4472f', 1.6);
-    const a = project(x, 25, RIM_HEIGHT);
-    const b = project(edge, 25, RIM_HEIGHT);
+    const glassPane: Space[] = [[x, MID_Y - 1.2, 4.08], [x, MID_Y + 1.2, 4.08], [x, MID_Y + 1.2, 2.8], [x, MID_Y - 1.2, 2.8]];
+    this.poly3(ctx, glassPane, glass, OUTLINE, 3.4);
+    this.poly3(ctx, glassPane, undefined, '#ffffff', 2);
+    this.poly3(ctx, [[x, MID_Y - 0.36, 3.6], [x, MID_Y + 0.36, 3.6], [x, MID_Y + 0.36, RIM_HEIGHT], [x, MID_Y - 0.36, RIM_HEIGHT]], undefined, '#e4472f', 1.6);
+    const a = project(x, MID_Y, RIM_HEIGHT);
+    const b = project(edge, MID_Y, RIM_HEIGHT);
     limb(ctx, [[a.x, a.y], [b.x, b.y]], 2.5, '#e4472f');
   }
 
   /** One half of the rim and net: drawn in two passes so the ball can drop between them. */
   private drawRim(ctx: CanvasRenderingContext2D, hoopX: number, from: number, to: number): void {
-    const c = project(hoopX, 25, RIM_HEIGHT);
+    const c = project(hoopX, MID_Y, RIM_HEIGHT);
     const rx = RIM_RADIUS * FLOOR_RX;
     const ry = RIM_RADIUS * FLOOR_RY;
     const netDrop = 13;
@@ -356,68 +379,87 @@ export class CourtRenderer {
   /** Floor marks stay on the floor when a player jumps, which is what makes the jump read. */
   private drawMarker(ctx: CanvasRenderingContext2D, x: number, y: number, lift: number, hasBall: boolean): void {
     const f = project(x, y);
-    const shrink = 1 - Math.min(0.5, lift * 0.12);
+    const shrink = 1 - Math.min(0.5, lift * 0.4);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
     ctx.beginPath();
-    ctx.ellipse(f.x + 2, f.y + 1, 1.25 * FLOOR_RX * shrink, 1.25 * FLOOR_RY * shrink, 0, 0, Math.PI * 2);
+    ctx.ellipse(f.x + 2, f.y + 1, 0.38 * FLOOR_RX * shrink, 0.38 * FLOOR_RY * shrink, 0, 0, Math.PI * 2);
     ctx.fill();
     if (hasBall) {
       ctx.strokeStyle = '#ffe57a';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(f.x, f.y, 1.7 * FLOOR_RX, 1.7 * FLOOR_RY, 0, 0, Math.PI * 2);
+      ctx.ellipse(f.x, f.y, 0.52 * FLOOR_RX, 0.52 * FLOOR_RY, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
 
-  private drawPlayer(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, info: DotInfo, ball: Frame['ball'], lift: number, shooting: boolean): void {
+  private drawPlayer(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, info: DotInfo, ball: Frame['ball'], lift: number, shooting: boolean, facing: number, handsUp: number): void {
     const foot = project(x, y, lift);
     const prev = this.last[key];
-    const speed = prev ? Math.hypot(x - prev.x, y - prev.y) : 0;
+    const moveX = prev ? x - prev.x : 0;
+    const moveY = prev ? y - prev.y : 0;
+    const speed = Math.hypot(moveX, moveY);
     this.last[key] = { x, y };
 
-    // Face the way they are moving, or the ball when standing. On screen, x + y is rightwards
-    // and y - x is towards the camera.
-    const ftPerSecond = speed / this.frameSeconds;
-    const moving = !!prev && ftPerSecond > 2.5;
-    const dx = moving ? x - prev.x : ball.x - x;
-    const dy = moving ? y - prev.y : ball.y - y;
-    if (Math.abs(dx + dy) > 0.01) this.faceX[key] = dx + dy > 0 ? 1 : -1;
-    if (Math.abs(dy - dx) > 0.01) this.faceFront[key] = dy - dx > 0;
-    const dir = this.faceX[key] ?? 1;
-    const front = this.faceFront[key] ?? true;
+    // The sprite is a small 3D figure: `forward` along the way they face, `right` towards their
+    // right hand, and `up` off the floor, all in sprite pixels.
+    const { side, toward } = bodyView(facing);
+    const at = (forward: number, right: number, up: number): Floor => [forward * side - right * toward, -up + (forward * toward + right * side) * DEPTH];
+    const across = Math.abs(toward);
+    /** Half the width of a body part that is wider than it is deep, seen from this angle. */
+    const wide = (half: number) => Math.hypot(half * toward, half * 0.72 * side);
 
-    // Two steps per leg cycle, and a stride lengthens with speed: from 6ft a cycle walking to 12 sprinting.
-    const cycleFt = 6 + Math.min(6, (ftPerSecond / 26) * 6);
-    this.stride[key] = (this.stride[key] ?? 0) + (speed / cycleFt) * Math.PI * 2;
-    const swing = lift > 0.05 ? 0.35 : Math.sin(this.stride[key]) * Math.min(1, ftPerSecond / 14);
+    // Two steps per leg cycle, and a stride lengthens with speed: from 1.8 m a cycle walking to 3.6 m sprinting.
+    const metresPerSecond = speed / this.frameSeconds;
+    const cycleM = 1.8 + Math.min(1.8, (metresPerSecond / 7.9) * 1.8);
+    this.stride[key] = (this.stride[key] ?? 0) + (speed / cycleM) * Math.PI * 2;
+    const airborne = lift > 0.015;
+    const pace = Math.min(1, metresPerSecond / 4.3);
+    const swing = airborne ? 0.35 : Math.sin(this.stride[key]) * pace;
+    // Which way the legs carry them, relative to the body: forwards, backpedalling or sliding.
+    const fx = Math.cos(facing);
+    const fy = Math.sin(facing);
+    const along = airborne || speed === 0 ? 1 : (moveX * fx + moveY * fy) / speed;
+    const sideways = airborne || speed === 0 ? 0 : Math.abs((moveX * -fy + moveY * fx) / speed);
 
     const team = this.colours[info.side];
     const skin = SKIN[hash(key) % SKIN.length];
-    const k = spriteScale(info.heightFt);
+    const k = spriteScale(info.heightM);
+    /** Whichever side of the body is further from the camera comes first. */
+    const farFirst: (1 | -1)[] = side >= 0 ? [-1, 1] : [1, -1];
 
     ctx.save();
     ctx.translate(foot.x, foot.y);
     ctx.scale(k, k);
 
-    // Legs: skin to the shin, then sock and shoe. The airborne pose tucks one knee.
-    for (const side of [-1, 1] as const) {
-      const s = swing * side;
-      const tuck = lift > 0.05 && side === dir ? 5 : 0;
-      const fx = side * 3.6 + dir * s * 5;
-      const fy = -Math.max(0, s) * 3 - tuck;
-      const kneeX = side * 3.8 + dir * (s * 2.5 + 1);
-      limb(ctx, [[side * 3.4, -23], [kneeX, -12 - tuck * 0.5], [fx, fy - 3]], 4.4, skin);
-      limb(ctx, [[(kneeX + fx) / 2, (-12 - tuck * 0.5 + fy) / 2], [fx, fy - 3]], 4.2, '#f4f4ee');
+    // Legs: skin to the shin, then sock and shoe. The airborne pose tucks one knee; a slide opens
+    // and closes the feet instead of crossing them.
+    const shoeTurn = Math.atan2(toward * DEPTH, side);
+    const shoeLength = 3.9 * Math.max(0.6, Math.hypot(side, toward * DEPTH));
+    for (const leg of farFirst) {
+      const s = swing * leg;
+      const tuck = airborne && leg === 1 ? 5 : 0;
+      const stepF = along * s * 6;
+      const stepR = leg * (3.6 + Math.abs(Math.sin(this.stride[key])) * pace * sideways * 3);
+      const stepU = Math.max(0, s) * 3 * (1 - sideways) + tuck;
+      const knee = at(1 + stepF * 0.5, leg * 3.8, 12 + tuck * 0.5);
+      const ankle = at(stepF, stepR, stepU + 3);
+      limb(ctx, [at(0, leg * 3.4, 23), knee, ankle], 4.4, skin);
+      limb(ctx, [[(knee[0] + ankle[0]) / 2, (knee[1] + ankle[1]) / 2], ankle], 4.2, '#f4f4ee');
+      const [toeX, toeY] = at(stepF + 1.2, stepR, stepU + 1.3);
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = OUTLINE;
       ctx.lineWidth = 0.9;
       ctx.beginPath();
-      ctx.ellipse(fx + dir * 1.2, fy - 1.3, 3.9, 2.1, 0, 0, Math.PI * 2);
+      ctx.ellipse(toeX, toeY, shoeLength, 2.1, shoeTurn, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = team.fill;
-      ctx.fillRect(fx + dir * 1.2 - 2.4, fy - 1.9, 4.8, 0.9);
+      ctx.strokeStyle = team.fill;
+      ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.moveTo(toeX - Math.cos(shoeTurn) * shoeLength * 0.6, toeY - Math.sin(shoeTurn) * shoeLength * 0.6 - 0.4);
+      ctx.lineTo(toeX + Math.cos(shoeTurn) * shoeLength * 0.6, toeY + Math.sin(shoeTurn) * shoeLength * 0.6 - 0.4);
+      ctx.stroke();
     }
 
     // Shorts.
@@ -426,72 +468,103 @@ export class CourtRenderer {
     ctx.lineWidth = 0.9;
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(-7, -27);
-    ctx.lineTo(7, -27);
-    ctx.lineTo(8.6, -15.5);
-    ctx.lineTo(1.2, -15.5);
-    ctx.lineTo(0, -19);
-    ctx.lineTo(-1.2, -15.5);
-    ctx.lineTo(-8.6, -15.5);
+    ctx.moveTo(-wide(7), -27);
+    ctx.lineTo(wide(7), -27);
+    ctx.lineTo(wide(8.6), -15.5);
+    ctx.lineTo(1.2 * across, -15.5);
+    ctx.lineTo(0, -15.5 - 3.5 * across);
+    ctx.lineTo(-1.2 * across, -15.5);
+    ctx.lineTo(-wide(8.6), -15.5);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Which hand goes where: the ball handler's arm reaches for the actual ball.
-    const shoulder = -36.5;
+    // Which hand goes where: the ball handler's nearest arm reaches for the actual ball.
+    const shoulderUp = 36.5;
     const b = project(ball.x, ball.y, ball.z);
     const rx = (b.x - foot.x) / k;
     const ry = (b.y - foot.y) / k;
-    const ballSide: 1 | -1 = rx === 0 ? dir : rx > 0 ? 1 : -1;
-    const armTo = (side: 1 | -1): { hand: Floor; elbow: Floor } => {
-      const sx = side * 8.2;
+    const shoulderOf = (arm: 1 | -1) => at(0, arm * 8.2, shoulderUp);
+    const toBall = (arm: 1 | -1) => Math.hypot(rx - shoulderOf(arm)[0], ry - shoulderOf(arm)[1]);
+    const ballArm: 1 | -1 = toBall(1) < toBall(-1) ? 1 : -1;
+    const drawArm = (arm: 1 | -1) => {
+      const start = shoulderOf(arm);
+      let hand: Floor;
+      let elbow: Floor;
       if (shooting) {
-        return { hand: [side * 3.5 + dir * 2.5, -62], elbow: [side * 8.5 + dir, -50] };
-      }
-      if (info.hasBall && side === ballSide) {
-        const vx = rx - sx;
-        const vy = ry - shoulder;
+        hand = at(2.5, arm * 3.5, 62);
+        elbow = at(1, arm * 7, 50);
+      } else if (info.hasBall && arm === ballArm) {
+        const vx = rx - start[0];
+        const vy = ry - start[1];
         const reach = Math.min(20, Math.hypot(vx, vy)) / (Math.hypot(vx, vy) || 1);
-        const hand: Floor = [sx + vx * reach, shoulder + vy * reach];
-        return { hand, elbow: [(sx + hand[0]) / 2 + side * 2, (shoulder + hand[1]) / 2] };
+        hand = [start[0] + vx * reach, start[1] + vy * reach];
+        elbow = [(start[0] + hand[0]) / 2 + (start[0] >= 0 ? 2 : -2), (start[1] + hand[1]) / 2];
+      } else {
+        const s = -swing * arm * along;
+        hand = at(s * 5, arm * 10.5, 20 + Math.abs(s) * 2);
+        elbow = at(s * 2, arm * 10.8, 28);
       }
-      const s = -swing * side * dir;
-      return { hand: [side * 10.5 + s * 5, -20 - Math.abs(s) * 2], elbow: [side * 10.8 + s * 2, -28] };
+      if (handsUp > 0 && !shooting) {
+        // Both hands go up towards the ball: always above the head, leaning its way but never sideways.
+        const vy = Math.min(ry - start[1], -22);
+        const vx = Math.max(vy * 0.6, Math.min(-vy * 0.6, rx - start[0]));
+        const reach = Math.min(26, Math.hypot(vx, vy)) / Math.hypot(vx, vy);
+        const upHand: Floor = [start[0] + vx * reach + at(0, arm * 1.5, 0)[0], start[1] + vy * reach];
+        const upElbow: Floor = [(start[0] + upHand[0]) / 2 + (start[0] >= 0 ? 1.5 : -1.5), (start[1] + upHand[1]) / 2];
+        hand = [hand[0] + (upHand[0] - hand[0]) * handsUp, hand[1] + (upHand[1] - hand[1]) * handsUp];
+        elbow = [elbow[0] + (upElbow[0] - elbow[0]) * handsUp, elbow[1] + (upElbow[1] - elbow[1]) * handsUp];
+      }
+      limb(ctx, [start, elbow, hand], 3.8, skin);
     };
 
+    // In profile the far arm passes behind the body.
+    const hiddenArm: 1 | -1 | null = Math.abs(side) > 0.35 ? farFirst[0] : null;
+    if (hiddenArm) drawArm(hiddenArm);
+
     // Jersey, shaded from the light side.
+    const chest = wide(8.4);
+    const waist = wide(7.2);
+    const collar = 3.2 * Math.max(0.5, across);
+    const collarX = side * 2;
     const shirt = ctx.createLinearGradient(-9, 0, 9, 0);
     shirt.addColorStop(0, team.fill);
     shirt.addColorStop(1, darken(team.fill, 0.78));
     ctx.fillStyle = shirt;
     ctx.beginPath();
-    ctx.moveTo(-8.4, -38);
-    ctx.quadraticCurveTo(-4, -39.5, -3.2, -39);
-    ctx.quadraticCurveTo(0, front ? -35.5 : -38, 3.2, -39);
-    ctx.quadraticCurveTo(4, -39.5, 8.4, -38);
-    ctx.lineTo(7.2, -25.5);
-    ctx.lineTo(-7.2, -25.5);
+    ctx.moveTo(-chest, -38);
+    ctx.quadraticCurveTo(collarX - collar - 0.8, -39.5, collarX - collar, -39);
+    ctx.quadraticCurveTo(collarX, -38 + 2.5 * Math.max(0, toward), collarX + collar, -39);
+    ctx.quadraticCurveTo(collarX + collar + 0.8, -39.5, chest, -38);
+    ctx.lineTo(waist, -25.5);
+    ctx.lineTo(-waist, -25.5);
     ctx.closePath();
     ctx.fill();
     ctx.lineWidth = 0.9;
     ctx.strokeStyle = OUTLINE;
     ctx.stroke();
+    // Arms reaching up pass in front of the face; otherwise the head sits over the shoulders.
+    const armsRaised = handsUp > 0.5;
+    if (!armsRaised) for (const arm of farFirst) if (arm !== hiddenArm) drawArm(arm);
+
+    // The number narrows as the chest turns away, but stays readable side-on, even over an arm.
+    const front = toward >= 0;
+    ctx.save();
+    ctx.translate((front ? side : -side) * 1.5, front ? -30.5 : -31.5);
+    ctx.scale(Math.max(0.62, across), 1);
     ctx.fillStyle = team.text;
     ctx.font = `800 ${front ? 7 : 9.5}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(info.label, 0, front ? -30.5 : -31.5, 13);
+    ctx.fillText(info.label, 0, 0, 13);
+    ctx.restore();
 
-    for (const side of [-1, 1] as const) {
-      const { hand, elbow } = armTo(side);
-      limb(ctx, [[side * 8.2, shoulder], elbow, hand], 3.8, skin);
-    }
-
-    this.drawHead(ctx, key, skin, team.fill, dir, front);
+    this.drawHead(ctx, key, skin, team.fill, side, toward);
+    if (armsRaised) for (const arm of farFirst) if (arm !== hiddenArm) drawArm(arm);
     ctx.restore();
   }
 
-  private drawHead(ctx: CanvasRenderingContext2D, key: string, skin: string, band: string, dir: 1 | -1, front: boolean): void {
+  private drawHead(ctx: CanvasRenderingContext2D, key: string, skin: string, band: string, side: number, toward: number): void {
     const hair = HAIR[hash(`${key}:hair`) % HAIR.length];
     const style = hash(`${key}:style`) % 4;
     const cy = -46;
@@ -503,69 +576,87 @@ export class CourtRenderer {
       ctx.strokeStyle = OUTLINE;
       ctx.lineWidth = 0.9;
       ctx.beginPath();
-      ctx.arc(0, cy - 2.5, r + 2.6, 0, Math.PI * 2);
+      ctx.arc(-side * 1.5, cy - 2.5, r + 2.6, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
 
-    ctx.fillStyle = skin;
+    // The head is hair all round, with the face a patch that slides round it and disappears from behind.
+    ctx.fillStyle = hair;
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 0.9;
     ctx.beginPath();
     ctx.arc(0, cy, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-
-    // Hair: a cap over the top from the front, the whole head from behind.
-    ctx.fillStyle = hair;
-    ctx.beginPath();
-    if (front) {
-      ctx.arc(0, cy, r + 0.4, Math.PI * 0.98, Math.PI * 2.02);
-      ctx.quadraticCurveTo(dir * 2, cy - 4.4, -r - 0.4, cy);
-    } else {
-      ctx.arc(0, cy, r + 0.4, Math.PI * 0.82, Math.PI * 2.18);
-      ctx.quadraticCurveTo(0, cy + 6.6, -r, cy + 2.4);
+    const shown = Math.max(0, Math.min(1, (toward + 0.45) / 0.75));
+    if (shown > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, cy, r - 0.3, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = skin;
+      ctx.beginPath();
+      ctx.ellipse(side * r * 0.42, cy + 1.8, r * (0.55 + 0.4 * Math.abs(toward)) * shown, r * (0.5 + 0.38 * shown), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
-    ctx.closePath();
-    ctx.fill();
-    if (style === 2) ctx.fillRect(-6.4, cy - 10, 12.8, 5);
+    if (style === 2) {
+      ctx.fillStyle = hair;
+      ctx.fillRect(-6.4, cy - 10, 12.8, 5);
+    }
     if (style === 3) {
       ctx.strokeStyle = band;
       ctx.lineWidth = 2;
+      ctx.lineCap = 'butt';
       ctx.beginPath();
       ctx.moveTo(-r + 0.3, cy - 2.2);
-      ctx.quadraticCurveTo(0, cy - 4, r - 0.3, cy - 2.2);
+      ctx.quadraticCurveTo(0, cy - 3 - 1 * toward, r - 0.3, cy - 2.2);
       ctx.stroke();
     }
 
-    if (!front) return;
-    const lookX = dir * 1.4;
-    for (const side of [-1, 1]) {
-      const ex = lookX + side * 2.7;
+    // A nose gives the profile away; eyes and mouth only show on the side the camera can see.
+    if (Math.abs(side) > 0.6 && toward > -0.3) {
+      ctx.fillStyle = skin;
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.arc(side * (r + 0.3), cy + 1.4, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    for (const eye of [-0.47, 0.47]) {
+      const visible = 0.88 * toward + eye * side;
+      if (visible < 0.15) continue;
+      const ex = (0.88 * side - eye * toward) * r * 0.82;
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.ellipse(ex, cy + 0.2, 1.35, 1.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, cy + 0.2, 1.35 * Math.min(1, 0.45 + visible * 0.7), 1.6, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#1b1b18';
       ctx.beginPath();
-      ctx.arc(ex + dir * 0.35, cy + 0.3, 0.85, 0, Math.PI * 2);
+      ctx.arc(ex + side * 0.35, cy + 0.3, 0.85, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.strokeStyle = darken(skin, 0.55);
-    ctx.lineWidth = 0.8;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(lookX - 1.5, cy + 3.9);
-    ctx.quadraticCurveTo(lookX, cy + 4.7, lookX + 1.5, cy + 3.9);
-    ctx.stroke();
+    if (toward > 0.2) {
+      const mouth = side * r * 0.72;
+      const half = 0.6 + 0.9 * toward;
+      ctx.strokeStyle = darken(skin, 0.55);
+      ctx.lineWidth = 0.8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(mouth - half, cy + 3.9);
+      ctx.quadraticCurveTo(mouth, cy + 4.7, mouth + half, cy + 3.9);
+      ctx.stroke();
+    }
   }
 
   private drawBallShadow(ctx: CanvasRenderingContext2D, x: number, y: number, z: number): void {
     const f = project(x, y);
-    const fade = 1 - Math.min(0.7, z * 0.05);
+    const fade = 1 - Math.min(0.7, z * 0.164);
     ctx.fillStyle = `rgba(0, 0, 0, ${0.34 * fade})`;
     ctx.beginPath();
-    ctx.ellipse(f.x, f.y, 0.75 * FLOOR_RX * fade, 0.75 * FLOOR_RY * fade, 0, 0, Math.PI * 2);
+    ctx.ellipse(f.x, f.y, 0.23 * FLOOR_RX * fade, 0.23 * FLOOR_RY * fade, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
