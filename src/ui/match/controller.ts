@@ -15,6 +15,7 @@ import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../
 import type { Controller } from '../../game/draft';
 import { beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Script } from '../court/animation';
 import { Motion, facingScene } from '../court/motion';
+import { excitement } from './highlights';
 
 export type Speed = 'normal' | 'fast';
 export type Phase = 'playing' | 'timeout' | 'break' | 'clutch' | 'final';
@@ -30,6 +31,8 @@ const SPEEDS: Record<Speed, { div: number; min: number; max: number }> = {
 
 /** How much faster bring-up and set-up play on a routine possession. */
 const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
+/** In highlights mode, how many plays of each quarter are shown; the rest are played out instantly. */
+export const HIGHLIGHTS_PER_QUARTER = 5;
 /** The last two minutes of a game this close is never routine. */
 const LATE_SECONDS = 120;
 const LATE_MARGIN = 8;
@@ -47,9 +50,16 @@ export interface FeedItem {
 export type PlayerView = Pick<PlayerGameState, 'energy' | 'fouls' | 'fouledOut'> & { pts: number; reb: number; ast: number; seconds: number; rating: number | null };
 
 /** Visual/audio cue for the court renderer and sound engine. */
-export type FxKind = 'swish' | 'clank' | 'dunk' | 'block' | 'whistle' | 'buzzer';
+export type FxKind = 'swish' | 'three' | 'clank' | 'dunk' | 'block' | 'steal' | 'foul' | 'violation' | 'timeout' | 'quarterEnd' | 'gameEnd';
 export interface Fx {
   kind: FxKind;
+  /**
+   * The team the event belongs to, so the home crowd knows whether to cheer or groan: the shooter's
+   * team for shots and blocks, the team that lost the ball, the team called for a foul, the winner.
+   */
+  side?: Side;
+  /** A free throw: a smaller moment than a basket from the field. */
+  small?: boolean;
 }
 
 /** A clutch possession waiting for the humans' calls. The defence chooses first. */
@@ -88,8 +98,16 @@ export class LiveMatch {
   phase: Phase = 'playing';
   paused = false;
   speed: Speed;
-  /** Plays through bring-up and set-up quickly on routine possessions. */
-  fastForward = true;
+  /**
+   * Highlights only: the best plays of each quarter are shown (bring-up and set-up quickly), the
+   * rest are played out instantly. Clutch moments are always shown.
+   */
+  highlights = true;
+  /** Possessions being played out instantly, between two highlights. */
+  skipping = false;
+  /** The next highlight follows skipped play, so it cuts straight to the set-up. */
+  private cut = false;
+  private shown = { quarter: 0, count: 0 };
   /** Timeouts requested, applied at the next dead ball. */
   pending: [boolean, boolean] = [false, false];
   timeoutSide: Side | null = null;
@@ -217,6 +235,20 @@ export class LiveMatch {
     this.feedPush({ text: `${this.s.teams[side].team.name} team talk: ${out.reaction}`, side, kind: 'coach' });
   }
 
+  /**
+   * How loud the crowd is between plays, 0..1: a steady buzz during play, louder late in a close
+   * game, a murmur in timeouts and breaks, and quieter when the game is paused or over.
+   */
+  crowdLevel(): number {
+    if (this.phase === 'final') return 0.2;
+    if (this.phase === 'timeout' || this.phase === 'break') return 0.35;
+    if (this.paused) return 0.25;
+    const s = this.s;
+    const margin = Math.abs(s.teams[0].score - s.teams[1].score);
+    const late = s.quarter >= 4 && s.clock <= LATE_SECONDS && margin <= LATE_MARGIN;
+    return this.phase === 'clutch' || late || isClutch(s) ? 0.9 : 0.55;
+  }
+
   /** Visual/audio cues produced since the last call. */
   drainFx(): Fx[] {
     const out = this.fx;
@@ -236,14 +268,15 @@ export class LiveMatch {
     this.bump();
   }
 
-  toggleFastForward(): void {
-    this.fastForward = !this.fastForward;
+  toggleHighlights(): void {
+    this.highlights = !this.highlights;
     if (this.script) this.retime();
     this.bump();
   }
 
   /** Whether the beat on screen right now is being fast-forwarded. */
   isFastForwarding(): boolean {
+    if (this.skipping && this.phase === 'playing') return true;
     const sc = this.script;
     if (!sc || this.phase !== 'playing') return false;
     return this.skips(sc.beats[beatAt(sc, this.durations, this.t).index]);
@@ -294,10 +327,18 @@ export class LiveMatch {
     }
     const { index, u } = beatAt(sc, this.durations, this.t);
     const beat = sc.beats[index];
-    this.holder = beat.ball.kind === 'held' ? beat.ball.holder : null;
+    // Whoever has the ball in their hands: the holder, or a receiver once the pass has arrived.
+    const b = beat.ball;
+    this.holder = b.kind === 'held' ? b.holder : b.kind === 'pass' && this.motion.passArrived(b) ? b.to : null;
     const speedScale = (this.speed === 'fast' ? 2.1 : 1) / (this.slowMo ? 1.8 : 1);
     const rate = this.skips(beat) ? FAST_FORWARD[this.speed] : beat.slow ? 0.45 : 1;
-    this.motion.update(beat.players, dt * rate, speedScale, this.holder, beat.pace, beat.outOfBounds);
+    this.motion.update(beat.players, dt * rate, speedScale, this.holder, beat.pace, beat.outOfBounds, {
+      offence: sc.offence,
+      dir: sc.dir,
+      marking: beat.marking,
+      pressing: beat.pressing,
+      ball: this.lastFrame?.ball,
+    });
     const ball = this.motion.ball(beat.ball, u, sc.dir);
     this.motion.updateFacing(facingScene(sc, this.durations, index, u, ball, rate * speedScale), dt * rate, speedScale);
     this.motion.updateArms(beat, ball, u, dt * rate, speedScale);
@@ -305,6 +346,8 @@ export class LiveMatch {
       players: { ...this.motion.pos },
       ball,
       facing: { ...this.motion.facing },
+      look: { ...this.motion.look },
+      stance: { ...this.motion.stance },
       reach: { ...this.motion.reach },
       lift: this.motion.jumps(beat, u),
       shooter: beat.ball.kind === 'fromPlayer' && beat.ball.style !== 'throw' && u < 0.85 ? beat.ball.from : null,
@@ -390,6 +433,16 @@ export class LiveMatch {
       return;
     }
 
+    if (this.highlights && !this.clutchCalls) {
+      if (this.shown.quarter !== s.quarter) this.shown = { quarter: s.quarter, count: 0 };
+      if (!this.isHighlight(s)) {
+        this.skipPossession();
+        return;
+      }
+      this.shown.count++;
+    }
+    this.skipping = false;
+
     const offence = s.possession;
     const lineups: [string[], string[]] = [[...s.teams[0].lineup], [...s.teams[1].lineup]];
     const defence = s.teams[other(offence)].plan.defence;
@@ -437,6 +490,13 @@ export class LiveMatch {
     this.firedBeats = 0;
     this.startedBeat = -1;
     this.publishedThrough = s.events.length;
+    if (this.cut) {
+      // Like a highlight on television, it starts at the set-up: the bring-up is not news. Anything
+      // that happened on the way (a substitution, say) still fires as the clock passes it.
+      this.cut = false;
+      const setUp = this.script.beats.findIndex((b) => b.phase === 'setUp');
+      if (setUp > 0) this.t = this.beatEnds[setUp - 1];
+    }
   }
 
   private retime(): void {
@@ -451,8 +511,47 @@ export class LiveMatch {
     this.t = fraction * acc;
   }
 
+  /**
+   * Whether the coming possession is one of the quarter's best still to come. The rest of the quarter
+   * is played on a copy of the match (the engine is deterministic, so the copy plays out exactly what
+   * the real game will) and every possession scored; this one is shown if it ranks among the ones
+   * left to show. Decided afresh each time, so a timeout or a substitution is taken into account.
+   */
+  private isHighlight(s: MatchState): boolean {
+    if (isClutch(s)) return true;
+    const left = HIGHLIGHTS_PER_QUARTER - this.shown.count;
+    if (left <= 0) return false;
+    const copy = structuredClone(s);
+    const quarter = copy.quarter;
+    const scores: number[] = [];
+    while (!copy.finished && copy.quarter === quarter && copy.clock > 0) {
+      const before: [number, number] = [copy.teams[0].score, copy.teams[1].score];
+      const start = copy.events.length;
+      stepPossession(copy);
+      scores.push(excitement(copy.events.slice(start), before, copy));
+    }
+    if (scores.length <= left) return true;
+    // Ties go to the earlier play.
+    return scores.slice(1).filter((x) => x > scores[0]).length < left;
+  }
+
+  /** Plays a possession out instantly: the score, the feed and the stats move on; nothing is shown or heard. */
+  private skipPossession(): void {
+    const s = this.s;
+    if (!this.skipping) this.setCaption('» To the next highlight…', null, null, 'setup');
+    this.skipping = true;
+    this.cut = true;
+    stepPossession(s);
+    for (let i = this.publishedThrough; i < s.events.length; i++) this.publish(s.events[i], true);
+    this.publishedThrough = s.events.length;
+    this.quarter = s.quarter;
+    this.lastFrame = null;
+    this.motion.reset();
+    this.endPossession();
+  }
+
   private skips(beat: Beat): boolean {
-    return this.fastForward && this.routine && beat.phase !== 'play';
+    return this.highlights && this.routine && beat.phase !== 'play';
   }
 
   private endPossession(): void {
@@ -507,7 +606,8 @@ export class LiveMatch {
     this.publishedThrough = this.s.events.length;
   }
 
-  private publish(ev: TimedEvent): void {
+  /** `quiet`: into the feed and the score only, without sound or caption (a skipped possession). */
+  private publish(ev: TimedEvent, quiet = false): void {
     this.score = ev.score;
     this.quarter = ev.quarter;
     const text = commentate(ev, this.names);
@@ -516,8 +616,8 @@ export class LiveMatch {
     const scoring = (ev.type === 'shot' && ev.made) || (ev.type === 'freeThrow' && ev.made);
     const kind: FeedItem['kind'] = scoring ? 'score' : ev.type === 'sub' || ev.type.startsWith('quarter') || ev.type === 'timeout' ? 'info' : 'play';
     this.feed = [{ id: this.nextFeedId++, text, quarter: ev.quarter, clock: ev.clock, side, kind }, ...this.feed].slice(0, 200);
-    this.cue(ev);
-    if (ev.type !== 'sub') {
+    if (!quiet) this.cue(ev);
+    if (!quiet && ev.type !== 'sub') {
       const actor = eventActor(ev);
       this.setCaption(text, side, actor ? playerKey(actor.side, actor.id) : null, 'result');
     }
@@ -529,18 +629,26 @@ export class LiveMatch {
     const fx = this.fx;
     switch (ev.type) {
       case 'shot':
-        fx.push({ kind: ev.made ? (ev.dunk ? 'dunk' : 'swish') : ev.blockerId ? 'block' : 'clank' });
+        fx.push({ kind: ev.made ? (ev.dunk ? 'dunk' : ev.shotType === 'three' ? 'three' : 'swish') : ev.blockerId ? 'block' : 'clank', side: ev.side });
         break;
       case 'freeThrow':
-        fx.push({ kind: ev.made ? 'swish' : 'clank' });
+        fx.push({ kind: ev.made ? 'swish' : 'clank', side: ev.side, small: true });
         break;
       case 'foul':
+        fx.push({ kind: 'foul', side: ev.side });
+        break;
       case 'timeout':
-        fx.push({ kind: 'whistle' });
+        fx.push({ kind: 'timeout', side: ev.side });
+        break;
+      case 'turnover':
+        // A steal is the crowd's moment; anything else stops play with the whistle.
+        fx.push({ kind: ev.stealerId ? 'steal' : ev.cause === 'offensiveFoul' ? 'foul' : 'violation', side: ev.side });
         break;
       case 'quarterEnd':
+        fx.push({ kind: 'quarterEnd' });
+        break;
       case 'gameEnd':
-        fx.push({ kind: 'buzzer' });
+        fx.push({ kind: 'gameEnd', side: ev.winner });
         break;
     }
   }

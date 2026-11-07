@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
 import { callTimeout, createMatch, stepPossession } from '../src/engine/match';
+import { CLUTCH_MARGIN, CLUTCH_WINDOW } from '../src/game/clutch';
 import { LiveMatch } from '../src/ui/match/controller';
 
 function playOut(controllers: ['human' | 'ai', 'human' | 'ai'], seed: number) {
@@ -103,4 +104,114 @@ describe('FIBA timeouts', () => {
     expect(callTimeout(s, 0)).toBe(true);
     expect(callTimeout(s, 0)).toBe(false);
   });
+});
+
+describe('crowd and sound cues', () => {
+  it('every cue says whose moment it is, and the crowd follows the game', () => {
+    const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], 3, ['ai', 'ai'], 'fast');
+    const kinds = new Map<string, Set<number | undefined>>();
+    const levels = { playing: new Set<number>(), breaks: new Set<number>() };
+    let ticks = 0;
+    while (m.phase !== 'final' && ticks < 200000) {
+      m.tick(0.05);
+      ticks++;
+      for (const fx of m.drainFx()) {
+        if (!kinds.has(fx.kind)) kinds.set(fx.kind, new Set());
+        kinds.get(fx.kind)!.add(fx.side);
+      }
+      const level = m.crowdLevel();
+      expect(level).toBeGreaterThanOrEqual(0);
+      expect(level).toBeLessThanOrEqual(1);
+      if (m.phase === 'playing') levels.playing.add(level);
+      if (m.phase === 'timeout' || m.phase === 'break') {
+        levels.breaks.add(level);
+        m.resume();
+      }
+    }
+    for (const fx of m.drainFx()) {
+      if (!kinds.has(fx.kind)) kinds.set(fx.kind, new Set());
+      kinds.get(fx.kind)!.add(fx.side);
+    }
+    // Scoring, misses and fouls happen for both teams, and each cue carries the team it belongs to.
+    for (const kind of ['swish', 'clank', 'foul']) {
+      expect(kinds.get(kind), kind).toEqual(new Set([0, 1]));
+    }
+    expect(kinds.get('three')?.has(undefined)).toBe(false);
+    expect(kinds.has('quarterEnd')).toBe(true);
+    expect([...(kinds.get('gameEnd') ?? [])]).toEqual([m.s.teams[0].score > m.s.teams[1].score ? 0 : 1]);
+    // A steady buzz during play, quieter in breaks; louder when the game gets tight.
+    expect(Math.min(...levels.playing)).toBeGreaterThan(Math.max(...levels.breaks));
+    expect(m.crowdLevel()).toBeLessThan(0.5);
+  }, 60000);
+});
+
+describe('highlights', () => {
+  /** Plays a whole AI match through the controller; returns how many possessions were animated per quarter. */
+  function watch(highlights: boolean, seed: number) {
+    const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], seed, ['ai', 'ai'], 'fast');
+    m.highlights = highlights;
+    const inner = m as unknown as { script: { quarter: number; clockStart: number } | null };
+    const shown: Record<number, number> = {};
+    let clutchShown = 0;
+    let last: unknown = null;
+    let sounds = 0;
+    let ticks = 0;
+    while (m.phase !== 'final' && ticks < 400000) {
+      m.tick(0.05);
+      ticks++;
+      sounds += m.drainFx().length;
+      if (m.phase === 'timeout' || m.phase === 'break') m.resume();
+      const sc = inner.script;
+      if (sc && sc !== last) {
+        last = sc;
+        const q = sc.quarter;
+        // Clutch moments (the end of a close half or game) are always shown, on top of the five.
+        const margin = Math.abs(m.s.teams[0].score - m.s.teams[1].score);
+        if ((q >= 4 && sc.clockStart <= CLUTCH_WINDOW && margin <= CLUTCH_MARGIN + 3) || (q === 2 && sc.clockStart <= 10 && margin <= 11)) clutchShown++;
+        else shown[q] = (shown[q] ?? 0) + 1;
+      }
+    }
+    return { shown, clutchShown, sounds, events: m.s.events, score: [m.s.teams[0].score, m.s.teams[1].score] };
+  }
+
+  it('shows five plays a quarter (plus clutch moments), and never changes the result', () => {
+    const full = watch(false, 4);
+    const best = watch(true, 4);
+    // The same game either way: highlights only decide what is animated.
+    expect(best.score).toEqual(full.score);
+    expect(best.events).toEqual(full.events);
+    for (const q of [1, 2, 3]) expect(best.shown[q]).toBe(5);
+    expect(best.shown[4] ?? 0).toBeLessThanOrEqual(5);
+    expect(Object.values(full.shown).reduce((a, b) => a + b, 0)).toBeGreaterThan(100);
+    // Skipped possessions make no sound; the shown ones and the buzzers do.
+    expect(best.sounds).toBeLessThan(full.sounds / 3);
+    expect(best.sounds).toBeGreaterThan(10);
+  }, 120000);
+
+  it('the plays shown are the exciting ones', () => {
+    const scored: number[] = [];
+    const all: number[] = [];
+    for (const seed of [2, 6]) {
+      const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], seed, ['ai', 'ai'], 'fast');
+      const inner = m as unknown as { script: { beats: { ball: { kind: string } }[] } | null; scriptEvents: { type: string; made?: boolean; shotType?: string; dunk?: boolean; stealerId?: string; blockerId?: string }[] };
+      let last: unknown = null;
+      let ticks = 0;
+      while (m.phase !== 'final' && ticks < 400000) {
+        m.tick(0.05);
+        ticks++;
+        m.drainFx();
+        if (m.phase === 'timeout' || m.phase === 'break') m.resume();
+        if (inner.script && inner.script !== last) {
+          last = inner.script;
+          const big = inner.scriptEvents.some((e) => (e.type === 'shot' && e.made && (e.shotType === 'three' || e.dunk)) || (e.type === 'shot' && e.blockerId) || (e.type === 'turnover' && e.stealerId));
+          scored.push(big ? 1 : 0);
+        }
+      }
+      for (const e of m.s.events) if (e.type === 'shot') all.push((e.made && (e.shotType === 'three' || e.dunk)) || e.blockerId ? 1 : 0);
+    }
+    const shownRate = scored.reduce((a, b) => a + b, 0) / scored.length;
+    const baseRate = all.reduce((a, b) => a + b, 0) / all.length;
+    // Threes, dunks, blocks and steals are far more common among the highlights than in the game as a whole.
+    expect(shownRate).toBeGreaterThan(baseRate * 1.8);
+  }, 120000);
 });

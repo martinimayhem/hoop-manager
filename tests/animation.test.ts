@@ -8,6 +8,7 @@ import { other, playerOf } from '../src/engine/state';
 import { PACE_M_S, beatDurations, beatAt, buildScript, playerKey, type Frame, type Pace, type Script } from '../src/ui/court/animation';
 import { BODY_M, COURT, FORMATIONS, HOOP, MIN_SPACING_M, ZONE, insideCourt } from '../src/ui/court/formations';
 import { Motion, angleDiff, facingScene, speedFactor } from '../src/ui/court/motion';
+import { PASS_SPEED } from '../src/ui/court/animation';
 import { CANVAS_H, CANVAS_W, bodyView, project, spriteScale } from '../src/ui/court/render';
 import { LiveMatch } from '../src/ui/match/controller';
 import type { DefenceScheme, GamePlan, MatchState, OffensiveFocus, TimedEvent } from '../src/engine/types';
@@ -336,6 +337,38 @@ describe('floor spacing and positions', () => {
 });
 
 describe('possession phases', () => {
+  it('the ball handler never just stands: every half-court set has a screen, a post-up or a move with the ball', () => {
+    const plays = { screen: 0, post: 0, move: 0, still: 0 };
+    for (const offence of FOCI) {
+      eachScript(planWith({ offence }), 1, (script, events) => {
+        const setUpEnd = script.beats.map((b) => b.phase).lastIndexOf('setUp');
+        if (setUpEnd < 0 || script.clockStart - script.clockEnd < 8) return;
+        if (events.some((e) => e.type === 'fastBreak' || e.type === 'pressBroken' || e.type === 'doubleTeam' || e.type === 'freeThrow' || e.type === 'rebound')) return;
+        const shot = script.beats.findIndex((b) => b.ball.kind === 'fromPlayer');
+        if (shot < 0) return;
+        const action = script.beats.slice(setUpEnd + 1, shot);
+        if (action.some((b) => b.contact)) plays.screen++;
+        else if (action.some((b) => b.posting)) plays.post++;
+        else {
+          // Moved with the ball: a dribble beat that takes the handler at least 1.5 m.
+          const moved = action.some((b, i) => {
+            const prevBeat = script.beats[setUpEnd + i];
+            return b.ball.kind === 'held' && b.ball.dribble && apart(b.players[b.ball.holder], prevBeat.players[b.ball.holder]) >= 1.5;
+          });
+          if (moved) plays.move++;
+          else plays.still++;
+        }
+      });
+    }
+    const total = plays.screen + plays.post + plays.move + plays.still;
+    expect(total).toBeGreaterThan(200);
+    expect(plays.still / total).toBeLessThan(0.1);
+    // A real mix of sets, not one trick.
+    expect(plays.screen / total).toBeGreaterThan(0.2);
+    expect(plays.post / total).toBeGreaterThan(0.05);
+    expect(plays.move / total).toBeGreaterThan(0.15);
+  });
+
   it('played through, everyone has reached their spot by the end of the set-up', () => {
     let checked = 0;
     let late = 0;
@@ -353,12 +386,14 @@ describe('possession phases', () => {
         if (beat.phase !== 'setUp' || s.beats[index + 1]?.phase !== 'play' || u < 0.9) continue;
         seen = s;
         for (const [k, p] of Object.entries(beat.players)) {
+          // A guarding defender follows his man, not a spot: the realism test judges him on that.
+          if (beat.marking?.[k]) continue;
           checked++;
           if (apart(inner.motion.pos[k], p) > 1.2) late++;
         }
       }
     }
-    expect(checked).toBeGreaterThan(300);
+    expect(checked).toBeGreaterThan(200);
     expect(late / checked).toBeLessThan(0.02);
   }, 30000);
 
@@ -411,17 +446,96 @@ describe('the ball', () => {
     expect(misses).toBeGreaterThan(50);
   });
 
-  it('passes are quick and nearly flat, and last long enough to see', () => {
+  it('passes go to open teammates: flat passes never go through a defender, long ones go over the top', () => {
+    const lane = (a: { x: number; y: number }, b: { x: number; y: number }, defs: { x: number; y: number }[]) =>
+      defs.filter((d) => {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const t = ((d.x - a.x) * dx + (d.y - a.y) * dy) / (dx * dx + dy * dy || 1);
+        return t > 0.12 && t < 0.88 && Math.hypot(a.x + dx * t - d.x, a.y + dy * t - d.y) < 0.9;
+      }).length;
     let passes = 0;
+    let long = 0;
+    let crowded = 0;
+    const styles: Record<string, number> = {};
     eachScript(planWith({}), 2, (script) => {
-      for (const b of script.beats) {
-        if (b.ball.kind !== 'pass' || b.slow) continue;
+      script.beats.forEach((b, i) => {
+        if (b.ball.kind !== 'pass' || b.slow || i === 0) return;
+        // The pass is judged as thrown: from the passer, to where the receiver catches it, past the
+        // defenders where they stood.
+        const before = script.beats[i - 1].players;
+        const from = before[b.ball.from];
+        const to = b.players[b.ball.to];
+        const defs = Object.entries(before).filter(([k]) => !k.startsWith(`${script.offence}:`)).map(([, p]) => p);
+        const d = apart(from, to);
+        const style = b.ball.style ?? 'chest';
         passes++;
-        expect(b.ball.arc).toBeLessThanOrEqual(0.09);
+        styles[style] = (styles[style] ?? 0) + 1;
+        if (style === 'chest') {
+          expect(lane(from, to, defs)).toBe(0);
+          expect(d).toBeLessThanOrEqual(9);
+          expect(b.ball.arc).toBeLessThanOrEqual(0.09);
+        }
+        if (style === 'bounce') expect(d).toBeLessThanOrEqual(6);
+        if (d > 12) long++;
+        // Through two defenders only ever over the top or off the floor, never flat.
+        if (lane(from, to, defs) >= 2) {
+          crowded++;
+          expect(style).not.toBe('chest');
+        }
         expect(b.minSeconds).toBeGreaterThanOrEqual(0.3);
-      }
+      });
     });
     expect(passes).toBeGreaterThan(300);
+    expect(styles.chest / passes).toBeGreaterThan(0.6);
+    expect(styles.bounce ?? 0).toBeGreaterThan(0);
+    expect(styles.lob ?? 0).toBeGreaterThan(0);
+    expect(long / passes).toBeLessThan(0.02);
+    expect(crowded / passes).toBeLessThan(0.02);
+  });
+
+  it('a pass flies in a straight line at the speed of its type, then sits in the receiver\'s hands', () => {
+    for (const style of ['chest', 'bounce', 'lob'] as const) {
+      const m = new Motion();
+      const spots = { 'h:a': { x: 5, y: 5 }, 'h:b': { x: 12, y: 5 } };
+      m.update(spots, 1 / 60, 1, 'h:a');
+      const action = { kind: 'pass' as const, from: 'h:a', to: 'h:b', arc: style === 'lob' ? 1.2 : 0.05, style };
+      const path: { x: number; y: number; z: number }[] = [];
+      for (let i = 0; i < 90; i++) {
+        m.update(spots, 1 / 60, 1, null);
+        path.push(m.ball(action, 0.1, 1));
+      }
+      const flying = path.filter((_, i) => i < 30);
+      // Straight on the floor: every point sits on the line from release to where it is aimed.
+      const [a, b] = [flying[0], flying[24]];
+      for (const p of flying.slice(0, 25)) {
+        const off = Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / Math.hypot(b.x - a.x, b.y - a.y);
+        expect(off).toBeLessThan(0.01);
+      }
+      const speed = (flying[20].x - flying[10].x) / (10 / 60);
+      expect(speed).toBeGreaterThan(PASS_SPEED[style] * 0.9);
+      expect(speed).toBeLessThan(PASS_SPEED[style] * 1.1);
+      // The whole flight, until it is caught: a bounce pass hits the floor, a lob goes up.
+      const inAir = path.slice(0, 50);
+      if (style === 'bounce') expect(Math.min(...inAir.map((p) => p.z))).toBeLessThan(0.2);
+      if (style === 'lob') expect(Math.max(...inAir.map((p) => p.z))).toBeGreaterThan(1.8);
+      expect(m.passArrived(action)).toBe(true);
+      const end = path[path.length - 1];
+      expect(apart(end, path[path.length - 2])).toBeLessThan(0.001);
+    }
+  });
+
+  it('shots, rebounds and loose balls last exactly as long as their flight, however long the possession', () => {
+    let checked = 0;
+    eachScript(planWith({}), 1, (script) => {
+      const durations = beatDurations(script, 14);
+      script.beats.forEach((b, i) => {
+        if (b.ball.kind !== 'fromPlayer' || b.minSeconds === undefined) return;
+        checked++;
+        expect(durations[i]).toBeCloseTo(b.minSeconds, 5);
+      });
+    });
+    expect(checked).toBeGreaterThan(50);
   });
 });
 
@@ -507,14 +621,16 @@ describe('facing', () => {
           const me = m.pos[k];
           const speed = Math.hypot(m.vel[k].x, m.vel[k].y);
           if (a.kind === 'fromPlayer' && a.style !== 'throw') {
-            if (u > 0.6) note(k === a.from ? 'shooter faces the hoop' : 'everyone watches the shot', degrees(f, angleTo(me, k === a.from ? hoopFor(k) : ball)) < (k === a.from ? 30 : 90));
+            if (u > 0.6 && k === a.from && a.style === 'hook') note('hook shooter is side-on to the rim', Math.abs(degrees(f, angleTo(me, hoopFor(k))) - 90) < 30);
+            else if (u > 0.6) note(k === a.from ? 'shooter faces the hoop' : 'everyone watches the shot', degrees(f, angleTo(me, k === a.from ? hoopFor(k) : ball)) < (k === a.from ? 30 : 90));
           } else if (a.kind === 'pass') {
             if (u > 0.5 && k === a.from) note('passer faces the receiver', degrees(f, angleTo(me, m.pos[a.to])) < 45);
             if (u > 0.5 && k === a.to) note('receiver faces the ball', degrees(f, angleTo(me, ball)) < 60);
           } else if (a.kind === 'held' && holder && u > 0.5) {
+            if (k === holder && scene.posting === k) note('post player has his back to the basket', degrees(f, angleTo(me, hoopFor(k))) > 150);
             const sameTeam = k.slice(0, 2) === holder.slice(0, 2);
-            if (k === holder && speed > 3.5 && !turningToAct) note('handler faces the way they go', degrees(f, Math.atan2(m.vel[k].y, m.vel[k].x)) < 45);
-            if (k === holder && speed < 0.5 && !turningToAct) note('standing handler faces the basket', degrees(f, angleTo(me, hoopFor(k))) < 45);
+            if (k === holder && speed > 3.5 && !turningToAct && scene.posting !== k) note('handler faces the way they go', degrees(f, Math.atan2(m.vel[k].y, m.vel[k].x)) < 45);
+            if (k === holder && speed < 0.5 && !turningToAct && scene.posting !== k) note('standing handler faces the basket', degrees(f, angleTo(me, hoopFor(k))) < 45);
             if (k !== holder && sameTeam && speed < 1) note('off-ball attackers face the ball', degrees(f, angleTo(me, ball)) < 60);
             if (!sameTeam && apart(me, m.pos[holder]) < 1.5) note('on-ball defender never turns their back', degrees(f, angleTo(me, m.pos[holder])) < 90);
             const man = script.guards[k];
@@ -530,7 +646,7 @@ describe('facing', () => {
     const { tally, fastestTurn } = audit('man');
     expect(fastestTurn).toBeLessThanOrEqual(Math.PI * 2 + 0.001);
     const rates = Object.fromEntries(Object.entries(tally).map(([rule, { ok, all }]) => [rule, ok / all]));
-    for (const rule of ['shooter faces the hoop', 'passer faces the receiver', 'receiver faces the ball', 'handler faces the way they go', 'standing handler faces the basket', 'off-ball attackers face the ball', 'on-ball defender never turns their back', 'off-ball defenders see man and ball', 'everyone watches the shot']) {
+    for (const rule of ['hook shooter is side-on to the rim', 'post player has his back to the basket', 'shooter faces the hoop', 'passer faces the receiver', 'receiver faces the ball', 'handler faces the way they go', 'standing handler faces the basket', 'off-ball attackers face the ball', 'on-ball defender never turns their back', 'off-ball defenders see man and ball', 'everyone watches the shot']) {
       expect(tally[rule]?.all ?? 0, rule).toBeGreaterThan(20);
       expect(rates[rule], rule).toBeGreaterThan(0.9);
     }
@@ -703,7 +819,8 @@ describe('bodies', () => {
         const total = durations.reduce((a, b) => a + b, 0);
         let lastBeat = -1;
         let free = 0;
-        for (let t = 0; t < total; t += 1 / 30) {
+        // One step past the end, so a beat shorter than a step is still reached.
+        for (let t = 0; t < total + 1 / 30; t += 1 / 30) {
           const { index } = beatAt(script, durations, t);
           const beat = script.beats[index];
           // Whoever just inbounded the ball gets a moment to step back on court.
@@ -767,13 +884,13 @@ describe('playback', () => {
 
   it('fast-forward shortens bring-up and set-up but never the action, and only when routine', () => {
     const m = live();
-    while (!m.isFastForwarding()) m.tick(1 / 60);
-    const inner = m as unknown as { durations: number[]; script: Script };
+    const inner = m as unknown as { durations: number[]; script: Script | null; skipping: boolean };
+    while (!m.isFastForwarding() || inner.skipping || !inner.script) m.tick(1 / 60);
     const before = [...inner.durations];
-    m.toggleFastForward();
+    m.toggleHighlights();
     expect(m.isFastForwarding()).toBe(false);
     inner.durations.forEach((d, i) => {
-      if (inner.script.beats[i].phase === 'play') expect(d).toBeCloseTo(before[i]);
+      if (inner.script!.beats[i].phase === 'play') expect(d).toBeCloseTo(before[i]);
       else expect(d).toBeGreaterThan(before[i]);
     });
   });

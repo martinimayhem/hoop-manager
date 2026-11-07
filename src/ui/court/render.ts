@@ -2,6 +2,7 @@
 // knows nothing about the screen; this module alone projects and paints the court, players, hoops and ball. Everything is vector,
 // drawn in CANVAS_W x CANVAS_H logical units and scaled to the canvas's real pixel size.
 
+import type { Fx } from '../match/controller';
 import { COURT, HOOP_X, MID_Y, RIM_HEIGHT, type Frame } from './animation';
 
 export const CANVAS_W = 1000;
@@ -28,6 +29,48 @@ const THREE_RADIUS = 6.75;
 const THREE_CORNER_Y = 0.9;
 const THREE_CORNER_DEPTH = 2.99;
 const NO_CHARGE_RADIUS = 1.25;
+
+/** Stands on the two far sides of the court; the camera looks over the near ones. */
+const STAND_ROWS = 9;
+const STAND_FRONT = 1.7;
+const ROW_DEPTH = 0.85;
+const ROW_RISE = 0.42;
+const SEAT_GAP = 0.55;
+
+/** The net hangs this far below the rim (screen pixels) and narrows to this share of its width. */
+const NET_DROP = 13;
+const NET_TAPER = 0.62;
+
+/** How a net is moving: when the ball went through (or clipped the rim), how hard, and which way. */
+interface NetKick {
+  at: number;
+  strength: number;
+  swayX: number;
+  swayY: number;
+}
+
+interface Fan {
+  x: number;
+  y: number;
+  z: number;
+  team: 0 | 1;
+  shirt: string;
+  skin: string;
+  hair: string;
+  /** How readily they get up: the keen ones go first. */
+  keen: number;
+  phase: number;
+  /** Further back is a little darker, away from the court lights. */
+  shade: number;
+}
+
+/** What one team's fans are doing, fading from `level` since `at`. */
+interface Mood {
+  level: number;
+  at: number;
+  decay: number;
+  mood: 'cheer' | 'boo';
+}
 
 export interface DotInfo {
   label: string;
@@ -116,6 +159,13 @@ export class CourtRenderer {
   private frameSeconds = 1 / 60;
   /** The floor never changes, so it is painted once per canvas size. */
   private floor: HTMLCanvasElement | null = null;
+  private nets: [NetKick | null, NetKick | null] = [null, null];
+  private lastBall: { x: number; y: number; z: number } | null = null;
+  private fans: Fan[] | null = null;
+  private moods: [Mood, Mood] = [
+    { level: 0, at: 0, decay: 1, mood: 'cheer' },
+    { level: 0, at: 0, decay: 1, mood: 'cheer' },
+  ];
 
   constructor(private colours: [TeamColours, TeamColours]) {}
 
@@ -125,6 +175,8 @@ export class CourtRenderer {
     if (now > this.lastNow) this.frameSeconds = Math.min(0.1, now - this.lastNow);
     this.lastNow = now;
     ctx.drawImage(this.floorLayer(ctx.canvas.width, ctx.canvas.height), 0, 0, CANVAS_W, CANVAS_H);
+    this.drawFans(ctx, now);
+    this.updateNets(frame?.ball ?? null, now);
 
     // Depth is distance towards the camera: nearer the bottom of the screen means larger y - x.
     type Item = { depth: number; draw: () => void };
@@ -134,8 +186,8 @@ export class CourtRenderer {
       const hoopX = end === 0 ? COURT.w - HOOP_X : HOOP_X;
       items.push({ depth: at(POST_INSET), draw: () => this.drawPost(ctx, end) });
       items.push({ depth: at(BOARD_INSET), draw: () => this.drawBoard(ctx, end) });
-      items.push({ depth: MID_Y - hoopX - 0.18, draw: () => this.drawRim(ctx, hoopX, Math.PI, Math.PI * 2) });
-      items.push({ depth: MID_Y - hoopX + 0.18, draw: () => this.drawRim(ctx, hoopX, 0, Math.PI) });
+      items.push({ depth: MID_Y - hoopX - 0.18, draw: () => this.drawRim(ctx, end, Math.PI, Math.PI * 2, now) });
+      items.push({ depth: MID_Y - hoopX + 0.18, draw: () => this.drawRim(ctx, end, 0, Math.PI, now) });
     }
 
     if (frame) {
@@ -147,7 +199,7 @@ export class CourtRenderer {
         this.drawMarker(ctx, p.x, p.y, lift, info.hasBall);
         items.push({
           depth: p.y - p.x,
-          draw: () => this.drawPlayer(ctx, key, p.x, p.y, info, ball, lift, frame.shooter === key, frame.facing?.[key] ?? FACING_CAMERA, frame.reach?.[key] ?? 0),
+          draw: () => this.drawPlayer(ctx, key, p.x, p.y, info, ball, lift, frame.shooter === key, frame.facing?.[key] ?? FACING_CAMERA, frame.reach?.[key] ?? 0, frame.look?.[key], frame.stance?.[key] ?? 0),
         });
       }
       this.drawBallShadow(ctx, ball.x, ball.y, ball.z);
@@ -164,6 +216,7 @@ export class CourtRenderer {
     const ctx = layer.getContext('2d')!;
     ctx.setTransform(width / CANVAS_W, 0, 0, height / CANVAS_H, 0, 0);
     this.drawBackdrop(ctx);
+    this.drawStands(ctx);
     this.drawFloor(ctx);
     this.floor = layer;
     return layer;
@@ -331,42 +384,99 @@ export class CourtRenderer {
     limb(ctx, [[a.x, a.y], [b.x, b.y]], 2.5, '#e4472f');
   }
 
+  /** Starts a net moving when the ball drops through its rim, or a smaller shiver when it hits the iron. */
+  private updateNets(ball: { x: number; y: number; z: number } | null, now: number): void {
+    const prev = this.lastBall;
+    this.lastBall = ball ? { ...ball } : null;
+    if (!ball || !prev) return;
+    for (const end of [0, 1] as const) {
+      const last = this.nets[end];
+      if (last && now - last.at < 0.6) continue;
+      const hoopX = end === 0 ? COURT.w - HOOP_X : HOOP_X;
+      const off = Math.hypot(ball.x - hoopX, ball.y - MID_Y);
+      let strength = 0;
+      if (ball.z < prev.z && off < RIM_RADIUS * 0.9 && ball.z < RIM_HEIGHT && ball.z > RIM_HEIGHT - 0.5) strength = 1;
+      else if (Math.abs(off - RIM_RADIUS) < 0.3 && Math.abs(ball.z - RIM_HEIGHT) < 0.25) strength = 0.35;
+      if (strength === 0) continue;
+      // The net swings the way the ball was travelling across the floor.
+      const a = project(prev.x, prev.y);
+      const b = project(ball.x, ball.y);
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      this.nets[end] = { at: now, strength, swayX: (b.x - a.x) / len, swayY: (b.y - a.y) / len };
+    }
+  }
+
+  /** The net's shape at depth `f` (0 at the rim, 1 at the bottom): drop and offset in pixels, width as a share of the rim. */
+  private netAt(end: 0 | 1, f: number, now: number): { drop: number; width: number; dx: number; dy: number } {
+    let drop = NET_DROP * f;
+    let width = 1 - (1 - NET_TAPER) * f;
+    let dx = 0;
+    let dy = 0;
+    const kick = this.nets[end];
+    const e = kick ? now - kick.at : Infinity;
+    if (kick && e >= 0 && e < 1.6) {
+      const s = kick.strength;
+      // The ball pushes the mesh out as it passes down through it...
+      width *= 1 + s * 0.32 * Math.exp(-((f - e / 0.22) ** 2) / 0.03);
+      // ...stretching it down; then it springs back and settles.
+      const spring = e < 0.18 ? e / 0.18 : Math.exp(-(e - 0.18) / 0.35) * Math.cos(Math.PI * 2 * 3 * (e - 0.18));
+      drop += f * s * 9 * spring;
+      const swing = f * s * 5 * Math.exp(-e / 0.5) * Math.sin(Math.PI * 2 * 2.2 * e);
+      dx = kick.swayX * swing;
+      dy = kick.swayY * swing * 0.5;
+    }
+    return { drop, width, dx, dy };
+  }
+
   /** One half of the rim and net: drawn in two passes so the ball can drop between them. */
-  private drawRim(ctx: CanvasRenderingContext2D, hoopX: number, from: number, to: number): void {
+  private drawRim(ctx: CanvasRenderingContext2D, end: 0 | 1, from: number, to: number, now: number): void {
+    const hoopX = end === 0 ? COURT.w - HOOP_X : HOOP_X;
     const c = project(hoopX, MID_Y, RIM_HEIGHT);
     const rx = RIM_RADIUS * FLOOR_RX;
     const ry = RIM_RADIUS * FLOOR_RY;
-    const netDrop = 13;
-    const taper = 0.62;
-    const top = (a: number): Floor => [c.x + Math.cos(a) * rx, c.y + Math.sin(a) * ry];
-    const bottom = (a: number): Floor => [c.x + Math.cos(a) * rx * taper, c.y + netDrop + Math.sin(a) * ry * taper];
-    const strands = 8;
-    const step = (to - from) / strands;
+    // A ball off the iron makes the rim shiver for a moment.
+    const kick = this.nets[end];
+    const e = kick ? now - kick.at : Infinity;
+    const shake = kick && e < 0.4 ? kick.strength * 1.6 * Math.exp(-e / 0.12) * Math.sin(Math.PI * 2 * 14 * e) : 0;
+    const point = (f: number, a: number): Floor => {
+      const n = this.netAt(end, f, now);
+      return [c.x + n.dx + Math.cos(a) * rx * n.width, c.y + shake + n.drop + n.dy + Math.sin(a) * ry * n.width];
+    };
+    // A diamond mesh: each row's knots sit between the knots of the row above.
+    const rows = 4;
+    const around = 16;
+    const step = (Math.PI * 2) / around;
+    const inHalf = (a: number) => {
+      const t = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      return from === 0 ? t < Math.PI : t >= Math.PI;
+    };
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.lineWidth = 0.8;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    for (let i = 0; i <= strands; i++) {
-      const a = from + i * step;
-      const [tx, ty] = top(a);
-      if (i < strands) {
-        const [bx, by] = bottom(a + step);
-        ctx.moveTo(tx, ty);
-        ctx.lineTo(bx, by);
-      }
-      if (i > 0) {
-        const [bx, by] = bottom(a - step);
-        ctx.moveTo(tx, ty);
-        ctx.lineTo(bx, by);
+    for (let row = 0; row < rows; row++) {
+      for (let i = 0; i < around; i++) {
+        const a = i * step + (row % 2) * (step / 2);
+        if (!inHalf(a)) continue;
+        const [x0, y0] = point(row / rows, a);
+        for (const side of [-1, 1]) {
+          const [x1, y1] = point((row + 1) / rows, a + (side * step) / 2);
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+        }
       }
     }
     ctx.stroke();
     ctx.beginPath();
-    ctx.ellipse(c.x, c.y + netDrop, rx * taper, ry * taper, 0, from, to);
+    for (let i = 0; i <= 24; i++) {
+      const [x, y] = point(1, from + ((to - from) * i) / 24);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.ellipse(c.x, c.y, rx, ry, 0, from, to);
+    ctx.ellipse(c.x, c.y + shake, rx, ry, 0, from, to);
     ctx.lineCap = 'butt';
     ctx.strokeStyle = '#8f2a1a';
     ctx.lineWidth = 4.2;
@@ -374,6 +484,201 @@ export class CourtRenderer {
     ctx.strokeStyle = '#ff5a3c';
     ctx.lineWidth = 2.6;
     ctx.stroke();
+  }
+
+  // ---- The arena -----------------------------------------------------------
+
+  /**
+   * The far stands (sideline and baseline), the courtside boards, the benches and the scorer's
+   * table. Static, so they are painted once into the floor layer; the fans are drawn live on top.
+   */
+  private drawStands(ctx: CanvasRenderingContext2D): void {
+    const [home, away] = this.colours;
+    // Back rows first: the rows in front, lower down, overlap them.
+    for (let k = STAND_ROWS - 1; k >= 0; k--) {
+      const x0 = COURT.w + STAND_FRONT + k * ROW_DEPTH;
+      const tone = 0.85 + (1 - k / STAND_ROWS) * 0.25;
+      this.box(ctx, x0, x0 + ROW_DEPTH, -STAND_FRONT, COURT.h + 3, 0, ROW_RISE * (k + 1), darken('#2a3f48', tone), darken('#22343c', tone), darken('#33505b', tone));
+    }
+    for (let k = STAND_ROWS - 1; k >= 0; k--) {
+      const y1 = -STAND_FRONT - k * ROW_DEPTH;
+      const tone = 0.85 + (1 - k / STAND_ROWS) * 0.25;
+      this.box(ctx, -3, COURT.w + STAND_FRONT, y1 - ROW_DEPTH, y1, 0, ROW_RISE * (k + 1), darken('#2a3f48', tone), darken('#22343c', tone), darken('#33505b', tone));
+    }
+
+    // Courtside boards, in front of the stands: team colours and the game's name.
+    this.box(ctx, -1.5, COURT.w + 1.05, -STAND_FRONT + 0.05, -STAND_FRONT + 0.2, 0, 0.75, '#0c1418', '#121c22', '#1b2a31');
+    this.box(ctx, COURT.w + 0.9, COURT.w + 1.05, -STAND_FRONT + 0.2, COURT.h + 1.2, 0, 0.75, '#0c1418', '#121c22', '#1b2a31');
+    this.boardFace(ctx, 'side', -1.5, COURT.w + 0.9, -STAND_FRONT + 0.2, [home.fill, '#0e1a20', away.fill, '#0e1a20']);
+    this.boardFace(ctx, 'end', -STAND_FRONT + 0.2, COURT.h + 1.2, COURT.w + 0.9, [away.fill, '#0e1a20', home.fill, '#0e1a20']);
+
+    // Benches either side of the scorer's table, in each team's colour.
+    const table = { x0: COURT.w / 2 - 1.7, x1: COURT.w / 2 + 1.7 };
+    this.box(ctx, table.x0, table.x1, -1.25, -0.45, 0, 0.78, '#1a2126', '#262f35', '#36414a');
+    this.line(ctx, [[table.x0, -0.45], [table.x1, -0.45]], '#ffb74d', 0.8);
+    for (const [from, colour] of [
+      [3.6, home.fill],
+      [COURT.w / 2 + 2.6, away.fill],
+    ] as const) {
+      for (let x = from; x < from + 7; x += 0.62) this.box(ctx, x, x + 0.46, -1.15, -0.65, 0, 0.46, darken(colour, 0.55), darken(colour, 0.75), colour);
+    }
+  }
+
+  /** Coloured panels and the game's name, painted onto the face of a courtside board. */
+  private boardFace(ctx: CanvasRenderingContext2D, along: 'side' | 'end', from: number, to: number, at: number, colours: string[]): void {
+    const panel = 3.2;
+    const top = 0.7;
+    const bottom = 0.08;
+    const corner = (u: number, z: number) => (along === 'side' ? project(u, at, z) : project(at, u, z));
+    let i = 0;
+    for (let u = from; u < to; u += panel, i++) {
+      const u1 = Math.min(to, u + panel);
+      const pts = [corner(u, top), corner(u1, top), corner(u1, bottom), corner(u, bottom)];
+      ctx.beginPath();
+      pts.forEach((p, j) => (j === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.fillStyle = colours[i % colours.length];
+      ctx.fill();
+      if (i % 2 === 1) {
+        // Lettering on the dark panels, laid along the board in its own plane.
+        const o = corner(u + 0.25, top - 0.13);
+        const ax = corner(u + 1.25, top - 0.13);
+        const down = corner(u + 0.25, top - 1.13);
+        ctx.save();
+        ctx.setTransform(ctx.getTransform().multiply(new DOMMatrix([(ax.x - o.x) / 100, (ax.y - o.y) / 100, (down.x - o.x) / 100, (down.y - o.y) / 100, o.x, o.y])));
+        ctx.fillStyle = '#e8f6f3';
+        ctx.font = '800 38px system-ui, sans-serif';
+        ctx.textBaseline = 'top';
+        ctx.fillText('HOOP MANAGER', 0, 0, (panel - 0.5) * 100);
+        ctx.restore();
+      }
+    }
+  }
+
+  /** Everyone in the stands, made once: mostly home fans, with a block of visitors in one corner. */
+  private fanList(): Fan[] {
+    if (this.fans) return this.fans;
+    let n = 0;
+    const rnd = () => (hash(`fan:${n++}`) % 10000) / 10000;
+    const fans: Fan[] = [];
+    const seat = (x: number, y: number, k: number, team: 0 | 1) => {
+      if (rnd() < 0.1) return; // an empty seat here and there
+      const own = this.colours[team].fill;
+      const r = rnd();
+      const shirt = r < 0.55 ? own : r < 0.7 ? '#f2f2ee' : r < 0.82 ? '#20262b' : r < 0.92 ? darken(own, 0.7) : '#7b8a93';
+      fans.push({
+        x: x + (rnd() - 0.5) * 0.12,
+        y,
+        z: ROW_RISE * (k + 1),
+        team,
+        shirt,
+        skin: SKIN[Math.floor(rnd() * SKIN.length)],
+        hair: HAIR[Math.floor(rnd() * HAIR.length)],
+        keen: rnd(),
+        phase: rnd() * Math.PI * 2,
+        shade: 1 - (k / STAND_ROWS) * 0.3,
+      });
+    };
+    for (let k = 0; k < STAND_ROWS; k++) {
+      const y = -STAND_FRONT - (k + 0.5) * ROW_DEPTH;
+      for (let x = -2.6; x < COURT.w + STAND_FRONT - 0.2; x += SEAT_GAP) seat(x, y, k, 0);
+      const x = COURT.w + STAND_FRONT + (k + 0.5) * ROW_DEPTH;
+      for (let yy = -STAND_FRONT + 0.3; yy < COURT.h + 2.8; yy += SEAT_GAP) seat(x, yy, k, yy > COURT.h * 0.6 ? 1 : 0);
+    }
+    // Furthest from the camera first.
+    this.fans = fans.sort((a, b) => a.y - a.x - (b.y - b.x));
+    return this.fans;
+  }
+
+  /** How worked up one team's fans are right now. */
+  private moodOf(team: 0 | 1, now: number): { level: number; mood: 'cheer' | 'boo' } {
+    const m = this.moods[team];
+    return { level: m.level * Math.exp(-Math.max(0, now - m.at) / m.decay), mood: m.mood };
+  }
+
+  /** The fans react to what happens: cheering their team, booing a call against it. */
+  react(fx: Fx[], now: number): void {
+    const set = (team: 0 | 1, level: number, decay: number, mood: Mood['mood']) => {
+      const current = this.moodOf(team, now);
+      if (level >= current.level || mood !== current.mood) this.moods[team] = { level, at: now, decay, mood };
+    };
+    for (const f of fx) {
+      const side = f.side;
+      const other = side === 0 ? 1 : 0;
+      switch (f.kind) {
+        case 'swish':
+          if (side !== undefined) set(side, f.small ? 0.35 : 0.7, 1.4, 'cheer');
+          break;
+        case 'three':
+        case 'dunk':
+          if (side !== undefined) set(side, 1, 2.2, 'cheer');
+          break;
+        case 'clank':
+          if (side !== undefined) set(other, 0.3, 1, 'cheer');
+          break;
+        case 'block':
+        case 'steal':
+          if (side !== undefined) set(other, 0.8, 1.6, 'cheer');
+          break;
+        case 'foul':
+          if (side !== undefined) set(side, 0.9, 2.5, 'boo');
+          break;
+        case 'violation':
+          if (side !== undefined) set(other, 0.45, 1.2, 'cheer');
+          break;
+        case 'quarterEnd':
+          set(0, 0.6, 2.5, 'cheer');
+          set(1, 0.6, 2.5, 'cheer');
+          break;
+        case 'gameEnd':
+          if (side !== undefined) {
+            set(side, 1, 8, 'cheer');
+            set(other, 0.6, 4, 'boo');
+          }
+          break;
+      }
+    }
+  }
+
+  /** The crowd, live: idling, leaping up with arms high for a big play, shaking fists at a bad call. */
+  private drawFans(ctx: CanvasRenderingContext2D, now: number): void {
+    const moods = [this.moodOf(0, now), this.moodOf(1, now)];
+    for (const fan of this.fanList()) {
+      const { level, mood } = moods[fan.team];
+      // The keen ones react to anything; the rest only to big moments.
+      const reacting = level > 0.18 + (1 - fan.keen) * 0.62;
+      let lift = Math.sin(now * 1.3 + fan.phase) * 0.35;
+      let sway = 0;
+      if (reacting && mood === 'cheer') lift = 2 + level * 4 * Math.abs(Math.sin(now * Math.PI * 2 * 1.7 + fan.phase));
+      if (reacting && mood === 'boo') sway = Math.sin(now * Math.PI * 2 * 2.6 + fan.phase) * 1.3 * level;
+      const p = project(fan.x, fan.y, fan.z);
+      const x = p.x + sway;
+      const y = p.y - lift;
+      ctx.globalAlpha = fan.shade;
+      if (reacting) {
+        // Both arms up to cheer; one fist up to protest.
+        ctx.strokeStyle = fan.skin;
+        ctx.lineWidth = 1.7;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x - 3, y - 8);
+        ctx.lineTo(x - (mood === 'cheer' ? 5 : 3.5), y - (mood === 'cheer' ? 16 : 9));
+        ctx.moveTo(x + 3, y - 8);
+        ctx.lineTo(x + 5, y - (mood === 'cheer' ? 16 : 15 + Math.sin(now * 12 + fan.phase) * 1.5));
+        ctx.stroke();
+      }
+      ctx.fillStyle = fan.shirt;
+      ctx.fillRect(x - 3.6, y - 9, 7.2, 8);
+      ctx.fillStyle = fan.skin;
+      ctx.beginPath();
+      ctx.arc(x, y - 12, 2.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = fan.hair;
+      ctx.beginPath();
+      ctx.arc(x, y - 12.6, 2.7, Math.PI, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** Floor marks stay on the floor when a player jumps, which is what makes the jump read. */
@@ -393,7 +698,7 @@ export class CourtRenderer {
     }
   }
 
-  private drawPlayer(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, info: DotInfo, ball: Frame['ball'], lift: number, shooting: boolean, facing: number, handsUp: number): void {
+  private drawPlayer(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, info: DotInfo, ball: Frame['ball'], lift: number, shooting: boolean, facing: number, handsUp: number, look?: number, stance = 0): void {
     const foot = project(x, y, lift);
     const prev = this.last[key];
     const moveX = prev ? x - prev.x : 0;
@@ -427,6 +732,8 @@ export class CourtRenderer {
     const k = spriteScale(info.heightM);
     /** Whichever side of the body is further from the camera comes first. */
     const farFirst: (1 | -1)[] = side >= 0 ? [-1, 1] : [1, -1];
+    // A defender in his stance: knees bent, hips down, feet wide, bouncing a little on his toes.
+    const crouch = stance * (3 + Math.sin(this.lastNow * Math.PI * 2 * 2.4 + (hash(key) % 7)) * 0.5);
 
     ctx.save();
     ctx.translate(foot.x, foot.y);
@@ -440,11 +747,11 @@ export class CourtRenderer {
       const s = swing * leg;
       const tuck = airborne && leg === 1 ? 5 : 0;
       const stepF = along * s * 6;
-      const stepR = leg * (3.6 + Math.abs(Math.sin(this.stride[key])) * pace * sideways * 3);
+      const stepR = leg * (3.6 + stance * 2 + Math.abs(Math.sin(this.stride[key])) * pace * sideways * 3);
       const stepU = Math.max(0, s) * 3 * (1 - sideways) + tuck;
-      const knee = at(1 + stepF * 0.5, leg * 3.8, 12 + tuck * 0.5);
+      const knee = at(1 + stepF * 0.5 + stance * 2, leg * (3.8 + stance * 1.5), 12 + tuck * 0.5 - crouch * 0.3);
       const ankle = at(stepF, stepR, stepU + 3);
-      limb(ctx, [at(0, leg * 3.4, 23), knee, ankle], 4.4, skin);
+      limb(ctx, [at(0, leg * 3.4, 23 - crouch), knee, ankle], 4.4, skin);
       limb(ctx, [[(knee[0] + ankle[0]) / 2, (knee[1] + ankle[1]) / 2], ankle], 4.2, '#f4f4ee');
       const [toeX, toeY] = at(stepF + 1.2, stepR, stepU + 1.3);
       ctx.fillStyle = '#ffffff';
@@ -461,6 +768,9 @@ export class CourtRenderer {
       ctx.lineTo(toeX + Math.cos(shoeTurn) * shoeLength * 0.6, toeY + Math.sin(shoeTurn) * shoeLength * 0.6 - 0.4);
       ctx.stroke();
     }
+
+    // Everything above the legs sits lower in a stance.
+    ctx.translate(0, crouch);
 
     // Shorts.
     ctx.fillStyle = darken(team.fill, 0.72);
@@ -504,6 +814,13 @@ export class CourtRenderer {
         const s = -swing * arm * along;
         hand = at(s * 5, arm * 10.5, 20 + Math.abs(s) * 2);
         elbow = at(s * 2, arm * 10.8, 28);
+        if (stance > 0) {
+          // Active hands: out wide at waist height, ready to deflect.
+          const activeHand = at(4, arm * 14, 28);
+          const activeElbow = at(2, arm * 12, 31);
+          hand = [hand[0] + (activeHand[0] - hand[0]) * stance, hand[1] + (activeHand[1] - hand[1]) * stance];
+          elbow = [elbow[0] + (activeElbow[0] - elbow[0]) * stance, elbow[1] + (activeElbow[1] - elbow[1]) * stance];
+        }
       }
       if (handsUp > 0 && !shooting) {
         // Both hands go up towards the ball: always above the head, leaning its way but never sideways.
@@ -518,9 +835,12 @@ export class CourtRenderer {
       limb(ctx, [start, elbow, hand], 3.8, skin);
     };
 
-    // In profile the far arm passes behind the body.
-    const hiddenArm: 1 | -1 | null = Math.abs(side) > 0.35 ? farFirst[0] : null;
-    if (hiddenArm) drawArm(hiddenArm);
+    // Arms behind the body are drawn before it: the far arm in profile, and the dribbling arm
+    // whenever the ball is on the far side of the body from the camera.
+    const behind = new Set<1 | -1>();
+    if (Math.abs(side) > 0.35) behind.add(farFirst[0]);
+    if (info.hasBall && !shooting && ball.y - ball.x < y - x - 0.05) behind.add(ballArm);
+    for (const arm of farFirst) if (behind.has(arm)) drawArm(arm);
 
     // Jersey, shaded from the light side.
     const chest = wide(8.4);
@@ -545,7 +865,7 @@ export class CourtRenderer {
     ctx.stroke();
     // Arms reaching up pass in front of the face; otherwise the head sits over the shoulders.
     const armsRaised = handsUp > 0.5;
-    if (!armsRaised) for (const arm of farFirst) if (arm !== hiddenArm) drawArm(arm);
+    if (!armsRaised) for (const arm of farFirst) if (!behind.has(arm)) drawArm(arm);
 
     // The number narrows as the chest turns away, but stays readable side-on, even over an arm.
     const front = toward >= 0;
@@ -559,8 +879,10 @@ export class CourtRenderer {
     ctx.fillText(info.label, 0, 0, 13);
     ctx.restore();
 
-    this.drawHead(ctx, key, skin, team.fill, side, toward);
-    if (armsRaised) for (const arm of farFirst) if (arm !== hiddenArm) drawArm(arm);
+    // The head turns towards the ball on its own; the body follows more slowly.
+    const head = look === undefined ? { side, toward } : bodyView(look);
+    this.drawHead(ctx, key, skin, team.fill, head.side, head.toward);
+    if (armsRaised) for (const arm of farFirst) if (!behind.has(arm)) drawArm(arm);
     ctx.restore();
   }
 

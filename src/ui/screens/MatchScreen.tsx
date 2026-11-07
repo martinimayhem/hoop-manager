@@ -13,7 +13,7 @@ import { PlanEditor } from '../components/PlanEditor';
 import { playerKey } from '../court/animation';
 import { CANVAS_H, CANVAS_W, CourtRenderer, type DotInfo } from '../court/render';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
-import { LiveMatch, type TeamView } from '../match/controller';
+import { HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
 
 const TIMEOUT_KEYS = ['q', 'p'] as const;
 
@@ -46,6 +46,8 @@ export function MatchScreen({
   const [showFeed, setShowFeed] = useState(false);
   const [seenTip, setSeenTip] = useState(-1);
   const [muted, setMuted] = useState(sound.muted);
+  /** Paused because the player switched away; they continue from the overlay. */
+  const [away, setAway] = useState(false);
 
   // Animation loop: tick the controller, draw the court, re-render React when something changed.
   useEffect(() => {
@@ -71,10 +73,22 @@ export function MatchScreen({
     window.addEventListener('resize', syncCanvasSize);
     syncCanvasSize();
     const loop = (now: number) => {
+      // Next frame first: one frame that fails must never stop the game for good.
+      raf = requestAnimationFrame(loop);
+      try {
+        frame(now);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    const frame = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       m.tick(dt);
-      sound.play(m.drainFx());
+      const fx = m.drainFx();
+      sound.play(fx);
+      sound.setCrowd(m.crowdLevel());
+      rendererRef.current!.react(fx, now / 1000);
       const ctx = canvasRef.current?.getContext('2d');
       if (ctx) {
         const holder = m.holderKey();
@@ -92,7 +106,6 @@ export function MatchScreen({
         seen = m.version;
         rerender();
       }
-      raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => {
@@ -102,6 +115,42 @@ export function MatchScreen({
       sound.stop();
     };
   }, [m, sound]);
+
+  // Switching away pauses the game and silences the arena; coming back brings the sound back, and
+  // the game waits on the overlay until the player continues. Browsers barely run a page in the
+  // background, so carrying on would leave the game crawling rather than playing.
+  useEffect(() => {
+    const leave = () => {
+      if (m.phase === 'playing' && !m.paused) {
+        m.togglePause();
+        setAway(true);
+      }
+      sound.suspend();
+    };
+    const back = () => {
+      if (!document.hidden) sound.resume();
+    };
+    const onVisibility = () => (document.hidden ? leave() : back());
+    window.addEventListener('blur', leave);
+    window.addEventListener('focus', back);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('blur', leave);
+      window.removeEventListener('focus', back);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [m, sound]);
+
+  // However the game was resumed (overlay, button or Space), the overlay goes.
+  useEffect(() => {
+    if (away && !m.paused) setAway(false);
+  });
+
+  const continueGame = () => {
+    if (m.paused) m.togglePause();
+    setAway(false);
+    sound.resume();
+  };
 
   // Keyboard: Q / P timeouts, space pauses.
   useEffect(() => {
@@ -135,6 +184,17 @@ export function MatchScreen({
       <TeamPanel m={m} side={0} view={m.view[0]} human={controllers[0] === 'human'} />
       <div className="court-wrap">
         <div className="court-box">
+          {away && m.paused && (
+            <div className="away-pause">
+              <div className="away-card">
+                <div className="away-title">Paused</div>
+                <div className="muted">The game waits while you are away.</div>
+                <button className="primary" onClick={continueGame} autoFocus>
+                  ▶ Continue <kbd>Space</kbd>
+                </button>
+              </div>
+            </div>
+          )}
           <div className="ff-badge" ref={badgeRef} hidden>
             »
           </div>
@@ -197,11 +257,11 @@ export function MatchScreen({
             Fast
           </button>
           <button
-            className={`small ${m.fastForward ? 'active' : ''}`}
-            title="Play bring-up and set-up quickly on routine possessions. Close finishes always play in full."
-            onClick={() => m.toggleFastForward()}
+            className={`small ${m.highlights ? 'active' : ''}`}
+            title={`Show only the ${HIGHLIGHTS_PER_QUARTER} best plays of each quarter; the rest is played out instantly. Clutch moments are always shown.`}
+            onClick={() => m.toggleHighlights()}
           >
-            » Skip routine
+            ★ Highlights
           </button>
           <button
             className="small"
