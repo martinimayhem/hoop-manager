@@ -14,7 +14,8 @@ import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
 import { COURT, beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Restart, type Script } from '../court/animation';
-import { Motion, facingScene } from '../court/motion';
+import { GATHER_STEPS_M, Motion, facingScene } from '../court/motion';
+import { clockString } from '../labels';
 import { excitement } from './highlights';
 
 export type Speed = 'normal' | 'fast';
@@ -33,9 +34,27 @@ const SPEEDS: Record<Speed, { div: number; min: number; max: number }> = {
 const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
 /** In highlights mode, how many plays of each quarter are shown; the rest are played out instantly. */
 export const HIGHLIGHTS_PER_QUARTER = 5;
+/** Game seconds per second of play while the ball is brought up, at Normal speed: about real time. */
+const BRING_UP_CLOCK_RATE = 1.1;
+/** How long a result line stays up before a set-up line may replace it (real seconds). */
+const CAPTION_READ_S = 1.1;
 /** The last two minutes of a game this close is never routine. */
 const LATE_SECONDS = 120;
 const LATE_MARGIN = 8;
+
+/** A player who took more than his two steps with the ball in his hands, as the debug check saw it. */
+export interface TravelReport {
+  player: string;
+  number: number;
+  /** How far from where he gathered the ball (metres). */
+  distance: number;
+  quarter: number;
+  clock: number;
+  /** How he came by the ball: a catch, a rebound, a steal, an inbound, the end of a drive. */
+  how: string;
+  /** What the commentary was saying at the time. */
+  event: string;
+}
 
 export interface FeedItem {
   id: number;
@@ -131,12 +150,22 @@ export class LiveMatch {
   private slowMo = false;
   private routine = false;
   private captionBorn = 0;
+  /** A set-up line that came while a result was still being read. */
+  private heldCaption: Caption | null = null;
   private startedBeat = -1;
 
   private script: Script | null = null;
   private scriptEvents: TimedEvent[] = [];
   private durations: number[] = [];
   private beatEnds: number[] = [];
+  /** Debugging: log every time a player holding the ball strays further than his two steps. */
+  debugTravels = false;
+  /** Everything the travelling check has logged, for tests. */
+  readonly travels: TravelReport[] = [];
+  /** The gather point last reported, so each one is logged once. */
+  private travelled: object | null = null;
+  /** The possession the clock was last run down for. */
+  private clockOf: Script | null = null;
   private t = 0;
   private firedBeats = 0;
   private lastFrame: Frame | null = null;
@@ -287,8 +316,9 @@ export class LiveMatch {
     const before = this.s.teams[side].plan;
     setGamePlan(this.s, side, plan);
     const changes = describePlanChange(before, plan);
-    if (changes) this.feedPush({ text: `${this.s.teams[side].team.name}: ${changes}.`, side, kind: 'coach' });
+    // Whatever already happened at this dead ball (a substitution, say) goes in the feed first.
     this.flushEngineEvents();
+    if (changes) this.feedPush({ text: `${this.s.teams[side].team.name}: ${changes}.`, side, kind: 'coach' });
     this.view[side] = this.snapshotTeam(side);
     this.bump();
   }
@@ -313,7 +343,19 @@ export class LiveMatch {
     }
     this.t += dt;
     const sc = this.script;
-    this.clock = sc.clockStart - (sc.clockStart - sc.clockEnd) * this.running();
+    // The clock only ever runs down, whatever the speed is changed to on the way.
+    const clock = sc.clockStart - (sc.clockStart - sc.clockEnd) * this.running();
+    const shown = Math.ceil(this.clock);
+    this.clock = sc === this.clockOf ? Math.min(this.clock, clock) : clock;
+    this.clockOf = sc;
+    // The scoreboard redraws on a change: let it see every second go.
+    if (Math.ceil(this.clock) !== shown) this.bump();
+    // A set-up line held back while a result was being read comes up as soon as it has been.
+    if (this.heldCaption && this.time - this.captionBorn >= CAPTION_READ_S) {
+      const c = this.heldCaption;
+      this.heldCaption = null;
+      this.setCaption(c.text, c.side, c.key, c.kind);
+    }
     while (this.firedBeats < sc.beats.length && this.t >= this.beatEnds[this.firedBeats]) {
       const beat = sc.beats[this.firedBeats];
       for (const i of beat.fire) this.publish(this.scriptEvents[i]);
@@ -338,7 +380,11 @@ export class LiveMatch {
       pressing: beat.pressing,
       ball: this.lastFrame?.ball,
       dead: beat.dead,
+      posting: beat.posting,
+      through: beat.through,
+      action: beat.ball,
     });
+    if (this.debugTravels) this.checkFootwork();
     const ball = this.motion.ball(beat.ball, u, sc.dir);
     this.motion.updateFacing(facingScene(sc, this.durations, index, u, ball, rate * speedScale), dt * rate, speedScale);
     this.motion.updateArms(beat, ball, u, dt * rate, speedScale);
@@ -481,6 +527,7 @@ export class LiveMatch {
         clockEnd: s.clock,
         start: how,
         restart: how === 'none' ? this.restartAfter(start) : undefined,
+        tempo: s.teams[offence].plan.tempo,
         name,
       },
       this.scriptEvents,
@@ -504,12 +551,13 @@ export class LiveMatch {
     if (!this.script) return;
     const cfg = SPEEDS[this.speed];
     const real = Math.min(cfg.max, Math.max(cfg.min, (this.script.clockStart - this.script.clockEnd) / cfg.div)) * (this.slowMo ? 1.8 : 1);
-    const fraction = this.beatEnds.length ? this.t / (this.beatEnds[this.beatEnds.length - 1] || 1) : 0;
     const beats = this.script.beats;
+    // Picks up exactly where it was, in the same beat and as far through it: never back in time.
+    const at = this.durations.length === beats.length ? beatAt(this.script, this.durations, this.t) : { index: 0, u: 0 };
     this.durations = beatDurations(this.script, real, (this.slowMo ? 1.8 : 1) / (this.speed === 'fast' ? 2.1 : 1)).map((d, i) => (this.skips(beats[i]) ? d / FAST_FORWARD[this.speed] : d));
     let acc = 0;
     this.beatEnds = this.durations.map((d) => (acc += d));
-    this.t = fraction * acc;
+    this.t = (at.index > 0 ? this.beatEnds[at.index - 1] : 0) + at.u * this.durations[at.index];
   }
 
   /**
@@ -551,22 +599,65 @@ export class LiveMatch {
     this.endPossession();
   }
 
-  /** How much of the possession's running time has gone: the clock stands still while the ball is dead. */
+  /**
+   * The travelling check: whoever has the ball in his hands, not dribbling, must stay within his
+   * two steps of where he gathered it. Every time one strays further is logged once.
+   */
+  private checkFootwork(): void {
+    const h = this.motion.handle;
+    if (!h || h.mode === 'dribbling' || this.travelled === h.at) return;
+    const p = this.motion.pos[h.key];
+    const distance = p ? Math.hypot(p.x - h.at.x, p.y - h.at.y) : 0;
+    if (distance <= GATHER_STEPS_M) return;
+    this.travelled = h.at;
+    const side = Number(h.key.slice(0, h.key.indexOf(':'))) as Side;
+    const id = h.key.slice(h.key.indexOf(':') + 1);
+    const report: TravelReport = {
+      player: this.names.player(side, id),
+      number: this.s.teams[side].team.players.find((pl) => pl.id === id)?.number ?? 0,
+      distance,
+      quarter: this.quarter,
+      clock: this.clock,
+      how: h.how,
+      event: this.caption?.text ?? this.feed[0]?.text ?? '',
+    };
+    this.travels.push(report);
+    console.warn(`Travel: ${report.player} #${report.number} is ${distance.toFixed(2)} m from where he gathered the ball (${report.how}), Q${report.quarter} ${clockString(report.clock)}, during "${report.event}"`);
+  }
+
+  /**
+   * How much of the possession's running time has gone: the clock stands still while the ball is
+   * dead. Bringing the ball up it runs about as fast as the players move, so the eight seconds on
+   * the scoreboard are eight seconds on the floor; whatever else the possession took goes by in the
+   * half court.
+   */
   private running(): number {
     const sc = this.script;
     if (!sc) return 1;
+    let bringUp = 0;
+    let rest = 0;
+    let end = 0;
+    sc.beats.forEach((b, i) => {
+      const d = this.durations[i] ?? 0;
+      if (!b.dead && b.phase === 'bringUp') bringUp += d;
+      else if (!b.dead) rest += d;
+      end += d;
+    });
+    const total = bringUp + rest;
+    const game = sc.clockStart - sc.clockEnd;
+    if (total <= 0 || game <= 0) return this.t >= end ? 1 : 0;
+    const scale = (this.speed === 'fast' ? 2.1 : 1) / (this.slowMo ? 1.8 : 1);
+    const rate = game / total;
+    const bringUpRate = rest > 0 ? Math.min(rate, BRING_UP_CLOCK_RATE * scale) : rate;
+    const restRate = rest > 0 ? (game - bringUp * bringUpRate) / rest : rate;
     let run = 0;
-    let total = 0;
     let start = 0;
     sc.beats.forEach((b, i) => {
       const d = this.durations[i] ?? 0;
-      if (!b.dead) {
-        total += d;
-        run += Math.max(0, Math.min(d, this.t - start));
-      }
+      if (!b.dead) run += Math.max(0, Math.min(d, this.t - start)) * (b.phase === 'bringUp' ? bringUpRate : restRate);
       start += d;
     });
-    return total > 0 ? Math.min(1, run / total) : this.t >= start ? 1 : 0;
+    return Math.min(1, run / game);
   }
 
   /** How the ball comes back into play, from whatever ended the play before the possession starting at event `from`. */
@@ -620,8 +711,12 @@ export class LiveMatch {
   }
 
   private setCaption(text: string, side: Side | null, key: string | null, kind: Caption['kind']): void {
-    // Let a result ("BANG!") stay readable before the next setup line replaces it.
-    if (kind === 'setup' && this.caption?.kind === 'result' && this.time - this.captionBorn < 1.1) return;
+    // Let a result ("BANG!") stay readable before the next setup line replaces it; the line waits.
+    if (kind === 'setup' && this.caption?.kind === 'result' && this.time - this.captionBorn < CAPTION_READ_S) {
+      this.heldCaption = { text, side, key, kind };
+      return;
+    }
+    this.heldCaption = null;
     this.caption = { text, side, key, kind };
     this.captionBorn = this.time;
     this.bump();

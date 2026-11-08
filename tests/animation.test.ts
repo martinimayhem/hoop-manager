@@ -127,9 +127,9 @@ describe('animation scripts', () => {
       biggest = Math.max(biggest, Math.hypot(b.x - last.x, b.y - last.y));
       last = b;
     }
-    // Two seconds of running: one bounce every two steps, not a frantic drum roll.
-    expect(floors).toBeGreaterThanOrEqual(2);
-    expect(floors).toBeLessThanOrEqual(5);
+    // Two seconds of running: two to three bounces a second, not a frantic drum roll.
+    expect(floors).toBeGreaterThanOrEqual(4);
+    expect(floors).toBeLessThanOrEqual(6);
     expect(biggest).toBeLessThan(0.27);
   });
 
@@ -309,30 +309,46 @@ describe('floor spacing and positions', () => {
     expect(offBall).toBeGreaterThan(onBall);
   });
 
-  it('a 2-3 zone holds its spots; a press picks up in the backcourt', () => {
+  it('a 2-3 zone holds its areas and always has a man on the ball; a press picks up in the backcourt', () => {
     let zone = 0;
+    let pressured = 0;
     eachScript(planWith({ defence: 'zone' }), 2, (script, _e, _s, lineups) => {
       const def = other(script.offence);
+      const hoop = hoopOf(script);
       for (const beat of script.beats) {
-        if (beat.phase !== 'setUp') continue;
+        if (beat.phase !== 'setUp' || beat.ball.kind !== 'held') continue;
+        const holder = beat.ball.holder;
+        const handler = beat.players[holder];
         lineups[def].forEach((id, i) => {
-          const p = beat.players[playerKey(def, id)];
+          const k = playerKey(def, id);
+          const p = beat.players[k];
           if (!p) return;
-          const norm = script.dir === 1 ? p : { x: COURT.w - p.x, y: p.y };
-          expect(apart(norm, { x: ZONE[i][0], y: ZONE[i][1] })).toBeLessThan(0.9);
           zone++;
+          // Out on the ball, or in his area, the whole shape shifted towards the ball's side.
+          if (beat.marking?.[k] === holder) expect(apart(p, handler)).toBeLessThan(1.5);
+          else {
+            const norm = script.dir === 1 ? p : { x: COURT.w - p.x, y: p.y };
+            expect(apart(norm, { x: ZONE[i][0], y: ZONE[i][1] })).toBeLessThan(2.6);
+          }
         });
+        // Nobody walks into the zone unchallenged.
+        if (apart(handler, hoop) < 10) {
+          expect(Object.values(beat.marking ?? {})).toContain(holder);
+          pressured++;
+        }
       }
     });
     expect(zone).toBeGreaterThan(100);
+    expect(pressured).toBeGreaterThan(20);
 
     let picked = 0;
     eachScript(planWith({ defence: 'press' }), 2, (script, events) => {
-      if (events.some((e) => e.type === 'fastBreak')) return;
+      // Beaten up the floor in transition, nobody presses.
+      if (events.some((e) => e.type === 'fastBreak' || e.type === 'transition')) return;
       const beat = script.beats.find((b) => b.phase === 'bringUp' && b.ball.kind === 'held' && b.ball.dribble);
       if (!beat || beat.ball.kind !== 'held') return;
       const handler = beat.players[beat.ball.holder];
-      const defenders = Object.entries(beat.players).filter(([k]) => !k.startsWith(`${script.offence}:`));
+      const defenders = Object.entries(beat.players).filter(([k]) => !k.startsWith(`${script.offence}:`) && !isRef(k));
       expect(Math.min(...defenders.map(([, p]) => apart(p, handler)))).toBeLessThan(1.5);
       picked++;
     });
@@ -373,9 +389,11 @@ describe('possession phases', () => {
     expect(plays.move / total).toBeGreaterThan(0.15);
   });
 
-  it('played through, everyone has reached their spot by the end of the set-up', () => {
+  it('played through, the defence is set and the handler at his spot by the end of the set-up; a trailer may still be coming', () => {
     let checked = 0;
     let late = 0;
+    let trailers = 0;
+    let trailing = 0;
     for (const [offence, defence] of [['three', 'man'], ['inside', 'zone'], ['pickAndRoll', 'man']] as const) {
       const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [{ ...DEFAULT_PLANS.ham, offence, defence }, { ...DEFAULT_PLANS.sky, offence, defence }], 5, ['ai', 'ai'], 'normal');
       const inner = m as unknown as { script: Script | null; durations: number[]; t: number; motion: Motion };
@@ -389,16 +407,26 @@ describe('possession phases', () => {
         const beat = s.beats[index];
         if (beat.phase !== 'setUp' || s.beats[index + 1]?.phase !== 'play' || u < 0.9) continue;
         seen = s;
+        const handler = beat.ball.kind === 'held' ? beat.ball.holder : '';
         for (const [k, p] of Object.entries(beat.players)) {
           // A guarding defender follows his man, not a spot: the realism test judges him on that. Officials follow the play.
           if (beat.marking?.[k] || isRef(k)) continue;
+          const off = apart(inner.motion.pos[k], p);
+          // The play starts as the handler gets there: a teammate still running in joins it on the way.
+          if (k !== handler && k.startsWith(`${s.offence}:`)) {
+            trailers++;
+            if (off > 1.2) trailing++;
+            continue;
+          }
           checked++;
-          if (apart(inner.motion.pos[k], p) > 1.2) late++;
+          // Kept waiting, the handler probes round his spot with the ball.
+          if (off > (k === handler ? 2 : 1.2)) late++;
         }
       }
     }
-    expect(checked).toBeGreaterThan(200);
+    expect(checked).toBeGreaterThan(100);
     expect(late / checked).toBeLessThan(0.02);
+    expect(trailing / trailers).toBeLessThan(0.1);
   }, 30000);
 
   it('half-court possessions go bring up, set up, then 1-3 passes or a screen before the shot', () => {

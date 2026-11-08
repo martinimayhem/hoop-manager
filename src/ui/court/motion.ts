@@ -5,7 +5,7 @@
 
 import { fatigueFactor } from '../../engine/ratings';
 import type { Side } from '../../engine/types';
-import { PACE_M_S, PASS_SPEED, isRef, type Ball, type BallAction, type Beat, type Pace, type Pos, type Script, type ShotStyle } from './animation';
+import { PACE_M_S, PASS_SPEED, PROBE_FROM_RIM_M, isRef, type Ball, type BallAction, type Beat, type Pace, type Pos, type Script, type ShotStyle } from './animation';
 import { BODY_M, COURT, HOOP, MID_Y, guardSpot, insideCourt } from './formations';
 
 /**
@@ -24,8 +24,21 @@ const SHOTS: Record<ShotStyle, { release: number; jump: number; hands: [number, 
 const ACCEL = 9; // m/s²: a real first step, not an instant top speed
 const BRAKE = 7.3; // planned below ACCEL so a player always has the grip to stop on the spot
 const HAND_HEIGHT = 1;
+/** With the ball in his hands and not dribbling, a player has two steps: this far from where he gathered it. */
+export const GATHER_STEPS_M = 1.2;
+/** How far within those steps he may aim, leaving room to come to a stop. */
+const STEP_TARGET_M = 0.8;
+/** Dribbling slower than this, he can pick the ball up and stop inside his two steps. */
+const PICK_UP_M_S = 1.5;
+/** A rebounder chins the ball this long (game seconds) before he does anything with it. */
+const CHIN_S = 0.4;
+const CHIN_HEIGHT = 1.5;
+/** A jump stop: how hard a player with the ball in his hands can stop (m/s²). */
+const JUMP_STOP = 18;
 /** Bounces a second when standing; a moving handler bounces once every two steps. */
-const STANDING_BOUNCE_HZ = 1.7;
+const STANDING_BOUNCE_HZ = 2.2;
+/** Never more than this many bounces a second, however fast he goes. */
+const MAX_BOUNCE_HZ = 3;
 const GUARDED_M = 1.8;
 /** Someone caught outside the bounds walks back in rather than snapping there. */
 const BOUNDS_M_S = 12;
@@ -60,6 +73,13 @@ const BALL_READ_S = 0.5;
 const TOP_SPEED = 8;
 const SLIDE_M_S = 3.5;
 const BACKPEDAL_M_S = 3.2;
+/** With the ball nobody backpedals faster than a shuffle: he would lose it. He turns side-on instead. */
+const HOLDER_BACK_M_S = 1.2;
+/** Standing this long with a live dribble and nothing to do, the handler starts to probe (game seconds). */
+const PROBE_AFTER_S = 0.6;
+const PROBE_LEG_S = 1.3;
+/** A probe, leg by leg (metres across, towards the basket): a couple of dribbles across, a hesitation at the rim, back across, home. */
+const PROBE_LEGS: [number, number][] = [[1.4, 0], [0.7, 0.8], [-1.1, 0.1], [0, 0]];
 /** A defender this far from where he should be has been beaten: he turns and runs to recover. */
 const CHASE_M = 1.8;
 /** How long a defender takes to read his man's move (seconds): quicker on the ball, which he is watching. */
@@ -76,6 +96,8 @@ const HEADING_S = 0.3;
 /** Nobody turns further than this one way within SPIN_WINDOW_S: a full spin cannot happen. */
 const SPIN_LIMIT = (200 * Math.PI) / 180;
 const SPIN_WINDOW_S = 1.5;
+/** A ball handler turning to face where he runs may come this far round, still short of a spin. */
+const RUN_TURN_LIMIT = (280 * Math.PI) / 180;
 /** Below this speed a player's running direction is just noise: he faces where he is heading instead. */
 const HEADING_FROM_M_S = 1;
 
@@ -107,6 +129,8 @@ export interface FacingScene {
   guards: Record<string, string>;
   /** A player with the ball in the post, back to the basket. */
   posting?: string;
+  /** The ball is dead: whoever holds it squares up in his own time, with nobody to spin away from. */
+  dead?: boolean;
 }
 
 /** `timeScale` is how fast the players' clock runs against real seconds at this playback speed. */
@@ -120,6 +144,7 @@ export function facingScene(script: Script, durations: number[], index: number, 
     dir: script.dir,
     guards: script.guards,
     posting: script.beats[index].posting,
+    dead: script.beats[index].dead,
   };
 }
 
@@ -132,8 +157,34 @@ export interface LiveContext {
   pressing?: boolean;
   /** Where the ball was last frame. */
   ball?: Pos;
+  /** Whoever is backing down in the post: going backwards with the ball is the point. */
+  posting?: string;
   /** The ball is dead: once in their places, everyone stands still. */
   dead?: boolean;
+  /** What the ball is doing this beat, so the handler's feet can follow the rules. */
+  action?: BallAction;
+  /** Players passing through their spot on the way further: no pulling up at it. */
+  through?: string[];
+}
+
+/**
+ * The ball handler's footwork. Gathered: he has just caught it or picked it up. Dribbling: he may go
+ * where he likes. Picked up: his dribble is over, so he must pass or shoot. Holding the ball (gathered
+ * or picked up) he has two steps from where he gathered it, or a pivot.
+ */
+export type Footwork = 'gathered' | 'dribbling' | 'pickedUp';
+
+export interface Handle {
+  key: string;
+  mode: Footwork;
+  /** Where he gathered the ball (or picked up his dribble). */
+  at: Pos;
+  /** A rebounder holds the ball at his chin until this time (game seconds). */
+  chinUntil: number;
+  /** How he came by it: a catch, a rebound, a steal, an inbound, the end of a drive. */
+  how: string;
+  /** Kept waiting with a live dribble: the spot he was sent to, since when he has stood there, and when he began to probe (-1: not yet). */
+  probe?: { spot: Pos; still: number; start: number };
 }
 
 /** The shortest turn from one angle to another, in -PI..PI. */
@@ -156,7 +207,7 @@ interface Carry {
 function keepApart(pos: Record<string, Pos>): void {
   const keys = Object.keys(pos);
   // A few passes: easing one pair apart can push a third player in a crowd.
-  for (let pass = 0; pass < 4; pass++) {
+  for (let pass = 0; pass < 6; pass++) {
     for (let i = 0; i < keys.length; i++) {
       for (let j = i + 1; j < keys.length; j++) {
         const a = pos[keys[i]];
@@ -167,9 +218,23 @@ function keepApart(pos: Record<string, Pos>): void {
         if (d >= BODY_M) continue;
         const ux = d > 0.01 ? dx / d : 1;
         const uy = d > 0.01 ? dy / d : 0;
-        const push = (BODY_M - d) / 2;
-        pos[keys[i]] = { x: a.x - ux * push, y: a.y - uy * push };
-        pos[keys[j]] = { x: b.x + ux * push, y: b.y + uy * push };
+        // An official always gives way to a player; two players share it, unless one has a line
+        // at his back: then the other gives all the way, rather than both being squeezed together.
+        const refA = isRef(keys[i]);
+        const refB = isRef(keys[j]);
+        const gap = BODY_M - d;
+        const pinned = (p: Pos, sx: number, sy: number) => {
+          const moved = { x: p.x + sx * gap, y: p.y + sy * gap };
+          return Math.hypot(insideCourt(moved, BOUNDS_MARGIN).x - moved.x, insideCourt(moved, BOUNDS_MARGIN).y - moved.y) > 0.01;
+        };
+        let shareA = refA === refB ? 0.5 : refA ? 1 : 0;
+        if (refA === refB && !refA) {
+          const aPinned = pinned(a, -ux, -uy);
+          const bPinned = pinned(b, ux, uy);
+          if (aPinned !== bPinned) shareA = aPinned ? 0 : 1;
+        }
+        pos[keys[i]] = { x: a.x - ux * gap * shareA, y: a.y - uy * gap * shareA };
+        pos[keys[j]] = { x: b.x + ux * gap * (1 - shareA), y: b.y + uy * gap * (1 - shareA) };
       }
     }
   }
@@ -232,6 +297,8 @@ export class Motion {
   private heading: Record<string, Pos> = {};
   /** Each player's turns over the last SPIN_WINDOW_S: when, and how far (radians, signed). */
   private spin: Record<string, { at: number; turn: number }[]> = {};
+  /** Which way each player was last turning, for a turn of about half a circle. */
+  private turning: Record<string, number> = {};
   /** How far each player's hands are up: 0 at their sides, 1 reaching. Missing means 0. */
   reach: Record<string, number> = {};
   /** Who was close enough to leave the floor in a beat, decided once at take-off. */
@@ -244,6 +311,11 @@ export class Motion {
   private flights = new WeakMap<BallAction, { start: number; from: Ball; aim: Pos; time: number }>();
   /** The last pass thrown: if its beat ends before it arrives, it keeps flying into the receiver's hands. */
   private lastPass: BallAction | null = null;
+  /** The ball handler's footwork right now; null when nobody has the ball in play. */
+  handle: Handle | null = null;
+  /** Last frame's ball action and thrower, to tell how the ball came to the handler. */
+  private lastAction: BallAction | null = null;
+  private lastOutOfBounds: string | undefined;
   private speeds: Record<string, number> = {};
   private fatigue: Record<string, number> = {};
   private carry: Record<string, Carry> = {};
@@ -256,6 +328,8 @@ export class Motion {
   reset(): void {
     this.pos = {};
     this.lastPass = null;
+    this.handle = null;
+    this.lastAction = null;
     this.vel = {};
     this.facing = {};
     this.look = {};
@@ -266,6 +340,7 @@ export class Motion {
     this.shift = {};
     this.heading = {};
     this.spin = {};
+    this.turning = {};
     this.reach = {};
     this.carry = {};
     this.latest = {};
@@ -303,8 +378,9 @@ export class Motion {
     const accel = ACCEL * speedScale * speedScale;
     const brake = BRAKE * speedScale * speedScale;
     const gameDt = dt * speedScale;
+    const handlerTarget = this.footwork(ballHolder, ballHolder ? targets[ballHolder] : undefined, outOfBounds, live);
     for (const [key, beatTarget] of Object.entries(targets)) {
-      let target = beatTarget;
+      let target = key === ballHolder && handlerTarget ? handlerTarget : beatTarget;
       const man = live?.marking?.[key];
       if (live && man && this.pos[man]) {
         // On his man where the man is now, read a moment late: not where the beat will leave him.
@@ -313,7 +389,19 @@ export class Motion {
         r.x += (this.pos[man].x - r.x) * follow;
         r.y += (this.pos[man].y - r.y) * follow;
         const norm = (q: Pos): Pos => (live.dir === 1 ? q : { x: COURT.w - q.x, y: q.y });
-        target = insideCourt(norm(guardSpot(norm(r), norm(live.ball ?? r), man === ballHolder, !!live.pressing)));
+        target = norm(guardSpot(norm(r), norm(live.ball ?? r), man === ballHolder, !!live.pressing));
+        if (man === ballHolder) {
+          // A handler coming at him: he gives ground first, a cushion that grows with the speed.
+          const rim = norm(HOOP);
+          const mv = this.vel[man] ?? { x: 0, y: 0 };
+          const dx = rim.x - this.pos[man].x;
+          const dy = rim.y - this.pos[man].y;
+          const d = Math.hypot(dx, dy) || 1;
+          const coming = Math.max(0, (mv.x * dx + mv.y * dy) / d / speedScale);
+          const cushion = Math.min(1.2, coming * 0.25, Math.max(0, Math.hypot(target.x - rim.x, target.y - rim.y) - 1));
+          target = { x: target.x + (dx / d) * cushion, y: target.y + (dy / d) * cushion };
+        }
+        target = insideCourt(target);
         // While his man stands, a defender in his stance is never still: little shuffle steps, side
         // to side across the line from the basket to his man.
         const mv = this.vel[man];
@@ -360,25 +448,28 @@ export class Motion {
       if (face !== undefined && d > 0.001) {
         // Feet only go so fast sideways or backwards: past that, a player has to turn and run.
         const off = Math.abs(angleDiff(face, Math.atan2(dy, dx)));
-        if (off > (2 * Math.PI) / 3) max = Math.min(max, BACKPEDAL_M_S * speedScale);
+        if (off > (2 * Math.PI) / 3) max = Math.min(max, (key === ballHolder && key !== live?.posting ? HOLDER_BACK_M_S : BACKPEDAL_M_S) * speedScale);
         else if (off > Math.PI / 3) max = Math.min(max, SLIDE_M_S * speedScale);
       }
-      const want = Math.min(max, Math.sqrt(2 * brake * d), d * 6 * speedScale);
+      // Pulling up as he arrives, unless his spot is only on the way.
+      const want = live?.through?.includes(key) ? Math.min(max, d * 6 * speedScale) : Math.min(max, Math.sqrt(2 * brake * d), d * 6 * speedScale);
       const v = this.vel[key];
       let ax = (d > 0.001 ? (dx / d) * want - v.x : -v.x) / dt;
       let ay = (d > 0.001 ? (dy / d) * want - v.y : -v.y) / dt;
       const a = Math.hypot(ax, ay);
-      if (a > accel) {
-        ax *= accel / a;
-        ay *= accel / a;
+      // With the ball in his hands he stops dead, in a jump stop, inside his two steps.
+      const grip = key === ballHolder && this.handle?.key === key && this.handle.mode !== 'dribbling' ? JUMP_STOP * speedScale * speedScale : accel;
+      if (a > grip) {
+        ax *= grip / a;
+        ay *= grip / a;
       }
       const vx = v.x + ax * dt;
       const vy = v.y + ay * dt;
       next[key] = { x: p.x + vx * dt, y: p.y + vy * dt };
       nextVel[key] = { x: vx, y: vy };
     }
-    // Twice: a line can push someone back into a neighbour, who then has to give way along it.
-    for (let round = 0; round < 2; round++) {
+    // More than once: a line can push someone back into a neighbour, who then has to give way along it.
+    for (let round = 0; round < 3; round++) {
       keepApart(next);
       for (const key of Object.keys(next)) if (key !== outOfBounds && !isRef(key)) keepInside(next, key, BOUNDS_M_S * dt * speedScale);
     }
@@ -397,6 +488,92 @@ export class Motion {
       if (value > 0) stance[key] = value;
     }
     this.stance = stance;
+  }
+
+  /**
+   * The ball handler's feet, by the rules. With the ball in his hands he has two steps from where he
+   * gathered it, or a pivot; to go further the ball goes to the floor first, and once he has picked
+   * up his dribble he must pass or shoot. A rebounder chins the ball first. Returns where he may go.
+   */
+  private footwork(key: string | null, target: Pos | undefined, outOfBounds: string | undefined, live: LiveContext | undefined): Pos | undefined {
+    const action = live?.action ?? null;
+    const before = this.lastAction;
+    const wasOut = this.lastOutOfBounds;
+    this.lastAction = action;
+    this.lastOutOfBounds = outOfBounds;
+    // A dead ball, a throw-in, an official handing it over: the ball is not in play.
+    if (!key || !target || !this.pos[key] || live?.dead || key === outOfBounds || isRef(key)) {
+      this.handle = null;
+      return target;
+    }
+    const p = this.pos[key];
+    const v = this.vel[key] ?? { x: 0, y: 0 };
+    const speed = Math.hypot(v.x, v.y) / this.scale;
+    let h = this.handle;
+    if (!h || h.key !== key) {
+      const picked = before?.kind === 'toPlayer' && before.to === key;
+      const pass = action?.kind === 'pass' && action.to === key ? action : before?.kind === 'pass' && before.to === key ? before : null;
+      const team = (k: string) => k.slice(0, k.indexOf(':'));
+      const how = picked
+        ? before.high ? 'rebound' : 'loose ball'
+        : pass
+          ? pass.from === outOfBounds || pass.from === wasOut ? 'inbound' : team(pass.from) !== team(key) ? 'steal' : 'catch'
+          : 'other';
+      // A rebounder who came down on the spot chins it; one who took it in stride goes on with it.
+      h = this.handle = { key, mode: 'gathered', at: { ...p }, chinUntil: picked && before.high && speed < PICK_UP_M_S ? this.clock + CHIN_S : 0, how };
+    }
+    // Off the boards he chins it first.
+    if (this.clock < h.chinUntil) return { ...h.at };
+    const scripted = action?.kind === 'held' && action.holder === key && action.dribble;
+    if (scripted) h.mode = 'dribbling';
+    else if (h.mode === 'dribbling') {
+      // Told to stop: he dribbles into it, and picks the ball up once nearly stopped at his spot.
+      if (speed < PICK_UP_M_S && Math.hypot(target.x - p.x, target.y - p.y) < STEP_TARGET_M) {
+        h.mode = 'pickedUp';
+        h.at = { ...p };
+        h.how = 'end of drive';
+      }
+    } else if (h.mode === 'gathered') {
+      // Somewhere to go, or still on the move from the catch: the ball goes to the floor first.
+      const away = Math.hypot(target.x - h.at.x, target.y - h.at.y) > STEP_TARGET_M;
+      const moving = speed > PICK_UP_M_S && Math.hypot(p.x - h.at.x, p.y - h.at.y) > 0.5;
+      if (away || moving) h.mode = 'dribbling';
+    }
+    if (h.mode === 'dribbling') return scripted && live && key.startsWith(`${live.offence}:`) && key !== live.posting ? this.probe(h, speed, target, live) : target;
+    // Two steps or a pivot from where he gathered it, never further.
+    const d = Math.hypot(target.x - h.at.x, target.y - h.at.y);
+    return d <= STEP_TARGET_M ? target : { x: h.at.x + ((target.x - h.at.x) / d) * STEP_TARGET_M, y: h.at.y + ((target.y - h.at.y) / d) * STEP_TARGET_M };
+  }
+
+  /**
+   * Kept waiting with a live dribble (a teammate still coming, a screen not there yet), the handler
+   * never just bounces it on the spot: after a moment he probes, across towards the middle, a
+   * hesitation at the basket, back across and home, until the play moves him on.
+   */
+  private probe(h: Handle, speed: number, target: Pos, live: LiveContext): Pos {
+    let pr = h.probe;
+    if (!pr || Math.hypot(target.x - pr.spot.x, target.y - pr.spot.y) > 0.5) pr = h.probe = { spot: { ...target }, still: this.clock, start: -1 };
+    if (pr.start < 0) {
+      // Standing, at his spot or held off it by a body in the way.
+      if (speed > 0.6) pr.still = this.clock;
+      if (this.clock - pr.still < PROBE_AFTER_S) return target;
+      pr.start = this.clock;
+    }
+    const rim = live.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y };
+    const d = Math.hypot(rim.x - pr.spot.x, rim.y - pr.spot.y) || 1;
+    if (d <= PROBE_FROM_RIM_M) return target;
+    const ux = (rim.x - pr.spot.x) / d;
+    const uy = (rim.y - pr.spot.y) / d;
+    // Across means (-uy, ux); the first leg goes towards the middle, or either way from the top.
+    const middle = Math.abs(pr.spot.y - MID_Y) > 1.5 ? Math.sign(MID_Y - pr.spot.y) : hash(h.key) % 2 ? 1 : -1;
+    const side = ux * middle >= 0 ? 1 : -1;
+    const [across, towards] = PROBE_LEGS[Math.floor((this.clock - pr.start) / PROBE_LEG_S) % PROBE_LEGS.length];
+    return insideCourt({ x: pr.spot.x - uy * across * side + ux * towards, y: pr.spot.y + ux * across * side + uy * towards });
+  }
+
+  /** Whether `key` has the ball bouncing: dribbling, by the script or because he has to move. */
+  private dribbling(key: string): boolean {
+    return this.handle?.key === key && this.handle.mode === 'dribbling';
   }
 
   /** Raises and lowers hands: a challenger at the shooter, rebounders under a ball in the air. */
@@ -476,17 +653,30 @@ export class Motion {
       if (now === undefined) facing[key] = want;
       else {
         let turn = angleDiff(now, want);
+        // Facing nearly the opposite way, the shorter way round flips from frame to frame: he keeps
+        // turning the way he started, or he would jitter on the spot.
+        const going = this.turning[key];
+        if (going && Math.abs(turn) > (150 * Math.PI) / 180 && Math.sign(turn) !== going) turn += going * Math.PI * 2;
         const most = (quick ? QUICK_TURN_RATE : TURN_RATE) * gameDt;
         turn = !quick && Math.abs(turn) < TURN_DEAD_ZONE ? 0 : Math.max(-most, Math.min(most, turn));
         // Never round and round: whoever has turned most of the way round one way lately stops
         // turning that way. Counted each way separately, so swinging back does not reset it.
         const log = (this.spin[key] ??= []);
         while (log.length && this.clock - log[0].at > SPIN_WINDOW_S) log.shift();
-        const sameWay = log.reduce((sum, e) => (Math.sign(e.turn) === Math.sign(turn) ? sum + Math.abs(e.turn) : sum), 0);
-        if (sameWay + Math.abs(turn) > SPIN_LIMIT) turn = 0;
+        const turned = (sign: number) => log.reduce((sum, e) => (Math.sign(e.turn) === sign ? sum + Math.abs(e.turn) : sum), 0);
+        // The ball handler turning to face where he is running may come further round, though never all the way.
+        const holding = scene.action.kind === 'held' && scene.action.holder === key;
+        const running = holding && Math.hypot(v.x, v.y) / speedScale > 1 && Math.abs(angleDiff(want, Math.atan2(hd.y, hd.x))) < Math.PI / 6;
+        if (turn !== 0 && turned(Math.sign(turn)) + Math.abs(turn) > (running ? RUN_TURN_LIMIT : SPIN_LIMIT)) {
+          // Holding a dead ball (at the line, say) he squares up anyway, back round the way he came.
+          const back = -Math.sign(turn) * Math.min(most, Math.PI * 2 - Math.abs(angleDiff(now, want)));
+          turn = holding && scene.dead && turned(Math.sign(back)) + Math.abs(back) <= SPIN_LIMIT ? back : 0;
+        }
         if (turn !== 0) log.push({ at: this.clock, turn });
         // Kept within one turn either way, so the angle never winds up.
         facing[key] = angleDiff(0, now + turn);
+        if (Math.abs(angleDiff(facing[key], want)) < 0.3) delete this.turning[key];
+        else if (turn !== 0) this.turning[key] = Math.sign(turn);
       }
       // The head turns to the ball, as far as the neck allows.
       const me = this.pos[key];
@@ -554,7 +744,13 @@ export class Motion {
     const seen = this.seen ?? scene.ball;
     // An official watches the ball, wherever he is going.
     if (isRef(key)) return { angle: blend(toward(seen)), quick: false };
-    if (key === holder) return quick(blend(hoop));
+    if (key === holder) {
+      // Backing away with the ball he is never square to his man, backpedalling into a steal: he
+      // turns side-on, body between ball and defence, and further round the faster he goes.
+      const back = angleDiff(hoop, travel);
+      if (speed > 0.5 && Math.abs(back) > (100 * Math.PI) / 180) return quick(hoop + Math.sign(back) * Math.min(Math.abs(back), (110 * Math.PI) / 180 + run * Math.PI));
+      return quick(blend(hoop));
+    }
     // Off the ball, bodies turn at an even pace: into the last steps, never spun round on arrival.
     if (key.startsWith(ballTeam)) return { angle: blend(toward(seen)), quick: false };
     // Defence. On the ball: square to the handler, sliding; beaten by more than a step, he turns and runs.
@@ -594,7 +790,7 @@ export class Motion {
     const running = sp / speedScale;
     const stepsPerSecond = 2 + running / 4;
     const before = Math.floor(c.bounce + 0.5);
-    c.bounce += Math.max(STANDING_BOUNCE_HZ, stepsPerSecond / 2) * dt;
+    c.bounce += Math.max(STANDING_BOUNCE_HZ, Math.min(MAX_BOUNCE_HZ, stepsPerSecond * 0.8)) * dt;
     const bounced = Math.floor(c.bounce + 0.5) !== before; // the ball just hit the floor
 
     const defender = this.nearestOpponent(key);
@@ -662,6 +858,13 @@ export class Motion {
       const lat = (c?.lat ?? 1) * wide;
       return { x: p.x + fx * lead - fy * lat, y: p.y + fy * lead + fx * lat, z: height };
     };
+    /** The dribble: at the hip, bouncing in time with his feet. */
+    const bounced = (key: string): Ball => {
+      const h = hand(key, HAND_HEIGHT, 0.38);
+      const c = this.carry[key];
+      const bounce = Math.abs(Math.cos((c?.bounce ?? 0) * Math.PI));
+      return { ...h, z: 0.08 + ((c?.height ?? HAND_HEIGHT) - 0.08) * bounce };
+    };
     const fly = (a: Ball, b: Ball, arc: number, t: number): Ball => ({
       x: a.x + (b.x - a.x) * t,
       y: a.y + (b.y - a.y) * t,
@@ -671,11 +874,10 @@ export class Motion {
       case 'held': {
         const thrown = this.lastPass;
         if (thrown?.kind === 'pass' && thrown.to === action.holder && !this.passArrived(thrown)) return this.ball(thrown, u, dir);
-        const h = hand(action.holder, HAND_HEIGHT, action.dribble ? 0.38 : 0.15);
-        if (!action.dribble) return h;
-        const c = this.carry[action.holder];
-        const bounce = Math.abs(Math.cos((c?.bounce ?? 0) * Math.PI));
-        return { ...h, z: 0.08 + ((c?.height ?? HAND_HEIGHT) - 0.08) * bounce };
+        if (action.dribble || this.dribbling(action.holder)) return bounced(action.holder);
+        // Off the boards the ball is chinned, up under the chin and away from reaching hands.
+        const chinned = this.handle?.key === action.holder && this.clock < this.handle.chinUntil;
+        return hand(action.holder, chinned ? CHIN_HEIGHT : HAND_HEIGHT, 0.15);
       }
       case 'pass': {
         // Thrown once, in a straight line on the floor at the speed of the pass, aimed where the
@@ -694,7 +896,7 @@ export class Motion {
         }
         const t = Math.min(1, (this.clock - f.start) / f.time);
         const caught = hand(action.to, 1.1);
-        if (t >= 1) return caught;
+        if (t >= 1) return this.dribbling(action.to) ? bounced(action.to) : caught;
         const ease = t < 0.75 ? 0 : (t - 0.75) / 0.25;
         const w = ease * ease * (3 - 2 * ease);
         const x = f.from.x + (f.aim.x - f.from.x) * t;

@@ -160,6 +160,10 @@ export type MatchEvent =
   | { type: 'foul'; side: Side; playerId: string; onId: string; shooting: boolean; bonus: boolean }
   | { type: 'freeThrow'; side: Side; shooterId: string; made: boolean; attempt: number; of: number }
   | { type: 'fastBreak'; side: Side; leaderId: string }
+  /** Out of a rebound or a steal they got ahead of the defence, and whether the ball handler takes it. */
+  | { type: 'transition'; side: Side; handlerId: string; situation: TransitionSituation; attack: boolean }
+  /** How an attack in transition plays out: the lane closes, or the last defender commits to the ball. */
+  | { type: 'transitionRead'; side: Side; handlerId: string; read: 'laneClosed' | 'defenderCommits'; then: TransitionFinish }
   | { type: 'pressBroken'; side: Side; handlerId: string }
   | { type: 'doubleTeam'; side: Side; targetId: string; passedToId?: string }
   | { type: 'sub'; side: Side; inId: string; outId: string; reason: SubReason }
@@ -175,6 +179,11 @@ export interface RngState {
 }
 
 export type Transition = 'none' | 'rebound' | 'steal';
+
+/** What the offence has in transition: an open lane to the rim, or more attackers than defenders back. */
+export type TransitionSituation = 'lane' | 'twoOnOne' | 'threeOnTwo';
+/** What the ball handler does with it: finish (through contact if the lane closed), dish to the open man, kick out for three, or pull back out. */
+export type TransitionFinish = 'finish' | 'dish' | 'kick' | 'pullBack';
 
 /** A set play the offence calls for one possession. */
 export type OffenceCall = 'isoStar' | 'pickAndRoll' | 'kickOut' | 'postUp' | 'runClock';

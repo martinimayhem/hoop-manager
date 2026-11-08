@@ -30,7 +30,7 @@ const SHOT_MADE: Record<ShotType, readonly string[]> = {
   pnrRoll: ['{p} rolls to the rim and finishes!', 'Perfect pocket pass — {p} lays it in.', '{p} slips the screen and slams it home!'],
   post: ['{p} backs down and scores in the post.', 'Drop step, layup — {p} is too strong inside.', '{p} with the hook shot. Good!'],
   drive: ['{p} blows by the defender for the layup!', '{p} attacks the basket and scores.', 'Crossover, drive, finish — {p}!'],
-  fastBreak: ['{p} on the break… throws it DOWN!', '{p} leads the break and lays it in.', 'Nobody catches {p} in transition!'],
+  fastBreak: ['{p} takes it all the way!', '{p} on the break… throws it DOWN!', '{p} leads the break and lays it in.', 'Nobody catches {p} in transition!'],
   pressBreak: ['Press broken — {p} with the easy two!', '{p} finishes the 2-on-1 after the press is beaten.'],
   putback: ['{p} with the putback!', 'Second effort from {p} — tip-in!', '{p} cleans up the miss.'],
 };
@@ -121,7 +121,20 @@ export function describe(ev: TimedEvent, names: Names): string | null {
       return `${p} ${ev.made ? 'makes' : 'misses'} free throw ${ev.attempt} of ${ev.of}.`;
     }
     case 'fastBreak':
-      return `${names.player(ev.side, ev.leaderId)} pushes it in transition!`;
+      return '';
+    case 'transition': {
+      const p = names.player(ev.side, ev.handlerId);
+      if (!ev.attack) return `${p} slows it down and sets up the offence.`;
+      if (ev.situation === 'lane') return `${p} sees daylight…`;
+      return `${ev.situation === 'twoOnOne' ? '2-on-1' : '3-on-2'}! ${p} pushes it…`;
+    }
+    case 'transitionRead': {
+      const p = names.player(ev.side, ev.handlerId);
+      if (ev.then === 'dish') return `${p} draws the defender and dishes!`;
+      if (ev.then === 'kick') return `The lane closes; ${p} kicks it out.`;
+      if (ev.then === 'pullBack') return `The lane closes, so ${p} pulls it back out.`;
+      return `A defender gets back, but ${p} goes up through the contact!`;
+    }
     case 'pressBroken':
       return `${names.player(ev.side, ev.handlerId)} splits the press!`;
     case 'doubleTeam': {

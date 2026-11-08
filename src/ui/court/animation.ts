@@ -5,7 +5,7 @@
 // a 28 × 15 court, plus height for the ball; internally everything is laid out as if the offence attacks to the right.
 
 import { other } from '../../engine/state';
-import type { DefenceScheme, KeyMatchup, OffensiveFocus, ShotType, Side, TimedEvent, Transition } from '../../engine/types';
+import type { DefenceScheme, KeyMatchup, OffensiveFocus, ShotType, Side, Tempo, TimedEvent, Transition } from '../../engine/types';
 import { BODY_M, COURT, FORMATIONS, HOOP, HOOP_X, MID_Y, ZONE, guardSpot, insideCourt, spread } from './formations';
 
 export { COURT, HOOP_X, MID_Y };
@@ -103,6 +103,8 @@ export interface Beat {
   spotlight?: string;
   /** Shortest this beat may play at Normal speed, so shots never flash by. */
   minSeconds?: number;
+  /** Players only passing through their spot, on their way further: they keep their pace into it. */
+  through?: string[];
 }
 
 export interface Script {
@@ -133,6 +135,8 @@ export interface ScriptContext {
   start: Transition;
   /** After a dead ball, how the ball comes back into play. */
   restart?: Restart;
+  /** The offence's tempo: how fast the ball is brought up. */
+  tempo?: Tempo;
   name: (side: Side, id: string) => string;
 }
 
@@ -164,6 +168,14 @@ const FLAT_PASS_M = 9;
 /** Swinging the ball round, a team only looks this far. */
 const SWING_M = 8.5;
 const BRING_UP_X = 13.7;
+/** How the ball comes up the floor at each tempo, when nobody is pushing it or pressing. */
+const BRING_UP_PACE: Record<Tempo, Pace> = { slow: 'walk', normal: 'jog', fast: 'run' };
+/** Over half court by then at the latest, well inside the eight seconds. */
+const OVER_HALF_BY_S = 6;
+/** When a slow team has to hurry a little to make that, it aims to be over by then. */
+const SLOW_OVER_HALF_S = 5.5;
+/** Where a slow team's guard takes the outlet: the wing, level with the free-throw line. */
+const OUTLET_X = 5.8;
 const DENY_INBOUND_X = 2.4;
 const POST_BACKDOWN_M_S = 2;
 /** A possession shorter than this has no time to set up. */
@@ -270,6 +282,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   let paceFor: Record<string, Pace> = {};
   /** Players who must reach their spot within the next beat (a shooter relocating, say). */
   let mustArrive: string[] = [];
+  /** Players going on past their spot in the next beat, who must not pull up at it. */
+  let through: string[] = [];
   let slowBeat = false;
   /** Where everyone was heading in the previous beat, to tell how far this beat asks them to go. */
   let lastAt: Record<string, Pos> = {};
@@ -324,9 +338,9 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       const k = guards[i];
       if (placed.has(k) || holdBack.has(k)) return;
       if (ctx.defence === 'zone') {
-        // Fixed spots; the zone only shades a step to the ball's side.
+        // A 2-3: each holds his area, the whole shape shifting towards the ball's side.
         const [x, y] = ZONE[defIds.indexOf(idOf(k))];
-        at[k] = { x, y: y + (ball.y - MID_Y) * 0.08 };
+        at[k] = { x: x + (Math.min(ball.x, x) - x) * 0.12, y: y + (ball.y - MID_Y) * 0.3 };
         return;
       }
       const man = offKeys[i];
@@ -337,6 +351,14 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         marking[k] = man;
       }
     });
+    // Nobody walks into a zone unchallenged: whoever's area the ball comes into steps out to it.
+    if (ctx.defence === 'zone' && holder.startsWith(`${off}:`) && at[holder] && dist(at[holder], HOOP) < 10) {
+      const on = guards.filter((k) => !placed.has(k) && !holdBack.has(k)).sort((a, b) => dist(at[a], ball) - dist(at[b], ball))[0];
+      if (on) {
+        at[on] = guardSpot(ball, ball, true, false);
+        marking[on] = holder;
+      }
+    }
     if (doubled) {
       const t = at[kOff(doubled)];
       const i = offIds.indexOf(doubled);
@@ -412,10 +434,12 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       caption,
       spotlight,
       minSeconds: needed > 0 ? needed : undefined,
+      through: through.length > 0 ? through : undefined,
     });
     pendingFire = [];
     paceFor = {};
     mustArrive = [];
+    through = [];
     slowBeat = false;
     deadBeat = false;
     placed = new Set();
@@ -475,7 +499,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     holder = to;
     push(weight, { kind: 'pass', from, to, arc: style === 'lob' ? 0.8 + d * 0.06 : 0.05, style }, [], caption, to, flight);
   };
-  const toFormation = () => offIds.forEach((id, i) => (at[kOff(id)] = pos(formation[i])));
+  const toFormation = () => offIds.forEach((id, i) => (at[kOff(id)] = pos(formation[slot(i)])));
 
   /** The ball's arc to the rim: its peak is 1 to 1.5 m above the iron, higher from further out. */
   const shotArc = (from: Pos, style: ShotStyle): number => {
@@ -513,8 +537,49 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   const fastBreak = events.find((e) => e.type === 'fastBreak');
   const pressBreak = events.some((e) => e.type === 'pressBroken');
   const nearestToBall = () => offKeys.reduce((a, b) => (dist(at[b], ballSpot) < dist(at[a], ballSpot) ? b : a));
-  const pg = kOff(offIds[0]);
   pressing = ctx.defence === 'press' && !fastBreak;
+  // Who runs the offence this time: usually the point guard, but the shooting guard or a wing take
+  // their turn, more often against a press, when whoever gets open takes it.
+  const roll = ((seed >>> 3) % 100) / 100;
+  let handlerSlot = offIds.length < 3 ? 0 : roll < (pressing ? 0.45 : 0.62) ? 0 : roll < (pressing ? 0.8 : 0.86) ? 1 : 2;
+  /** The formation spot for each lineup place: the handler takes the point, the point guard his spot. */
+  function slot(i: number): number {
+    return i === 0 ? handlerSlot : i === handlerSlot ? 0 : i;
+  }
+  /** The ball handler of this possession (the point guard, most of the time). */
+  let pg = kOff(offIds[handlerSlot]);
+  const pgName = () => n(off, idOf(pg));
+  // In transition the engine says who has the ball and what he has: an open lane, or the numbers.
+  const transAt = events.findIndex((e) => e.type === 'transition');
+  const transEv = transAt >= 0 ? (events[transAt] as Extract<TimedEvent, { type: 'transition' }>) : undefined;
+  const readAt = events.findIndex((e) => e.type === 'transitionRead');
+  const readEv = readAt >= 0 ? (events[readAt] as Extract<TimedEvent, { type: 'transitionRead' }>) : undefined;
+  if (transEv && offIds.includes(transEv.handlerId)) {
+    handlerSlot = offIds.indexOf(transEv.handlerId);
+    pg = kOff(transEv.handlerId);
+  }
+  // Beaten up the floor, the defence has no press to set.
+  if (transEv) pressing = false;
+  /** Transition events already played out on the way up, so they do not fire twice. */
+  const early = new Set<number>();
+  /**
+   * The defence as the engine has it in transition: only so many got back, and with an open lane
+   * the one who did is out of the line to the rim. The rest trail the ball, chasing.
+   */
+  const transitionDefence = (situation: 'lane' | 'twoOnOne' | 'threeOnTwo', ball: Pos) => {
+    const need = situation === 'lane' ? 0 : situation === 'twoOnOne' ? 1 : 2;
+    defIds
+      .map(kDef)
+      .sort((a, b) => at[b].x - at[a].x)
+      .forEach((k, j) => {
+        if (j < need) place(k, j === 0 ? { x: 24.4, y: MID_Y } : { x: 22.8, y: MID_Y + (ball.y < MID_Y ? 2.2 : -2.2) });
+        else if (situation === 'lane' && j === 0) place(k, { x: 23.6, y: ball.y < MID_Y ? 12.6 : 2.4 });
+        else place(k, { x: Math.max(1, ball.x - 1.5 - (j - need) * 1.3), y: MID_Y + (j % 2 ? -1 : 1) * (1.5 + j * 0.8) });
+        paceFor[k] = 'sprint';
+      });
+  };
+  /** Where the last defender back stands, to commit to the ball or to recover into the lane. */
+  const lastBack = () => defIds.map(kDef).sort((a, b) => at[b].x - at[a].x)[0];
 
   const origin: Record<string, Pos> = { ...at };
   /** Whoever inbounded the ball has the whole floor to cover, so they run it. */
@@ -614,7 +679,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   /** Where the offence goes for a throw-in: the point guard comes to the ball, the others to the backcourt or, past half way, into their sets. */
   const setForThrowIn = (spot: Pos) => {
     if (spot.x > COURT.w / 2) toFormation();
-    else offIds.forEach((id, i) => (at[kOff(id)] = pos(BACKCOURT[i])));
+    else offIds.forEach((id, i) => (at[kOff(id)] = pos(BACKCOURT[slot(i)])));
     at[pg] = { x: Math.max(2.5, Math.min(COURT.w - 3, spot.x - 1.5)), y: spot.y < MID_Y ? 3.4 : COURT.h - 3.4 };
   };
 
@@ -641,7 +706,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     at[pg] = { x: 3.4, y: MID_Y + side * 3.6 };
     offIds.forEach((id, i) => {
       const k = kOff(id);
-      if (k !== pg && k !== thrower) at[k] = pos(BACKCOURT[i]);
+      if (k !== pg && k !== thrower) at[k] = pos(BACKCOURT[slot(i)]);
     });
     at[thrower] = { x: rest.x + 0.3, y: rest.y };
     getBack();
@@ -741,55 +806,148 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   } else {
     holder = nearestToBall();
     if (fastBreak) autoDefence = false;
-    push(0.15, hold());
+    // Unless they break, getting the ball out is the start of the bring-up.
+    else phase = 'bringUp';
+    // Off a rebound he chins it before he turns to outlet it; a steal he takes away on the dribble.
+    if (ctx.start === 'rebound') push(0.15, hold(), [], undefined, undefined, 0.45);
+    else push(0, dribble());
   }
 
+  /**
+   * Off a rebound or a steal with an advantage (the engine's transition) the ball is pushed up the
+   * floor; with the defence back, or after a dead ball, it is brought up and the defence is there.
+   */
+  const transition = ctx.start !== 'none' && !!transEv;
   if (!fastBreak) {
-    if (holder !== pg) passTo(pg, 0.28, `Outlet to ${n(off, offIds[0])}…`);
-    // Bring up: the point guard takes it over half court while everyone jogs into shape. A defender
-    // the ball has got ahead of has to run; the others jog back and match up. A press picks up the
-    // whole way, so the others come back to give the handler an outlet.
+    if (holder !== pg && ctx.start === 'rebound' && !transition && !pressing && ctx.tempo === 'slow' && at[pg].x > OUTLET_X) {
+      // A team in no hurry: the guard comes back to the wing for the outlet, then walks it up.
+      at[pg] = { x: OUTLET_X, y: at[pg].y < MID_Y ? 2.4 : COURT.h - 2.4 };
+    }
+    if (holder !== pg) passTo(pg, 0.28, `Outlet to ${pgName()}…`);
+    // Bring up: the handler takes it over half court while everyone gets into shape. In transition
+    // he pushes it and the wings run their lanes; a defender the ball has got ahead of has to run.
+    // A press picks up the whole way, so the others come back to give the handler an outlet.
     phase = 'bringUp';
     const pressed = pressing ? ' against the full-court press' : '';
-    const startX = at[pg].x;
+    let startX = at[pg].x;
+    if (pressing && startX < BRING_UP_X - 4 && (seed >>> 9) % 2 === 0) {
+      // Trapped: a second defender comes at the handler, who gets it out to a teammate flashing to
+      // the middle; he brings it up instead.
+      const own = guards.find((k) => guarding[k] === pg);
+      const trapper = guards.filter((k) => k !== own).sort((a, b) => dist(at[a], at[pg]) - dist(at[b], at[pg]))[0];
+      const h = insideCourt({ x: startX + 2.5, y: at[pg].y + (at[pg].y < MID_Y ? -1.2 : 1.2) });
+      at[pg] = h;
+      place(trapper, { x: h.x + 0.9, y: h.y + (h.y < MID_Y ? 0.8 : -0.8) });
+      paceFor[trapper] = 'sprint';
+      paceFor[pg] = 'run';
+      push(0.35, dribble(), [], `${pgName()} is trapped…`, pg, 0.9);
+      const outlet = offKeys.slice(0, 3).filter((k) => k !== pg).sort((a, b) => dist(at[a], h) - dist(at[b], h))[0];
+      if (outlet) {
+        at[outlet] = { x: Math.min(BRING_UP_X - 1, h.x + 4.5), y: MID_Y + (MID_Y - h.y) * 0.3 };
+        paceFor[outlet] = 'run';
+        mustArrive = [outlet];
+        passTo(outlet, 0.25, `…and gets it out to ${n(off, idOf(outlet))}.`);
+        handlerSlot = offIds.indexOf(idOf(outlet));
+        pg = outlet;
+        startX = at[pg].x;
+      }
+    }
     if (startX < BRING_UP_X) {
-      at[pg] = { x: BRING_UP_X, y: MID_Y + (at[pg].y - MID_Y) * 0.4 };
+      // Up the floor in one go, over half court without stopping, straight to where he starts the
+      // play: the top of the key, on the side he came up.
+      const top = pos(formation[0]);
+      const from = { ...at[pg] };
+      const entry = { x: top.x - 0.5, y: MID_Y + Math.max(-2.2, Math.min(2.2, (from.y - MID_Y) * 0.4)) };
+      let pace: Pace = transition ? 'run' : BRING_UP_PACE[ctx.tempo ?? 'normal'];
+      const walk = PACE_M_S.walk * factor(pg);
+      const run = BRING_UP_X - startX;
+      if (pace === 'run' && !pressing) {
+        // With no advantage from the engine, somebody is back before he gets there: if nobody could
+        // be, he was never really running at them, so he comes up at a jog.
+        const firstBack = Math.min(...guards.map((k) => dist(origin[k], { x: HOOP.x - 4.5, y: MID_Y }) / (PACE_M_S.sprint * factor(k)) + 0.8));
+        if (firstBack > (BRING_UP_X - startX) / (PACE_M_S.run * factor(pg)) + 0.45 + since(0)) pace = 'jog';
+      }
+      if (pace === 'walk' && run / walk + 0.45 + since(0) > OVER_HALF_BY_S) {
+        // A slow team walks it up, but never so slowly that the eight seconds come into it: from deep,
+        // he jogs the first part and walks it over half court; with no time to walk, he jogs it all.
+        const jog = PACE_M_S.jog * factor(pg);
+        const jogged = Math.max(0, (run / walk - (SLOW_OVER_HALF_S - 0.45 - since(0))) / (1 / walk - 1 / jog));
+        if (jogged > run - 2) pace = 'jog';
+        else {
+          at[pg] = { x: from.x + jogged, y: from.y + ((entry.y - from.y) * jogged) / (entry.x - from.x) };
+          paceFor[pg] = 'jog';
+          through = [pg];
+          push(0, dribble(), [], `${pgName()} brings it up…`, pg);
+        }
+      }
+      // Against a press he is picked up all the way: over half court without a stop, and then he
+      // walks it into the set while the press drops back into the half court.
+      at[pg] = pressing ? { x: BRING_UP_X + 2, y: MID_Y + (entry.y - MID_Y) * 1.5 } : entry;
+      paceFor[pg] = pace;
       offIds.forEach((id, i) => {
-        if (i > 0) at[kOff(id)] = { x: formation[i][0] - (pressing ? 7.2 : 0), y: formation[i][1] };
+        const k = kOff(id);
+        if (k === pg) return;
+        const [fx, fy] = formation[slot(i)];
+        at[k] = { x: fx - (pressing ? 7.2 : 0), y: fy };
+        if (transition) paceFor[k] = 'run';
       });
       if (trailer) paceFor[trailer] = 'run';
-      if (pressing) paceFor[pg] = 'run';
-      else for (const k of guards) if (at[k].x < BRING_UP_X + 2.4) paceFor[k] = 'run';
-      push(0.8, dribble(), [], `${n(off, offIds[0])} brings it up${pressed}…`, pg);
+      if (pressing) {
+        paceFor[pg] = 'run';
+        through = [pg];
+        // A press keeps a safety: whoever has the deepest man drops to protect the basket.
+        const deep = offKeys.filter((k) => k !== pg).sort((a, b) => at[b].x - at[a].x)[0];
+        const safety = guards.find((k) => guarding[k] === deep);
+        if (safety) {
+          place(safety, { x: HOOP.x - 4.6, y: MID_Y + (entry.y - MID_Y) * 0.4 });
+          paceFor[safety] = 'sprint';
+        }
+      }
+      if (!pressing) for (const k of guards) if (at[k].x < BRING_UP_X + 2.4 || ctx.start !== 'none') paceFor[k] = ctx.start !== 'none' ? 'sprint' : 'run';
+      // Ahead of the defence, as the engine has it: he sees it, and takes it or pulls it out.
+      if (transEv) {
+        transitionDefence(transEv.situation, at[pg]);
+        early.add(transAt);
+      }
+      // As long as it takes him: given more, he would only stand and wait at the end of it.
+      push(0, dribble(), transEv ? [transAt] : [], transition && !pressing ? `${pgName()} pushes it up…` : `${pgName()} brings it up${pressed}…`, pg);
+      if (transEv?.attack && readEv?.then === 'pullBack') {
+        // He goes at the rim, a defender recovers into the lane, and he pulls it back out.
+        at[pg] = { x: 21.6, y: MID_Y + (at[pg].y - MID_Y) * 0.5 };
+        paceFor[pg] = 'sprint';
+        const back = lastBack();
+        if (back) {
+          place(back, { x: 23.6, y: MID_Y + (at[pg].y - MID_Y) * 0.3 });
+          paceFor[back] = 'sprint';
+          mustArrive = [back];
+        }
+        early.add(readAt);
+        push(0.35, dribble(), [readAt], undefined, pg, 0.8);
+      }
     }
     pressing = false;
     if (!pressBreak) {
-      // Set up: into the formation, the defence matched up; the point guard reads it for a moment.
-      // Nothing starts until the slowest player is in place, so the action begins from a real shape.
-      // The margin covers reading the play and turning to run, which real players need too.
+      // Set up: into the formation, the defence matched up. The play starts as the handler gets to
+      // his spot. Only a defence still getting back holds it up (with no advantage from the engine,
+      // none may show), or a teammate a long way behind, who runs to catch up; meanwhile the
+      // handler keeps the ball moving. He never parks at half court to wait.
       phase = 'setUp';
       toFormation();
       spread(at, offKeys, (k) => (k === holder ? 0 : 1));
-      // With time on the clock, the guard holds out near half court while the defence gets back,
-      // then walks into his spot: he never stands at the top of the key with nobody between him and
-      // the rim. (Had the defence not been back, the engine would have called a fast break.)
-      const pgSpot = { ...at[pg] };
-      const waitOut = seconds >= EARLY_OFFENCE_SECONDS;
-      if (waitOut) at[pg] = { x: Math.min(pgSpot.x, HOOP.x - 11), y: pgSpot.y };
       settleDefence();
       // The defence sprints back.
       for (const k of guards) paceFor[k] = 'sprint';
+      for (const k of offKeys) if (k !== pg && dist(lastAt[k], at[k]) > 8) paceFor[k] = 'run';
       if (trailer) paceFor[trailer] = 'run';
-      const slowest = Math.max(...Object.keys(at).filter((k) => !isRef(k)).map((k) => dist(origin[k], at[k]) / (PACE_M_S[paceFor[k] ?? offPace] * factor(k))));
-      const spent = beats.reduce((sum, b) => sum + (b.minSeconds ?? 0), 0);
-      const share = seconds >= EARLY_OFFENCE_SECONDS ? 1 : 0.6;
-      push(0.45, dribble(), [], startX < BRING_UP_X ? undefined : `${n(off, offIds[0])} brings it up…`, pg, Math.min(7, Math.max(0.3, (slowest * 1.2 + 1.5) * share - spent)));
-      if (waitOut) {
-        // The walk in starts from standing: time to get going and to pull up at the spot.
-        const walkIn = dist(at[pg], pgSpot) / (PACE_M_S[offPace] * factor(pg) * 0.75) + 0.5;
-        at[pg] = pgSpot;
-        push(0.3, dribble(), [], undefined, pg, Math.max(0.8, walkIn));
-      }
+      // From where everyone was when the possession started, with the time to react and turn.
+      const needs = (k: string) => dist(origin[k], at[k]) / (PACE_M_S[paceFor[k] ?? offPace] * factor(k));
+      const defenceBack = Math.max(...guards.map((k) => needs(k) * 1.15 + 0.8));
+      const offenceIn = Math.max(...offKeys.filter((k) => k !== pg).map((k) => needs(k) + 0.45));
+      const share = seconds < EARLY_OFFENCE_SECONDS ? 0.6 : transition ? 0.85 : 1;
+      // Pushed up the floor at a run, he comes into the set under control; over the press, he walks it in.
+      if (transition) paceFor[pg] = 'jog';
+      if (pressed) paceFor[pg] = 'walk';
+      push(0, dribble(), [], startX < BRING_UP_X ? undefined : `${pgName()} brings it up…`, pg, Math.min(5, Math.max(0.3, Math.max(defenceBack, offenceIn) * share - since(0))));
     }
     phase = 'play';
     defPace = 'run'; // from here on they are reacting to the offence
@@ -1009,29 +1167,53 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         offPace = 'sprint';
         defPace = 'sprint';
         if (holder !== leader) passTo(leader, 0.22, `Quick outlet to ${n(off, ev.leaderId)}…`);
-        // Numbers are real: whoever was caught up the floor cannot get back in time.
-        const ballX = at[leader].x;
-        const back = defIds.map(kDef).filter((k) => at[k].x > ballX).sort((a, b) => at[b].x - at[a].x);
-        const beaten = defIds.map(kDef).filter((k) => at[k].x <= ballX);
         // Runners fill the lanes, wings first, a trailer behind, the last man stays home.
         const runners = offKeys.filter((k) => k !== leader).sort((a, b) => at[b].x - at[a].x);
         const lanes: Pos[] = [{ x: 23.2, y: 2.1 }, { x: 23.2, y: 12.9 }, { x: 18.5, y: MID_Y }, { x: 13.7, y: MID_Y }];
         runners.forEach((k, j) => (at[k] = lanes[j] ?? lanes[3]));
         at[leader] = { x: 21.4, y: MID_Y };
-        back.forEach((k, j) => (at[k] = j === 0 ? { x: 24.4, y: MID_Y } : { x: 22.6, y: MID_Y + (j % 2 === 0 ? 2.1 : -2.1) * Math.ceil(j / 2) }));
-        // Anyone beaten chases flat out; they only catch up if they are quicker.
-        beaten.forEach((k, j) => (at[k] = { x: 23.8, y: 3.9 + j * 2.4 }));
-        const attackers = Math.min(3, offIds.length);
-        const caption = back.length < attackers ? `${n(off, ev.leaderId)} pushes it: ${attackers} on ${back.length}!` : `${n(off, ev.leaderId)} pushes it in transition!`;
+        const name = n(off, ev.leaderId);
+        let caption = `${name} pushes it in transition!`;
+        if (transEv) {
+          // The numbers the engine gave: nobody in the lane, or one or two back to stop it.
+          transitionDefence(transEv.situation, at[leader]);
+          caption = transEv.situation === 'lane' ? `${name} sees daylight…` : `${transEv.situation === 'twoOnOne' ? '2 on 1' : '3 on 2'}! ${name} pushes it…`;
+        }
         push(0.75, dribble(), [i], caption, leader);
+        if (readEv?.read === 'laneClosed' && !early.has(readAt)) {
+          // A chaser gets back into the lane in front of him.
+          const chaser = defIds.map(kDef).sort((a, b) => dist(at[a], HOOP) - dist(at[b], HOOP))[0];
+          at[leader] = { x: 22.8, y: MID_Y + 0.3 };
+          if (chaser) {
+            place(chaser, { x: 24.5, y: MID_Y + 0.5 });
+            paceFor[chaser] = 'sprint';
+            mustArrive = [chaser];
+          }
+          early.add(readAt);
+          push(0.3, dribble(), [readAt], undefined, leader, 0.6);
+        }
         break;
       }
+      case 'transition':
+        // Played out with the push up the floor or the break; otherwise it fires with the next beat.
+        if (!early.has(i)) {
+          early.add(i);
+          pendingFire.push(i);
+        }
+        break;
+      case 'transitionRead':
+        // A break plays the read out itself (the lane closing, the dish) further on.
+        if (!early.has(i) && !fastBreak) {
+          early.add(i);
+          pendingFire.push(i);
+        }
+        break;
       case 'pressBroken': {
         const h = kOff(ev.handlerId);
         passTo(h, 0.22);
         at[h] = { x: Math.max(17.3, at[h].x), y: MID_Y };
         offIds.forEach((id, j) => {
-          if (kOff(id) !== h) at[kOff(id)] = pos(formation[j]);
+          if (kOff(id) !== h) at[kOff(id)] = pos(formation[slot(j)]);
         });
         paceFor[h] = 'sprint';
         push(0.5, dribble(), [i], undefined, h);
@@ -1113,14 +1295,29 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           }
         } else if (ev.shotType === 'fastBreak' || ev.shotType === 'pressBreak') {
           if (assistKey && assistKey !== holder) passTo(assistKey, 0.2);
+          if (readEv?.then === 'dish' && !early.has(readAt) && holder !== shooterKey) {
+            // The last defender commits to the ball, and it goes to the man he left.
+            const back = lastBack();
+            const h = at[holder];
+            if (back && h) {
+              place(back, { x: h.x + 0.9, y: h.y + (MID_Y - h.y) * 0.2 });
+              paceFor[back] = 'sprint';
+              mustArrive = [back];
+              push(0.25, dribble(), [], undefined, holder, 0.5);
+            }
+            early.add(readAt);
+            pendingFire.push(readAt);
+          }
+          // A lead pass: he takes it in stride, halfway along his run, and goes on to the rim.
+          if (holder !== shooterKey) at[shooterKey] = { x: (at[shooterKey].x + spot.x) / 2, y: (at[shooterKey].y + spot.y) / 2 };
           passTo(shooterKey, 0.22);
           at[shooterKey] = { ...spot };
           push(0.3, dribble(), [], `${shooterName} races to the rim…`, shooterKey);
         } else if (ev.shotType === 'putback') {
-          // Putback: the rebounder goes straight back up.
+          // Putback: the rebounder chins it and goes straight back up from where he came down with
+          // it, no walking to a better spot with the ball in his hands.
           holder = shooterKey;
-          at[shooterKey] = { ...spot };
-          push(0.15, hold(), [], `${shooterName} goes right back up…`, shooterKey);
+          push(0.15, hold(), [], `${shooterName} goes right back up…`, shooterKey, 0.45);
         } else {
           // A finish with no set-up of its own: get it to the shooter and go.
           if (assistKey && assistKey !== holder) passTo(assistKey);
@@ -1149,7 +1346,12 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           mustArrive = [onShooter];
           push(0.15, { kind: 'held', holder: shooterKey, dribble: true }, [], undefined, shooterKey);
         }
-        if (style === 'layup' || style === 'dunk') at[shooterKey] = { x: 25.45, y: MID_Y + (from.y - MID_Y) * 0.3 };
+        if (style === 'layup' || style === 'dunk') {
+          // Two steps to the rim, gliding in: from further out he only gets that far.
+          const rim = { x: 25.45, y: MID_Y + (from.y - MID_Y) * 0.3 };
+          const glide = dist(from, rim);
+          at[shooterKey] = glide > 1.8 ? { x: from.x + ((rim.x - from.x) / glide) * 1.8, y: from.y + ((rim.y - from.y) / glide) * 1.8 } : rim;
+        }
         const shotDist = dist(from, HOOP);
         const minSeconds = style === 'jumper' ? 1.1 + shotDist * 0.05 : 0.85;
         const arc = shotArc(from, style);
@@ -1220,7 +1422,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         if (ev.offensive) {
           // Second chance: everyone else fans back out and the defence recovers.
           offIds.forEach((id, j) => {
-            if (kOff(id) !== k) at[kOff(id)] = pos(formation[j]);
+            if (kOff(id) !== k) at[kOff(id)] = pos(formation[slot(j)]);
           });
           spacing = true;
           autoDefence = true;
@@ -1259,7 +1461,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
               place(cover, guardSpot(h, h, true, false));
               paceFor[cover] = 'sprint';
             }
-            push(0.3, hold(), [], `${n(off, idOf(handler))} looks for ${n(off, idOf(target))}…`, handler, 0.5);
+            push(0.3, dribble(), [], `${n(off, idOf(handler))} looks for ${n(off, idOf(target))}…`, handler, 0.5);
             slowBeat = true;
             placed.add(st);
             if (cover) placed.add(cover);
@@ -1393,6 +1595,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     }
   });
 
+  // A read the break never got round to showing still fires.
+  if (readAt >= 0 && !early.has(readAt)) pendingFire.push(readAt);
   if (pendingFire.length > 0 || beats.length === 0) {
     push(0.05, holder ? hold() : { kind: 'fixed', from: ballAbs(ballSpot), to: ballAbs(ballSpot), arc: 0 });
   }
@@ -1410,16 +1614,46 @@ function flightOnly(b: Beat): boolean {
   return b.minSeconds !== undefined && (b.ball.kind === 'fromPlayer' || b.ball.kind === 'toPlayer' || b.ball.kind === 'fixed');
 }
 
+/** Nearer the basket than this, a handler with the ball is going at it, not waiting. */
+export const PROBE_FROM_RIM_M = 6;
+
+/**
+ * A beat that can take spare time: the handler has a live dribble out on the floor in the half
+ * court, so he keeps the ball moving. Never the bring-up (that has eight seconds, and takes as long
+ * as it takes), nor a drive that has got into the paint.
+ */
+function roomy(b: Beat, dir: 1 | -1): boolean {
+  if (b.ball.kind !== 'held' || !b.ball.dribble || b.dead || b.phase !== 'play') return false;
+  const p = b.players[b.ball.holder];
+  const rim = dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y };
+  return !!p && Math.hypot(p.x - rim.x, p.y - rim.y) > PROBE_FROM_RIM_M;
+}
+
 /**
  * Real seconds per beat: flights take their own time, the rest share what is left (scaled by speed).
- * A dead ball takes as long as it takes, on top: the clock is stopped.
+ * A dead ball takes as long as it takes, on top: the clock is stopped. Spare time goes to the
+ * dribbling: a catch, a pass or a hold stretched out is only a player standing with the ball.
  */
 export function beatDurations(script: Script, totalSeconds: number, minScale = 1): number[] {
-  const fixed = script.beats.reduce((s, b) => s + (flightOnly(b) && !b.dead ? (b.minSeconds ?? 0) * minScale : 0), 0);
-  const weights = script.beats.reduce((s, b) => s + (flightOnly(b) ? 0 : b.weight), 0) || 1;
+  const beats = script.beats;
+  const fixed = beats.reduce((s, b) => s + (flightOnly(b) && !b.dead ? (b.minSeconds ?? 0) * minScale : 0), 0);
+  const weights = beats.reduce((s, b) => s + (flightOnly(b) ? 0 : b.weight), 0) || 1;
   // Everything else always keeps some of the time, even when the flights alone fill it.
   const left = Math.max(totalSeconds - fixed, totalSeconds * 0.3);
-  return script.beats.map((b) => (flightOnly(b) ? (b.minSeconds ?? 0) * minScale : Math.max((b.weight / weights) * left, (b.minSeconds ?? 0) * minScale)));
+  const shared = beats.map((b) => (flightOnly(b) ? (b.minSeconds ?? 0) * minScale : Math.max((b.weight / weights) * left, (b.minSeconds ?? 0) * minScale)));
+  // With no dribble to give it to, the spare time is left out: the possession plays a little quicker.
+
+  const roomWeight = beats.reduce((s, b) => s + (roomy(b, script.dir) ? b.weight : 0), 0);
+  let spare = 0;
+  const capped = shared.map((d, i) => {
+    const b = beats[i];
+    if (flightOnly(b) || roomy(b, script.dir) || b.dead) return d;
+    // A catch or a hold gets a look; a big in the post the moment to get his back into his man.
+    const cap = Math.max((b.minSeconds ?? 0) * minScale + (b.posting ? 0.5 : 0.15), 0.4);
+    spare += Math.max(0, d - cap);
+    return Math.min(d, cap);
+  });
+  return capped.map((d, i) => (roomy(beats[i], script.dir) && roomWeight > 0 ? d + (spare * beats[i].weight) / roomWeight : d));
 }
 
 /** Which beat is playing at `t` seconds, and how far through it (0..1). */

@@ -16,6 +16,7 @@ import {
   fastBreakChance,
   focusShotMod,
   halfCourtSeconds,
+  laneClosesChance,
   nonShootingFoulRate,
   offRebPlanMod,
   playWeights,
@@ -23,10 +24,11 @@ import {
   pressTurnoverChance,
   schemeShotMod,
   tempoShotMod,
+  transitionAttackChance,
   turnoverPlanMod,
   type HalfCourtPlay,
 } from './tactics';
-import type { MatchState, OffenceCall, PossessionCalls, ShotType, Side, TurnoverCause } from './types';
+import type { MatchState, OffenceCall, PossessionCalls, ShotType, Side, TransitionSituation, TurnoverCause } from './types';
 
 const FOUL_LIMIT = 6;
 const BONUS_FOULS = 5;
@@ -76,13 +78,7 @@ export function playPossession(s: MatchState): void {
 
   let opened = false;
   // A called set play is run in the half court: no fast break, the ball is walked up.
-  if (trigger !== 'none' && !c.calls.offence) {
-    const speedEdge = teamAvg(s, off, 'speed') - teamAvg(s, c.def, 'speed');
-    if (chance(s.rng, fastBreakChance(trigger, s.teams[off].plan, s.teams[c.def].plan, speedEdge))) {
-      runFastBreak(c);
-      opened = true;
-    }
-  }
+  if (trigger !== 'none' && !c.calls.offence) opened = runTransition(c, trigger);
   if (!opened && s.teams[c.def].plan.defence === 'press') opened = runPress(c);
 
   // Half-court sets. Later segments are resets after an offensive rebound or a side-out foul.
@@ -171,20 +167,73 @@ function callShotMod(c: Ctx, type: ShotType): number {
 // ---------------------------------------------------------------------------
 // Transition
 
-function runFastBreak(c: Ctx): void {
+/**
+ * Out of a rebound or a steal: did they get ahead of the defence, and does the ball handler take
+ * it? An open lane is taken most of the time, more often the more the coach wants to run; a numbers
+ * advantage is attacked, and the last defender has to choose. Returns true if the possession was
+ * finished in transition; otherwise they set up in the half court.
+ */
+function runTransition(c: Ctx, trigger: 'rebound' | 'steal'): boolean {
   const s = c.s;
+  const offPlan = s.teams[c.off].plan;
+  const speedEdge = teamAvg(s, c.off, 'speed') - teamAvg(s, c.def, 'speed');
+  if (!chance(s.rng, fastBreakChance(trigger, offPlan, s.teams[c.def].plan, speedEdge))) return false;
+  const lineup = s.teams[c.off].lineup;
+  // The quickest of them has the ball; a guard more often than a big.
+  const handler = weighted(s.rng, lineup, (id) => Math.exp((eff(s, c.off, id, 'speed') - 60) / 10) * (lineup.indexOf(id) < 2 ? 1.6 : 1));
+  // A steal leaves the floor open more often than a rebound and outlet.
+  const situation: TransitionSituation = chance(s.rng, trigger === 'steal' ? 0.6 : 0.4) ? 'lane' : chance(s.rng, 0.5) ? 'twoOnOne' : 'threeOnTwo';
+  const attack = chance(s.rng, transitionAttackChance(situation, offPlan, eff(s, c.off, handler, 'driving'), eff(s, c.off, handler, 'playmaking')));
+  emit(s, { type: 'transition', side: c.off, handlerId: handler, situation, attack });
+  if (!attack) {
+    // He pulls it out: a few seconds of pushing it up, then the half court.
+    spend(c, range(s.rng, 2, 4));
+    return false;
+  }
+  usageDrain(s, c.off, handler, 0.5);
+  const others = lineup.filter((id) => id !== handler);
+  if (situation === 'lane') {
+    if (chance(s.rng, laneClosesChance(speedEdge))) {
+      // A defender recovers into the lane: go up through him, kick it out, or pull it back.
+      const then = pick(s.rng, ['finish', 'finish', 'kick', 'pullBack'] as const);
+      emit(s, { type: 'transitionRead', side: c.off, handlerId: handler, read: 'laneClosed', then });
+      if (then === 'pullBack') {
+        spend(c, range(s.rng, 2, 4));
+        return false;
+      }
+      c.fastBreak = true;
+      spend(c, range(s.rng, 3.5, 6.5));
+      emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
+      if (then === 'kick') {
+        const shooter = weighted(s.rng, others, (id) => Math.exp((eff(s, c.off, id, 'three') - 60) / 8));
+        shoot(c, 'three', shooter, handler, 0.03);
+      } else shoot(c, 'fastBreak', handler, undefined, -0.1);
+      return true;
+    }
+    c.fastBreak = true;
+    spend(c, range(s.rng, 3, 6));
+    emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
+    shoot(c, 'fastBreak', handler, undefined, 0.05);
+    return true;
+  }
+  // The numbers: the last defender has to pick one of them.
   c.fastBreak = true;
   spend(c, range(s.rng, 3.5, 7));
-  const leader = weighted(s.rng, s.teams[c.off].lineup, (id) => Math.exp((eff(s, c.off, id, 'speed') - 60) / 10));
-  emit(s, { type: 'fastBreak', side: c.off, leaderId: leader });
-  usageDrain(s, c.off, leader, 0.5);
-  if (chance(s.rng, 0.25)) {
-    // Trailer spotting up for an open transition three.
-    const shooter = weighted(s.rng, s.teams[c.off].lineup, (id) => Math.exp((eff(s, c.off, id, 'three') - 60) / 8));
-    shoot(c, 'three', shooter, shooter === leader ? undefined : leader, 0.04);
+  if (chance(s.rng, 0.55)) {
+    const mate = weighted(s.rng, others, (id) => Math.exp((eff(s, c.off, id, 'rollFinish') - 60) / 10));
+    emit(s, { type: 'transitionRead', side: c.off, handlerId: handler, read: 'defenderCommits', then: 'dish' });
+    emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
+    shoot(c, 'fastBreak', mate, handler, 0.06);
+  } else if (situation === 'threeOnTwo' && chance(s.rng, 0.35)) {
+    // The trailer spots up for an open transition three.
+    emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
+    const shooter = weighted(s.rng, others, (id) => Math.exp((eff(s, c.off, id, 'three') - 60) / 8));
+    shoot(c, 'three', shooter, handler, 0.04);
   } else {
-    shoot(c, 'fastBreak', leader, undefined, 0);
+    emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
+    shoot(c, 'fastBreak', handler, undefined, -0.03);
   }
+  return true;
 }
 
 /** Returns true if the press decided the possession (turnover or a broken press leading to a shot). */

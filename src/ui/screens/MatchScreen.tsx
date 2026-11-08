@@ -32,7 +32,11 @@ export function MatchScreen({
 }) {
   const controllers: [Controller, Controller] = setup.mode === 'ai' ? ['human', 'ai'] : ['human', 'human'];
   const ref = useRef<LiveMatch | null>(null);
-  if (!ref.current) ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed);
+  if (!ref.current) {
+    ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed);
+    // ?debugTravels in the address logs every player who walks with the ball in his hands.
+    ref.current.debugTravels = new URLSearchParams(window.location.search).has('debugTravels');
+  }
   const m = ref.current;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);

@@ -94,14 +94,32 @@ export function fastBreakChance(
   def: GamePlan,
   speedEdge: number,
 ): number {
-  let p = trigger === 'steal' ? 0.42 : 0.09;
-  if (off.offence === 'fastBreak') p += trigger === 'steal' ? 0.15 : 0.14;
-  if (off.tempo === 'fast') p += 0.04;
-  if (off.tempo === 'slow') p -= 0.04;
+  let p = trigger === 'steal' ? 0.6 : 0.27;
+  if (off.offence === 'fastBreak') p += trigger === 'steal' ? 0.07 : 0.05;
+  if (off.tempo === 'fast') p += 0.02;
+  if (off.tempo === 'slow') p -= 0.05;
   if (def.tempo === 'slow') p -= 0.02; // slow teams get back in shape
   if (def.offence === 'inside') p += 0.02; // bigs crash the glass and get caught
-  p += speedEdge * 0.006;
+  p += speedEdge * 0.004;
   return Math.max(0, Math.min(0.8, p));
+}
+
+/**
+ * How often a ball handler takes an open lane (or a numbers advantage) in transition, by the coach's
+ * plan: running teams almost always go, half-court teams pull it out more. His driving and
+ * playmaking tilt it by at most ten points either way. Never certain, never ruled out.
+ */
+export function transitionAttackChance(situation: 'lane' | 'twoOnOne' | 'threeOnTwo', plan: GamePlan, driving: number, playmaking: number): number {
+  const runs = plan.offence === 'fastBreak' || plan.tempo === 'fast';
+  const walks = plan.tempo === 'slow' || plan.offence === 'inside' || plan.offence === 'pickAndRoll';
+  let p = situation === 'lane' ? (runs ? 0.95 : walks ? 0.7 : 0.85) : runs ? 0.9 : walks ? 0.55 : 0.75;
+  p += Math.max(-0.1, Math.min(0.1, (driving - 65) * 0.002 + (playmaking - 65) * 0.002));
+  return Math.max(0.05, Math.min(0.98, p));
+}
+
+/** How often an open lane closes on the way in: a quicker defence recovers more often. */
+export function laneClosesChance(speedEdge: number): number {
+  return Math.max(0.05, Math.min(0.3, 0.15 - speedEdge * 0.004));
 }
 
 /** Offensive rebound modifiers. */
