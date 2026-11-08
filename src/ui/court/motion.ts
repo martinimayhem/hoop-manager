@@ -5,7 +5,7 @@
 
 import { fatigueFactor } from '../../engine/ratings';
 import type { Side } from '../../engine/types';
-import { PACE_M_S, PASS_SPEED, type Ball, type BallAction, type Beat, type Pace, type Pos, type Script, type ShotStyle } from './animation';
+import { PACE_M_S, PASS_SPEED, isRef, type Ball, type BallAction, type Beat, type Pace, type Pos, type Script, type ShotStyle } from './animation';
 import { BODY_M, COURT, HOOP, MID_Y, guardSpot, insideCourt } from './formations';
 
 /**
@@ -132,6 +132,8 @@ export interface LiveContext {
   pressing?: boolean;
   /** Where the ball was last frame. */
   ball?: Pos;
+  /** The ball is dead: once in their places, everyone stands still. */
+  dead?: boolean;
 }
 
 /** The shortest turn from one angle to another, in -PI..PI. */
@@ -171,6 +173,31 @@ function keepApart(pos: Record<string, Pos>): void {
       }
     }
   }
+}
+
+/**
+ * How long a ball thrown at `speed` takes to meet a receiver at `at` running at `v`: the pass is
+ * aimed where he will be, not where he was. Coming towards the passer, that is sooner.
+ */
+function intercept(from: Pos, at: Pos, v: Pos, speed: number): number {
+  const dx = at.x - from.x;
+  const dy = at.y - from.y;
+  const plain = Math.hypot(dx, dy) / speed;
+  // |d + vT| = speed T, solved for the first T after the throw.
+  const a = v.x * v.x + v.y * v.y - speed * speed;
+  const b = 2 * (dx * v.x + dy * v.y);
+  const c = dx * dx + dy * dy;
+  let t = plain;
+  if (Math.abs(a) < 1e-6) t = b < 0 ? -c / b : plain;
+  else {
+    const disc = b * b - 4 * a * c;
+    if (disc >= 0) {
+      const roots = [(-b - Math.sqrt(disc)) / (2 * a), (-b + Math.sqrt(disc)) / (2 * a)].filter((r) => r > 0);
+      if (roots.length > 0) t = Math.min(...roots);
+    }
+  }
+  // He may not keep running that way: never lead him by more than half as long again.
+  return Math.min(t, plain * 1.5);
 }
 
 function keepInside(pos: Record<string, Pos>, key: string, maxStep: number): void {
@@ -215,6 +242,8 @@ export class Motion {
   private scale = 1;
   /** Each pass in the air: when and where it left the hands, and where it is aimed. */
   private flights = new WeakMap<BallAction, { start: number; from: Ball; aim: Pos; time: number }>();
+  /** The last pass thrown: if its beat ends before it arrives, it keeps flying into the receiver's hands. */
+  private lastPass: BallAction | null = null;
   private speeds: Record<string, number> = {};
   private fatigue: Record<string, number> = {};
   private carry: Record<string, Carry> = {};
@@ -226,6 +255,7 @@ export class Motion {
 
   reset(): void {
     this.pos = {};
+    this.lastPass = null;
     this.vel = {};
     this.facing = {};
     this.look = {};
@@ -310,7 +340,7 @@ export class Motion {
       const aim = man ? target : this.reactedAim(key, target, delay, gameDt);
       let tx = aim.x;
       let ty = aim.y;
-      if (key !== ballHolder && !man) {
+      if (key !== ballHolder && !man && !live?.dead && !isRef(key)) {
         // Off the ball nobody stands frozen: a small shift of weight every couple of seconds.
         let s = this.shift[key];
         if (!s || this.time > s.until) {
@@ -350,7 +380,7 @@ export class Motion {
     // Twice: a line can push someone back into a neighbour, who then has to give way along it.
     for (let round = 0; round < 2; round++) {
       keepApart(next);
-      for (const key of Object.keys(next)) if (key !== outOfBounds) keepInside(next, key, BOUNDS_M_S * dt * speedScale);
+      for (const key of Object.keys(next)) if (key !== outOfBounds && !isRef(key)) keepInside(next, key, BOUNDS_M_S * dt * speedScale);
     }
     this.pos = next;
     this.vel = nextVel;
@@ -522,6 +552,8 @@ export class Motion {
       return watch + d * run;
     };
     const seen = this.seen ?? scene.ball;
+    // An official watches the ball, wherever he is going.
+    if (isRef(key)) return { angle: blend(toward(seen)), quick: false };
     if (key === holder) return quick(blend(hoop));
     // Off the ball, bodies turn at an even pace: into the last steps, never spun round on arrival.
     if (key.startsWith(ballTeam)) return { angle: blend(toward(seen)), quick: false };
@@ -587,12 +619,12 @@ export class Motion {
 
   private nearestOpponent(key: string): { x: number; y: number; d: number } | null {
     const colon = key.indexOf(':');
-    if (colon < 0) return null;
+    if (colon < 0 || isRef(key)) return null;
     const side = key.slice(0, colon + 1);
     const me = this.pos[key];
     let best: { x: number; y: number; d: number } | null = null;
     for (const [other, p] of Object.entries(this.pos)) {
-      if (other.startsWith(side)) continue;
+      if (other.startsWith(side) || isRef(other)) continue;
       const d = Math.hypot(p.x - me.x, p.y - me.y);
       if (!best || d < best.d) best = { x: p.x, y: p.y, d };
     }
@@ -637,6 +669,8 @@ export class Motion {
     });
     switch (action.kind) {
       case 'held': {
+        const thrown = this.lastPass;
+        if (thrown?.kind === 'pass' && thrown.to === action.holder && !this.passArrived(thrown)) return this.ball(thrown, u, dir);
         const h = hand(action.holder, HAND_HEIGHT, action.dribble ? 0.38 : 0.15);
         if (!action.dribble) return h;
         const c = this.carry[action.holder];
@@ -652,10 +686,11 @@ export class Motion {
           const from = hand(action.from, 1.2);
           const receiver = this.pos[action.to] ?? from;
           const v = this.vel[action.to] ?? { x: 0, y: 0 };
-          const lead = Math.hypot(receiver.x - from.x, receiver.y - from.y) / PASS_SPEED[style];
+          const lead = intercept(from, receiver, { x: v.x / this.scale, y: v.y / this.scale }, PASS_SPEED[style]);
           const aim = { x: receiver.x + (v.x / this.scale) * lead, y: receiver.y + (v.y / this.scale) * lead };
           f = { start: this.clock, from, aim, time: Math.max(0.2, Math.hypot(aim.x - from.x, aim.y - from.y) / PASS_SPEED[style]) };
           this.flights.set(action, f);
+          this.lastPass = action;
         }
         const t = Math.min(1, (this.clock - f.start) / f.time);
         const caught = hand(action.to, 1.1);

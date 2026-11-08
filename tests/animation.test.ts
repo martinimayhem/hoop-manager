@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
 import { createMatch, stepPossession } from '../src/engine/match';
 import { other, playerOf } from '../src/engine/state';
-import { PACE_M_S, beatDurations, beatAt, buildScript, playerKey, type Frame, type Pace, type Script } from '../src/ui/court/animation';
+import { PACE_M_S, REFS, beatDurations, beatAt, buildScript, isRef, playerKey, type Frame, type Pace, type Script } from '../src/ui/court/animation';
 import { BODY_M, COURT, FORMATIONS, HOOP, MIN_SPACING_M, ZONE, insideCourt } from '../src/ui/court/formations';
 import { Motion, angleDiff, facingScene, speedFactor } from '../src/ui/court/motion';
 import { PASS_SPEED } from '../src/ui/court/animation';
@@ -49,7 +49,9 @@ describe('animation scripts', () => {
         const fired = script.beats.flatMap((b) => b.fire).sort((a, b) => a - b);
         expect(fired).toEqual(events.map((_, i) => i));
         for (const beat of script.beats) {
-          expect(Object.keys(beat.players).length).toBe(10);
+          // Ten players and the three officials.
+          expect(Object.keys(beat.players).filter((k) => !isRef(k)).length).toBe(10);
+          for (const r of REFS) expect(beat.players[r]).toBeDefined();
           const keys = new Set(Object.keys(beat.players));
           const a = beat.ball;
           if (a.kind === 'held') expect(keys.has(a.holder)).toBe(true);
@@ -265,6 +267,8 @@ describe('floor spacing and positions', () => {
               inbounds++;
               continue;
             }
+            // Officials work from off the floor.
+            if (isRef(k)) continue;
             const inside = insideCourt(p);
             expect(apart(inside, p)).toBeLessThan(0.001);
           }
@@ -386,8 +390,8 @@ describe('possession phases', () => {
         if (beat.phase !== 'setUp' || s.beats[index + 1]?.phase !== 'play' || u < 0.9) continue;
         seen = s;
         for (const [k, p] of Object.entries(beat.players)) {
-          // A guarding defender follows his man, not a spot: the realism test judges him on that.
-          if (beat.marking?.[k]) continue;
+          // A guarding defender follows his man, not a spot: the realism test judges him on that. Officials follow the play.
+          if (beat.marking?.[k] || isRef(k)) continue;
           checked++;
           if (apart(inner.motion.pos[k], p) > 1.2) late++;
         }
@@ -409,7 +413,8 @@ describe('possession phases', () => {
       expect(phases.lastIndexOf('bringUp')).toBeLessThan(phases.indexOf('setUp'));
       const shotBeat = script.beats.findIndex((b) => b.fire.includes(firstShot));
       const action = script.beats.slice(phases.lastIndexOf('setUp') + 1, shotBeat);
-      const passes = action.filter((b) => b.ball.kind === 'pass').length;
+      // Passes in play: a throw-in after a side-out foul is the officials' and the thrower's business.
+      const passes = action.filter((b) => b.ball.kind === 'pass' && !b.dead).length;
       const screens = action.some((b) => b.contact);
       expect(passes).toBeLessThanOrEqual(3);
       expect(passes > 0 || screens).toBe(true);
@@ -460,7 +465,8 @@ describe('the ball', () => {
     const styles: Record<string, number> = {};
     eachScript(planWith({}), 2, (script) => {
       script.beats.forEach((b, i) => {
-        if (b.ball.kind !== 'pass' || b.slow || i === 0) return;
+        // Players' passes; an official handing the ball over is not a pass through a defence.
+        if (b.ball.kind !== 'pass' || b.slow || i === 0 || isRef(b.ball.from) || isRef(b.ball.to)) return;
         // The pass is judged as thrown: from the passer, to where the receiver catches it, past the
         // defenders where they stood.
         const before = script.beats[i - 1].players;
@@ -545,7 +551,7 @@ describe('court space', () => {
     eachScript(planWith({}), 1, (script) => {
       for (const beat of script.beats) {
         for (const [k, p] of Object.entries(beat.players)) {
-          if (k === beat.outOfBounds) continue;
+          if (k === beat.outOfBounds || isRef(k)) continue;
           expect(p.x).toBeGreaterThanOrEqual(0);
           expect(p.x).toBeLessThanOrEqual(COURT.w);
           expect(p.y).toBeGreaterThanOrEqual(0);
@@ -831,7 +837,7 @@ describe('bodies', () => {
           frames++;
           const entries = Object.entries(m.pos);
           entries.forEach(([k, p], i) => {
-            if (free <= 0 && k !== beat.outOfBounds) furthestOut = Math.max(furthestOut, apart(insideCourt(p, 0.3), p));
+            if (free <= 0 && k !== beat.outOfBounds && !isRef(k)) furthestOut = Math.max(furthestOut, apart(insideCourt(p, 0.3), p));
             for (let j = i + 1; j < entries.length; j++) closest = Math.min(closest, apart(p, entries[j][1]));
           });
         }

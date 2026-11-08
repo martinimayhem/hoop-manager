@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
 import { callTimeout, createMatch, stepPossession } from '../src/engine/match';
 import { CLUTCH_MARGIN, CLUTCH_WINDOW } from '../src/game/clutch';
+import { isRef } from '../src/ui/court/animation';
 import { LiveMatch } from '../src/ui/match/controller';
 
 function playOut(controllers: ['human' | 'ai', 'human' | 'ai'], seed: number) {
@@ -21,7 +22,7 @@ function playOut(controllers: ['human' | 'ai', 'human' | 'ai'], seed: number) {
         expect(p.x).toBeGreaterThan(-5);
         expect(p.x).toBeLessThan(99);
       }
-      expect(Object.keys(f.players).length).toBe(10);
+      expect(Object.keys(f.players).filter((k) => !isRef(k)).length).toBe(10);
     }
     if (m.phase === 'timeout') {
       timeouts++;

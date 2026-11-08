@@ -1,11 +1,12 @@
 // Plays a whole match frame by frame through the live controller and checks that players and the
 // ball move the way basketball players do: no spinning, defenders on their man, no running
-// backwards at full speed, no robotic group starts, nobody frozen. Thresholds are set from what real
+// backwards at full speed, no robotic group starts, nobody frozen; at dead balls everyone stands still,
+// the clock stops and the ball is carried, never teleported. Thresholds are set from what real
 // players do, with headroom; the numbers before these fixes are in the comments.
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
-import { beatAt, type Script } from '../src/ui/court/animation';
+import { beatAt, isRef, type Script } from '../src/ui/court/animation';
 import { angleDiff, type Motion } from '../src/ui/court/motion';
 import { project } from '../src/ui/court/render';
 import { LiveMatch } from '../src/ui/match/controller';
@@ -40,7 +41,14 @@ function measure(seed: number) {
     liveFrames: 0,
     spins: 0,
     laneWaits: 0,
+    teleports: 0,
+    ftFrames: 0,
+    ftMoving: 0,
+    deadClockTicks: 0,
   };
+  let prevBall: { x: number; y: number } | null = null;
+  let prevClock = 0;
+  let prevBeat: object | null = null;
   const spun: Record<string, { t: number; turn: number }[]> = {};
   const prevFace: Record<string, number> = {};
   const lastSpin: Record<string, number> = {};
@@ -60,6 +68,7 @@ function measure(seed: number) {
     m.drainFx();
     if (m.phase === 'timeout' || m.phase === 'break') {
       m.resume();
+      prevBall = null;
       continue;
     }
     const sc = inner.script;
@@ -75,6 +84,24 @@ function measure(seed: number) {
     const mo = inner.motion;
     const f = m.frame();
     if (!f) continue;
+    // The ball never jumps: the fastest pass covers 0.33 m a frame, so 1.5 m is a teleport.
+    if (prevBall && dist(f.ball, prevBall) > 1.5) r.teleports++;
+    prevBall = { ...f.ball };
+    // A dead ball stops the clock.
+    if (beat.dead && beat === prevBeat && m.clock !== prevClock) r.deadClockTicks++;
+    prevBeat = beat;
+    prevClock = m.clock;
+    // The free-throw routine, from the official's bounce pass until the ball is up: only the shooter moves.
+    const ftAt = sc.beats.findIndex((b) => b.caption?.includes('to the line'));
+    const a = beat.ball;
+    const shooter = !beat.dead || ftAt < 0 || index <= ftAt ? null : a.kind === 'pass' && isRef(a.from) ? a.to : a.kind === 'held' && !isRef(a.holder) ? a.holder : a.kind === 'fromPlayer' && a.style === 'set' ? a.from : null;
+    if (shooter) {
+      for (const k of Object.keys(mo.pos)) {
+        if (k === shooter || isRef(k)) continue;
+        r.ftFrames++;
+        if (Math.hypot(mo.vel[k].x, mo.vel[k].y) > 0.3) r.ftMoving++;
+      }
+    }
     if (index !== lastBeat) {
       // Did six or more players set off within 0.1 s of each other in the beat just finished?
       if (lastBeat >= 0) {
@@ -95,17 +122,19 @@ function measure(seed: number) {
         rested[k] = false;
       }
     }
-    const holder = beat.ball.kind === 'held' ? beat.ball.holder : null;
+    const holder: string | null = beat.ball.kind === 'held' ? beat.ball.holder : null;
     // At the free-throw line everyone stands still by rule: those possessions are not counted for that.
     const freeThrows = sc.beats.some((b) => b.caption?.includes('to the line'));
     for (const [k] of Object.entries(mo.pos)) {
+      if (isRef(k)) continue;
       const v = mo.vel[k];
       const speed = Math.hypot(v.x, v.y);
+      const live = !freeThrows && !beat.dead;
       r.playerFrames++;
-      if (!freeThrows) r.liveFrames++;
+      if (live) r.liveFrames++;
       r.playerSeconds += DT;
       r.maxSpeed = Math.max(r.maxSpeed, speed);
-      if (speed < 0.5 && !freeThrows) r.still++;
+      if (speed < 0.5 && live) r.still++;
       if (speed < 0.5) rested[k] = true;
       if (speed > 1 && rested[k] && started[k] === -1) started[k] = time;
       const face = mo.facing[k];
@@ -210,6 +239,9 @@ describe('movement realism', () => {
       still: +(r.still / r.liveFrames).toFixed(3),
       spinsPerPossession: +(r.spins / r.possessions).toFixed(3),
       laneWaitsPerPossession: +(r.laneWaits / r.possessions).toFixed(3),
+      teleportsPerPossession: +(r.teleports / r.possessions).toFixed(3),
+      freeThrowMoving: +(r.ftMoving / r.ftFrames).toFixed(3),
+      deadClockTicks: r.deadClockTicks,
     }));
     // Sharp turns (over 120 degrees in 0.6 s): was 10.5 a minute per player.
     expect(r.bigTurns / playerMinutes).toBeLessThan(3);
@@ -237,5 +269,11 @@ describe('movement realism', () => {
     expect(r.laneWaits / r.possessions).toBeLessThan(0.03);
     // Standing dead still, outside free throws: was half of all player time.
     expect(r.still / r.liveFrames).toBeLessThan(0.4);
+    // The ball jumping across the floor: was 0.65 a possession, mostly from the net into the inbounder's hands.
+    expect(r.teleports / r.possessions).toBeLessThan(0.1);
+    // Anyone but the shooter moving during the free-throw routine: was 77% of the time.
+    expect(r.ftFrames).toBeGreaterThan(5000);
+    expect(r.ftMoving / r.ftFrames).toBeLessThan(0.06);
+    expect(r.deadClockTicks).toBe(0);
   }, 180000);
 });

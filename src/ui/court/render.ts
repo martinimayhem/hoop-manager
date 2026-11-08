@@ -77,7 +77,13 @@ export interface DotInfo {
   side: 0 | 1;
   heightM: number;
   hasBall: boolean;
+  /** An official: striped shirt, black trousers, no number. */
+  ref?: boolean;
 }
+
+/** The officials' kit: grey shirt with black stripes, black trousers and shoes. */
+const REF_SHIRT = '#d8d8d2';
+const REF_BLACK = '#1d1d1f';
 
 export interface TeamColours {
   fill: string;
@@ -196,7 +202,7 @@ export class CourtRenderer {
         const info = dots[key];
         if (!info) continue;
         const lift = frame.lift?.[key] ?? 0;
-        this.drawMarker(ctx, p.x, p.y, lift, info.hasBall);
+        if (!info.ref) this.drawMarker(ctx, p.x, p.y, lift, info.hasBall);
         items.push({
           depth: p.y - p.x,
           draw: () => this.drawPlayer(ctx, key, p.x, p.y, info, ball, lift, frame.shooter === key, frame.facing?.[key] ?? FACING_CAMERA, frame.reach?.[key] ?? 0, frame.look?.[key], frame.stance?.[key] ?? 0),
@@ -727,8 +733,10 @@ export class CourtRenderer {
     const along = airborne || speed === 0 ? 1 : (moveX * fx + moveY * fy) / speed;
     const sideways = airborne || speed === 0 ? 0 : Math.abs((moveX * -fy + moveY * fx) / speed);
 
-    const team = this.colours[info.side];
+    const ref = !!info.ref;
+    const team = ref ? { fill: REF_SHIRT, text: REF_BLACK } : this.colours[info.side];
     const skin = SKIN[hash(key) % SKIN.length];
+    const shin = ref ? REF_BLACK : skin;
     const k = spriteScale(info.heightM);
     /** Whichever side of the body is further from the camera comes first. */
     const farFirst: (1 | -1)[] = side >= 0 ? [-1, 1] : [1, -1];
@@ -751,17 +759,17 @@ export class CourtRenderer {
       const stepU = Math.max(0, s) * 3 * (1 - sideways) + tuck;
       const knee = at(1 + stepF * 0.5 + stance * 2, leg * (3.8 + stance * 1.5), 12 + tuck * 0.5 - crouch * 0.3);
       const ankle = at(stepF, stepR, stepU + 3);
-      limb(ctx, [at(0, leg * 3.4, 23 - crouch), knee, ankle], 4.4, skin);
-      limb(ctx, [[(knee[0] + ankle[0]) / 2, (knee[1] + ankle[1]) / 2], ankle], 4.2, '#f4f4ee');
+      limb(ctx, [at(0, leg * 3.4, 23 - crouch), knee, ankle], 4.4, shin);
+      limb(ctx, [[(knee[0] + ankle[0]) / 2, (knee[1] + ankle[1]) / 2], ankle], 4.2, ref ? REF_BLACK : '#f4f4ee');
       const [toeX, toeY] = at(stepF + 1.2, stepR, stepU + 1.3);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = ref ? REF_BLACK : '#ffffff';
       ctx.strokeStyle = OUTLINE;
       ctx.lineWidth = 0.9;
       ctx.beginPath();
       ctx.ellipse(toeX, toeY, shoeLength, 2.1, shoeTurn, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.strokeStyle = team.fill;
+      ctx.strokeStyle = ref ? '#3a3a3c' : team.fill;
       ctx.lineCap = 'butt';
       ctx.beginPath();
       ctx.moveTo(toeX - Math.cos(shoeTurn) * shoeLength * 0.6, toeY - Math.sin(shoeTurn) * shoeLength * 0.6 - 0.4);
@@ -772,8 +780,8 @@ export class CourtRenderer {
     // Everything above the legs sits lower in a stance.
     ctx.translate(0, crouch);
 
-    // Shorts.
-    ctx.fillStyle = darken(team.fill, 0.72);
+    // Shorts (an official's trousers).
+    ctx.fillStyle = ref ? REF_BLACK : darken(team.fill, 0.72);
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 0.9;
     ctx.lineJoin = 'round';
@@ -860,6 +868,14 @@ export class CourtRenderer {
     ctx.lineTo(-waist, -25.5);
     ctx.closePath();
     ctx.fill();
+    if (ref) {
+      // Vertical stripes, closer together as the body turns side-on.
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = REF_BLACK;
+      for (let u = -1; u <= 1.01; u += 0.4) ctx.fillRect(u * chest - 0.75 * Math.max(0.5, across), -40, 1.5 * Math.max(0.5, across), 15);
+      ctx.restore();
+    }
     ctx.lineWidth = 0.9;
     ctx.strokeStyle = OUTLINE;
     ctx.stroke();

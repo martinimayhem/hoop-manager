@@ -90,6 +90,8 @@ export interface Beat {
   outOfBounds?: string;
   /** A key moment: the players move in slow motion while the ball plays out. */
   slow?: boolean;
+  /** The ball is dead (a whistle, free throws, a throw-in being set up): the clock stands still and so do the players, once they are in place. */
+  dead?: boolean;
   ball: BallAction;
   /** Relative share of the possession's duration. */
   weight: number;
@@ -129,8 +131,25 @@ export interface ScriptContext {
   clockEnd: number;
   /** How the possession started: after a defensive rebound, a steal, or a dead ball (inbound). */
   start: Transition;
+  /** After a dead ball, how the ball comes back into play. */
+  restart?: Restart;
   name: (side: Side, id: string) => string;
 }
+
+/** How the ball is put back in play when a possession starts from a dead ball. */
+export type Restart =
+  /** After a score: picked up under the basket and thrown in from the end line. */
+  | { kind: 'made' }
+  /** After a violation or a turnover: from the sideline nearest to `at` (absolute court metres). */
+  | { kind: 'sideline'; at: Pos }
+  /** The opening jump ball, and overtime. */
+  | { kind: 'tip' }
+  /** A quarter that starts with a throw-in at the centre line. */
+  | { kind: 'centre' };
+
+/** The three officials. They are on the floor with the players, but never on a team. */
+export const REFS = ['ref:0', 'ref:1', 'ref:2'];
+export const isRef = (key: string) => key.startsWith('ref:');
 
 export const RIM_HEIGHT = 3.05;
 const RIM: Ball = { x: HOOP_X, y: MID_Y, z: RIM_HEIGHT + 0.03 };
@@ -164,10 +183,20 @@ const BACKCOURT: Spot[] = [[8.9, 7.5], [11.9, 3], [11.9, 12], [10.1, 5.1], [9.5,
 const THREE: Spot[] = [[25.6, 0.6], [21.6, 2.5], [19.4, 7.5], [21.6, 12.5], [25.6, 14.4]];
 const MID: Spot[] = [[22.3, 4.8], [21.8, 7.5], [22.3, 10.2]];
 const POST: Spot[] = [[24.7, 5.7], [24.7, 9.3]];
-const LANE: Spot[] = [[23.8, 4.75], [25.2, 4.75], [23.8, 10.25], [25.2, 10.25], [20.9, 3.6], [20.9, 11.4], [19.1, 7.5], [19.7, 2.4], [19.7, 12.6]];
-const FT_SPOT: Pos = { x: 22, y: MID_Y };
-/** Beside the backboard, not behind it. */
-const INBOUND_SPOT: Pos = { x: -0.45, y: 5.1 };
+const FT_SPOT: Pos = { x: 21.9, y: MID_Y };
+/** Free-throw lane places, from the basket out (x), either side of the lane (y). */
+const LANE_X = [25.4, 24.5, 23.6];
+const LANE_Y = [4.6, 10.4];
+/** On the last free throw the lane steps in as the ball is released. */
+const STEP_IN_M = 0.9;
+/** Just off the floor: where throw-ins are taken and officials stand. */
+const OUT_M = 0.45;
+/** The trail official works the table side, the centre the far side, the lead the end line. */
+const TRAIL_Y = -0.4;
+const CENTRE_Y = COURT.h + OUT_M;
+const END_LINE_X = COURT.w + OUT_M;
+/** The lead stands here to give the shooter the ball at a free throw: on the end line, beside the lane. */
+const FT_LEAD: Pos = { x: END_LINE_X, y: 10.7 };
 
 const pos = ([x, y]: Spot): Pos => ({ x, y });
 
@@ -251,6 +280,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   let pressing = false;
   /** Defenders scripted for the next beat, who the scheme leaves alone. */
   let placed = new Set<string>();
+  /** Defenders getting back while the ball is brought in, who the scheme leaves alone until it is. */
+  let holdBack = new Set<string>();
   /** Teammates meant to be close in the next beat (a screen). */
   let contact: string[] = [];
   /** The player the action is about: gives way only to the ball handler. */
@@ -261,6 +292,21 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   let challenger: string | undefined;
   let blocking = false;
   let outOfBounds: string | undefined;
+  /** Where a sideline throw-in is taken from (null for one from the end line). */
+  let throwFrom: Pos | null = null;
+  /** The next beat is a dead ball. */
+  let deadBeat = false;
+  /** How fast each player goes to his place at a dead ball: walking, or jogging a long way. */
+  let restPace: Record<string, Pace> = {};
+  /** Officials told where to stand while they handle the ball; the rest follow the play. */
+  let refSpot: Record<string, Pos> = {};
+  /** Two officials swap between lead and trail as the ball changes ends; the centre stays on the far side. */
+  let lead = REFS[0];
+  let trail = REFS[1];
+  const centre = REFS[2];
+  /** A shooting foul on a basket that counts: its whistle comes with the shot. */
+  let andOne: TimedEvent | null = null;
+  let andOneAt = -1;
   /** Set after a shot hits the rim, until the rebound plays it off. */
   let rimHit: { contact: Ball; from: Pos } | null = null;
 
@@ -276,7 +322,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     const ball = at[holder] ?? ballSpot;
     defIds.forEach((_, i) => {
       const k = guards[i];
-      if (placed.has(k)) return;
+      if (placed.has(k) || holdBack.has(k)) return;
       if (ctx.defence === 'zone') {
         // Fixed spots; the zone only shades a step to the ball's side.
         const [x, y] = ZONE[defIds.indexOf(idOf(k))];
@@ -285,7 +331,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       }
       const man = offKeys[i];
       // Nobody crowds the inbounder: their defender stands off the baseline and denies the pass.
-      if (man === outOfBounds) at[k] = { x: DENY_INBOUND_X, y: at[man].y - 1.2 };
+      if (man === outOfBounds) at[k] = throwFrom ? { x: throwFrom.x, y: throwFrom.y < MID_Y ? 1.1 : COURT.h - 1.1 } : { x: DENY_INBOUND_X, y: at[man].y - 1.2 };
       else if (at[man]) {
         at[k] = guardSpot(at[man], ball, man === holder, pressing);
         marking[k] = man;
@@ -303,16 +349,33 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     }
   };
 
+  /**
+   * Where an official goes with the play: the trail behind the ball on the table side, the centre
+   * level with it on the far side, the lead ahead of it, down the sideline and onto the end line.
+   */
+  const officiate = (r: string): Pos => {
+    const b = at[holder] ?? ballSpot;
+    if (r === lead) {
+      // Down the table sideline ahead of the ball, round the corner once it is into the half court.
+      if (b.x < COURT.w / 2) return { x: Math.min(COURT.w - 1, Math.max(at[lead].x, b.x + 10)), y: TRAIL_Y };
+      if (b.x < 18) return { x: COURT.w - 0.2, y: TRAIL_Y };
+      return { x: END_LINE_X, y: Math.max(3.2, Math.min(11.8, MID_Y + (b.y - MID_Y) * 0.6)) };
+    }
+    if (r === trail) return { x: Math.max(1, Math.min(COURT.w - 7.5, b.x - 3)), y: TRAIL_Y };
+    return { x: Math.max(3, Math.min(COURT.w - 5, b.x + 1)), y: CENTRE_Y };
+  };
+
   const push = (weight: number, ball: BallAction, fire: number[] = [], caption?: string, spotlight?: string, minSeconds?: number) => {
     if (spacing) spread(at, offKeys, (k) => (k === holder || k === outOfBounds || contact.includes(k) ? 0 : k === soft ? 0.15 : 1));
     if (autoDefence) settleDefence();
     else marking = {};
-    for (const k of Object.keys(at)) if (k !== outOfBounds) at[k] = insideCourt(at[k]);
+    for (const k of Object.keys(at)) if (k !== outOfBounds && !isRef(k)) at[k] = insideCourt(at[k]);
+    for (const r of REFS) at[r] = refSpot[r] ?? officiate(r);
     const players: Record<string, Pos> = {};
     const pace: Record<string, Pace> = {};
     for (const [k, p] of Object.entries(at)) {
       players[k] = toAbs(p);
-      pace[k] = paceFor[k] ?? (k.startsWith(`${off}:`) ? offPace : defPace);
+      pace[k] = paceFor[k] ?? (holdBack.has(k) ? 'run' : deadBeat ? (restPace[k] ?? 'walk') : isRef(k) ? 'run' : k.startsWith(`${off}:`) ? offPace : defPace);
     }
     // The beat lasts as long as the player it is about needs to get there at that pace.
     const actor = ball.kind === 'held' ? ball.holder : ball.kind === 'pass' || ball.kind === 'toPlayer' ? ball.to : ball.kind === 'fromPlayer' ? ball.from : null;
@@ -323,8 +386,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       const d = dist(at[k], from);
       // Backing down in the post is slow going: feet moving backwards, against a defender.
       const speed = k === posting ? POST_BACKDOWN_M_S : PACE_M_S[pace[k]] * factor(k);
-      // Plus a moment to react and get up to speed.
-      if (d > 0.9) travel = Math.max(travel, d / speed + 0.45);
+      // Plus a moment to react and get up to speed: the defence reacts later than the offence.
+      if (d > 0.9) travel = Math.max(travel, d / speed + (k.startsWith(`${off}:`) ? 0.45 : 0.8));
     }
     const needed = Math.max(minSeconds ?? 0, Math.min(travel, 6));
     beats.push({
@@ -342,6 +405,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       block: blocking || undefined,
       outOfBounds,
       slow: slowBeat || undefined,
+      dead: deadBeat || undefined,
       ball,
       weight,
       fire: [...pendingFire, ...fire],
@@ -353,6 +417,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     paceFor = {};
     mustArrive = [];
     slowBeat = false;
+    deadBeat = false;
     placed = new Set();
     contact = [];
     jumpers = [];
@@ -433,10 +498,16 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   // ---- Starting positions: carry over where everyone was.
   offIds.forEach((id, i) => (at[kOff(id)] = pos(BACKCOURT[i])));
   defIds.forEach((id, i) => (at[kDef(id)] = { x: BACKCOURT[i][0] + 9, y: BACKCOURT[i][1] }));
+  // The officials start a game on the sidelines and the end line.
+  at[REFS[0]] = { x: END_LINE_X, y: 4 };
+  at[REFS[1]] = { x: 9, y: TRAIL_Y };
+  at[REFS[2]] = { x: 16, y: CENTRE_Y };
   if (prev) {
     for (const k of Object.keys(at)) if (prev.players[k]) at[k] = toNorm(prev.players[k]);
     ballSpot = { ...toNorm(prev.ball), z: prev.ball.z };
   }
+  // Whichever of the two is nearer the basket being attacked leads.
+  if (at[REFS[1]].x > at[REFS[0]].x) [lead, trail] = [REFS[1], REFS[0]];
   for (const [k, p] of Object.entries(at)) lastAt[k] = { ...p };
 
   const fastBreak = events.find((e) => e.type === 'fastBreak');
@@ -449,25 +520,224 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   /** Whoever inbounded the ball has the whole floor to cover, so they run it. */
   let trailer: string | null = null;
 
+  // ---- Dead balls: getting everyone to their places, and the ball to whoever restarts play.
+
+  /** Everyone heads for his place at a dead ball: walking, or jogging if it is a long way. Returns how long the slowest needs. */
+  const walkTo = (): number => {
+    let slowest = 0;
+    for (const k of Object.keys(at)) {
+      const from = lastAt[k];
+      if (!from) continue;
+      const d = dist(from, refSpot[k] ?? (isRef(k) ? officiate(k) : at[k]));
+      restPace[k] = d > 6 ? 'jog' : 'walk';
+      slowest = Math.max(slowest, d / (PACE_M_S[restPace[k]] * factor(k)) + 0.6);
+    }
+    return Math.min(6, slowest);
+  };
+  /** Seconds the beats since `mark` will take at least. */
+  const since = (mark: number) => beats.slice(mark).reduce((sum, b) => sum + (b.minSeconds ?? 0), 0);
+  const stillBall = (): BallAction => ({ kind: 'fixed', from: ballAbs(ballSpot), to: ballAbs(ballSpot), arc: 0 });
+
+  /** A whistle: play stops where it is. */
+  const whistle = (i: number) => {
+    spacing = false;
+    autoDefence = false;
+    deadBeat = true;
+    push(0, holder ? hold() : stillBall(), [i], undefined, undefined, 0.7);
+  };
+
+  /** The ball goes to an official: handed over by whoever has it, or picked up off the floor. */
+  const getBall = (official: string) => {
+    if (holder === official) return;
+    if (holder && at[holder]) {
+      const from = holder;
+      const d = dist(at[from], refSpot[official] ?? at[official]);
+      holder = official;
+      deadBeat = true;
+      push(0, { kind: 'pass', from, to: official, arc: d > 7 ? 0.25 : 0.05, style: d > 7 ? 'chest' : 'bounce' }, [], undefined, undefined, Math.max(0.6, d / PASS_SPEED.bounce + 0.25));
+      return;
+    }
+    // Loose: off the iron it drops and rolls out towards the end line; anywhere else it settles
+    // where it is. The official walks over and picks it up.
+    const rest: Ball = dist(ballSpot, HOOP) < 1.2 ? { x: HOOP.x + 0.85, y: MID_Y + (ballSpot.y >= MID_Y ? 0.8 : -0.8), z: 0.11 } : { ...ballSpot, z: 0.11 };
+    if (ballSpot.z > 0.2) {
+      deadBeat = true;
+      push(0, { kind: 'fixed', from: ballAbs(ballSpot), to: ballAbs(rest), arc: 0.3 }, [], undefined, undefined, ballSpot.z > 2 ? 0.65 : 0.4);
+    }
+    const near = { x: rest.x + (rest.x < at[official].x ? 0.4 : -0.4), y: rest.y };
+    const walk = dist(at[official], near) / PACE_M_S.jog + 0.3;
+    refSpot[official] = near;
+    paceFor[official] = 'jog';
+    deadBeat = true;
+    push(0, { kind: 'fixed', from: ballAbs(rest), to: ballAbs(rest), arc: 0 }, [], undefined, undefined, Math.max(0.2, walk));
+    holder = official;
+    deadBeat = true;
+    push(0, { kind: 'toPlayer', from: ballAbs(rest), to: official, arc: 0.05 }, [], undefined, undefined, 0.35);
+  };
+
+  /**
+   * A throw-in from out of bounds at `spot`: the nearest official gets the ball and bounces it to
+   * the thrower, who has stepped out; `places` puts the rest of the offence where it wants to be.
+   */
+  const throwIn = (spot: Pos, thrower: string, receiver: string, places: () => void) => {
+    spacing = false;
+    autoDefence = true;
+    const official = [lead, trail, centre].sort((a, b) => dist(at[a], spot) - dist(at[b], spot))[0];
+    places();
+    at[thrower] = { ...spot };
+    outOfBounds = thrower;
+    throwFrom = spot;
+    const walk = walkTo();
+    const mark = beats.length;
+    getBall(official);
+    const beside = { x: spot.x + (spot.x > COURT.w / 2 ? 1.1 : -1.1), y: spot.y };
+    const over = dist(at[official], beside) / PACE_M_S.walk + 0.5;
+    refSpot[official] = beside;
+    deadBeat = true;
+    push(0, hold(), [], undefined, undefined, Math.max(0.6, walk - since(mark), over));
+    // Handed over with a bounce; a look, and in it goes. The clock starts when it is touched.
+    holder = thrower;
+    deadBeat = true;
+    push(0, { kind: 'pass', from: official, to: thrower, arc: 0, style: 'bounce' }, [], undefined, undefined, 0.6);
+    deadBeat = true;
+    push(0, hold(), [], undefined, undefined, 0.5);
+    deadBeat = true;
+    passTo(receiver, 0);
+    outOfBounds = undefined;
+    throwFrom = null;
+    // In the half court the thrower steps back in to an open spot; in the backcourt he runs up with the rest.
+    if (spot.x > COURT.w / 2) at[thrower] = openSpot(thrower);
+    holdBack = new Set();
+    delete refSpot[official];
+  };
+
+  /** Where the offence goes for a throw-in: the point guard comes to the ball, the others to the backcourt or, past half way, into their sets. */
+  const setForThrowIn = (spot: Pos) => {
+    if (spot.x > COURT.w / 2) toFormation();
+    else offIds.forEach((id, i) => (at[kOff(id)] = pos(BACKCOURT[i])));
+    at[pg] = { x: Math.max(2.5, Math.min(COURT.w - 3, spot.x - 1.5)), y: spot.y < MID_Y ? 3.4 : COURT.h - 3.4 };
+  };
+
+  /** The defence gets back while the ball comes in; only a press stays up to pick up full court. */
+  const getBack = () => {
+    if (pressing || ctx.defence === 'zone') return;
+    guards.forEach((k, i) => (at[k] = { x: Math.max(at[k].x, 15.5 + i * 1.2), y: at[k].y + (ZONE[i][1] - at[k].y) * 0.5 }));
+    holdBack = new Set(guards);
+  };
+
+  /**
+   * After a score: the ball drops through the net and bounces away; the nearest man picks it up,
+   * steps out behind the end line and throws it in to the point guard coming back for it.
+   */
+  const madeInbound = () => {
+    const under: Pos = { x: COURT.w - HOOP.x, y: MID_Y };
+    const thrower = offKeys.filter((k) => k !== pg).sort((a, b) => dist(at[a], under) - dist(at[b], under))[0];
+    const side = at[thrower].y < MID_Y ? -1 : 1;
+    const drop: Ball = dist(ballSpot, under) < 1.5 && ballSpot.z < 1 ? { ...ballSpot } : { ...under, z: 0.15 };
+    const bounce: Ball = { x: under.x - 0.35, y: MID_Y + side * 0.45, z: 0.11 };
+    const roll: Ball = { x: under.x - 0.85, y: MID_Y + side * 0.85, z: 0.11 };
+    const rest: Ball = { x: under.x - 1.1, y: MID_Y + side * 1.05, z: 0.11 };
+    trailer = thrower;
+    at[pg] = { x: 3.4, y: MID_Y + side * 3.6 };
+    offIds.forEach((id, i) => {
+      const k = kOff(id);
+      if (k !== pg && k !== thrower) at[k] = pos(BACKCOURT[i]);
+    });
+    at[thrower] = { x: rest.x + 0.3, y: rest.y };
+    getBack();
+    const reach = dist(lastAt[thrower], at[thrower]) / (PACE_M_S.jog * factor(thrower)) + 0.45;
+    // In the last two minutes the clock stops after a basket; otherwise it runs.
+    const stopped = ctx.quarter >= 4 && ctx.clockStart <= 120;
+    holder = '';
+    for (const [from, to, arc, seconds] of [
+      [drop, bounce, 0.45, 0.45],
+      [bounce, roll, 0.15, 0.3],
+      [roll, rest, 0, Math.max(0.25, reach - 0.75)],
+    ] as const) {
+      paceFor[thrower] = 'jog';
+      deadBeat = stopped;
+      push(0, { kind: 'fixed', from: ballAbs(from), to: ballAbs(to), arc }, [], undefined, undefined, seconds);
+    }
+    holder = thrower;
+    deadBeat = stopped;
+    push(0, { kind: 'toPlayer', from: ballAbs(rest), to: thrower, arc: 0.05 }, [], undefined, undefined, 0.35);
+    // Out behind the end line, beside the board, and in.
+    at[thrower] = { x: -OUT_M - 0.1, y: MID_Y + side * 2.3 };
+    outOfBounds = thrower;
+    deadBeat = stopped;
+    push(0, hold(), [], undefined, undefined, 0.9);
+    deadBeat = stopped;
+    passTo(pg, 0);
+    outOfBounds = undefined;
+    holdBack = new Set();
+  };
+
+  /** The opening jump: the centres in the circle, the rest round it, and an official tosses it up. */
+  const tipOff = () => {
+    const mid: Pos = { x: COURT.w / 2, y: MID_Y };
+    const ring = (deg: number, r = 2.5): Pos => ({ x: mid.x + Math.cos((deg * Math.PI) / 180) * r, y: mid.y + Math.sin((deg * Math.PI) / 180) * r });
+    const defKeys = defIds.map(kDef);
+    const centres = [offKeys[offKeys.length - 1], defKeys[defKeys.length - 1]];
+    at[centres[0]] = { x: mid.x - 0.45, y: MID_Y };
+    at[centres[1]] = { x: mid.x + 0.45, y: MID_Y };
+    offKeys.slice(0, -1).forEach((k, j) => (at[k] = ring([135, 225, 60, 300][j])));
+    const defRing = [ring(90), ring(270), ring(180, 2.05), { x: mid.x + 5.5, y: MID_Y }];
+    defKeys.slice(0, -1).forEach((k, j) => (at[k] = defRing[j]));
+    refSpot = { [trail]: { x: mid.x, y: MID_Y - 1.2 }, [lead]: { x: mid.x + 4, y: TRAIL_Y }, [centre]: { x: mid.x - 2.5, y: CENTRE_Y } };
+    holder = trail;
+    deadBeat = true;
+    push(0, hold(), [], 'Tip-off!', undefined, 1.8);
+    const toss: Ball = { x: mid.x, y: MID_Y - 0.85, z: 1.55 };
+    const top: Ball = { ...mid, z: 4.05 };
+    holder = '';
+    deadBeat = true;
+    push(0, { kind: 'fixed', from: ballAbs(toss), to: ballAbs(top), arc: 0.55 }, [], undefined, undefined, 0.6);
+    // Both go up; the attacking centre gets a hand to it first and taps it back to the point guard.
+    const to = at[pg];
+    const away = dist(to, mid) || 1;
+    const tapped: Ball = { x: mid.x + ((to.x - mid.x) / away) * 1.9, y: MID_Y + ((to.y - MID_Y) / away) * 1.9, z: 2.6 };
+    jumpers = [...centres];
+    reachers = [...centres];
+    deadBeat = true;
+    push(0, { kind: 'fixed', from: ballAbs(top), to: ballAbs(tapped), arc: 0.35 }, [], undefined, undefined, 0.55);
+    holder = pg;
+    push(0, { kind: 'toPlayer', from: ballAbs(tapped), to: pg, arc: 0.15 }, [], undefined, pg, 0.45);
+  };
+
   // ---- Getting the ball in: inbound after a dead ball, outlet after a rebound, steal = already ours.
   if (ctx.start === 'none') {
-    const inbounder = kOff(offIds[offIds.length - 1]);
-    at[inbounder] = origin[inbounder] = { ...INBOUND_SPOT };
-    trailer = inbounder;
-    outOfBounds = inbounder;
-    at[pg] = { x: 2.7, y: 8.4 };
-    offIds.forEach((id, i) => {
-      if (i > 0 && i < offIds.length - 1) at[kOff(id)] = pos(BACKCOURT[i]);
-    });
-    // The team that just scored turns and heads back while the ball comes in; only a press stays up.
-    const retreat = !pressing && ctx.defence !== 'zone';
-    if (retreat) guards.forEach((k, i) => place(k, { x: Math.max(at[k].x, 12.5 + i * 1.2), y: at[k].y + (ZONE[i][1] - at[k].y) * 0.5 }));
-    holder = inbounder;
     phase = 'bringUp';
-    push(0.35, hold());
-    if (retreat) guards.forEach((k) => placed.add(k));
-    passTo(pg, 0.25);
-    outOfBounds = undefined;
+    const restart = ctx.restart ?? { kind: 'made' };
+    if (restart.kind === 'tip') tipOff();
+    else if (restart.kind === 'centre') {
+      // A quarter starts with a throw-in from the centre line, on the side away from the table.
+      const spot: Pos = { x: COURT.w / 2, y: CENTRE_Y };
+      const thrower = offKeys[2] ?? offKeys[1];
+      holder = centre;
+      throwIn(spot, thrower, pg, () => {
+        const spots: Spot[] = [[16.8, 3.6], [17.5, 10.2], [11, 5.2]];
+        offKeys.filter((k) => k !== pg && k !== thrower).forEach((k, j) => (at[k] = pos(spots[j % spots.length])));
+        at[pg] = { x: COURT.w / 2 - 3, y: COURT.h - 3.6 };
+      });
+      trailer = thrower;
+    } else if (restart.kind === 'sideline') {
+      // After a violation: from the sideline level with where it happened. Whoever had the ball
+      // when the whistle went still has it, unless it went out.
+      const p = toNorm(restart.at);
+      const spot: Pos = { x: Math.max(1.2, Math.min(COURT.w - 1.2, p.x)), y: p.y < MID_Y ? -OUT_M : COURT.h + OUT_M };
+      const keeper = [...offKeys, ...defIds.map(kDef)].filter((k) => ballSpot.z > 0.5 && dist(at[k], ballSpot) < 0.8).sort((a, b) => dist(at[a], ballSpot) - dist(at[b], ballSpot))[0];
+      holder = keeper ?? '';
+      const thrower = offKeys.filter((k) => k !== pg).sort((a, b) => dist(at[a], spot) - dist(at[b], spot))[0];
+      if (spot.x < COURT.w / 2) getBack();
+      throwIn(spot, thrower, pg, () => setForThrowIn(spot));
+      trailer = thrower;
+    } else {
+      spacing = false;
+      madeInbound();
+    }
+    refSpot = {};
+    spacing = true;
+    autoDefence = true;
   } else {
     holder = nearestToBall();
     if (fastBreak) autoDefence = false;
@@ -510,7 +780,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       // The defence sprints back.
       for (const k of guards) paceFor[k] = 'sprint';
       if (trailer) paceFor[trailer] = 'run';
-      const slowest = Math.max(...Object.keys(at).map((k) => dist(origin[k], at[k]) / (PACE_M_S[paceFor[k] ?? offPace] * factor(k))));
+      const slowest = Math.max(...Object.keys(at).filter((k) => !isRef(k)).map((k) => dist(origin[k], at[k]) / (PACE_M_S[paceFor[k] ?? offPace] * factor(k))));
       const spent = beats.reduce((sum, b) => sum + (b.minSeconds ?? 0), 0);
       const share = seconds >= EARLY_OFFENCE_SECONDS ? 1 : 0.6;
       push(0.45, dribble(), [], startX < BRING_UP_X ? undefined : `${n(off, offIds[0])} brings it up…`, pg, Math.min(7, Math.max(0.3, (slowest * 1.2 + 1.5) * share - spent)));
@@ -663,6 +933,75 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     }
   };
 
+  /**
+   * Free-throw places: three defenders and two attackers on the lane, the defence nearest the
+   * basket; everyone else behind the arc, one defender on the shooter and the rest back.
+   */
+  const ftPlaces = (shooter: string): Record<string, Pos> => {
+    const out: Record<string, Pos> = { [shooter]: { ...FT_SPOT } };
+    const byY = (a: string, b: string) => at[a].y - at[b].y;
+    const defs = defIds.map(kDef);
+    const offs = offKeys.filter((k) => k !== shooter);
+    // The bigs take the lane, each to the side he is on.
+    const [d0, d1, d2] = defs.slice(-3).sort(byY);
+    const [o0, o1] = offs.slice(-2).sort(byY);
+    if (d0) out[d0] = { x: LANE_X[0], y: LANE_Y[0] };
+    if (d2) out[d2] = { x: LANE_X[0], y: LANE_Y[1] };
+    if (d1) out[d1] = { x: LANE_X[2], y: at[d1].y < MID_Y ? LANE_Y[0] : LANE_Y[1] };
+    if (o0) out[o0] = { x: LANE_X[1], y: LANE_Y[0] };
+    if (o1) out[o1] = { x: LANE_X[1], y: LANE_Y[1] };
+    const behind: [string | undefined, Pos][] = [
+      [defs[0], { x: 19.2, y: 9.2 }],
+      [defs[1], { x: 15.6, y: 5.6 }],
+      [offs[0], { x: 19.3, y: 3.7 }],
+      [offs[1], { x: 15.2, y: 9.8 }],
+    ];
+    for (const [k, p] of behind) if (k) out[k] = p;
+    return out;
+  };
+
+  /** As the last free throw leaves the shooter's hands, the lane steps in to box out. */
+  const stepIn = () => {
+    for (const k of [...offKeys, ...defIds.map(kDef)]) {
+      const p = at[k];
+      if (p.x < LANE_X[2] - 0.1 || Math.abs(p.y - MID_Y) < 2) continue;
+      at[k] = { x: p.x + 0.2, y: p.y + Math.sign(MID_Y - p.y) * STEP_IN_M };
+      paceFor[k] = 'run';
+    }
+  };
+
+  /** Fouled going up, and it does not go in: the attempt, the contact, the whistle as it comes off the iron. */
+  const fouledShot = (ev: Extract<TimedEvent, { type: 'foul' }>, i: number, shots: number) => {
+    const shooter = kOff(ev.onId);
+    const fouler = kDef(ev.playerId);
+    const three = shots === 3;
+    if (!fastBreak && !doubled && holder.startsWith(`${off}:`)) ballMovement(shooter, null, false, three ? 'three' : 'drive');
+    if (holder !== shooter && holder.startsWith(`${off}:`)) passTo(shooter, 0.28);
+    holder = shooter;
+    soft = shooter;
+    const name = n(off, ev.onId);
+    const spot = shotSpot(three ? 'three' : 'drive', i + Math.floor(ev.clock));
+    at[shooter] = spot;
+    paceFor[shooter] = three ? 'run' : 'sprint';
+    // The man who fouls him is with him all the way.
+    place(fouler, { x: spot.x + 0.9, y: spot.y + (spot.y < MID_Y ? 0.4 : -0.4) });
+    paceFor[fouler] = 'sprint';
+    mustArrive = [shooter, fouler];
+    push(0.4, dribble(), [], three ? `${name} rises from deep…` : `${name} attacks the basket…`, shooter);
+    const toRim = dist(spot, HOOP) || 1;
+    const style: ShotStyle = three ? 'jumper' : 'layup';
+    if (!three) at[shooter] = { x: 25.45, y: MID_Y + (spot.y - MID_Y) * 0.3 };
+    challenger = fouler;
+    place(fouler, { x: at[shooter].x + ((HOOP.x - spot.x) / toRim) * 0.85, y: at[shooter].y + ((HOOP.y - spot.y) / toRim) * 0.85 });
+    paceFor[fouler] = 'sprint';
+    const contactAt = rimContact(spot, seed + i);
+    push(0.8, { kind: 'fromPlayer', from: shooter, to: ballAbs(contactAt), arc: shotArc(spot, style), style }, [i], undefined, undefined, three ? 1.1 + toRim * 0.05 : 0.85);
+    soft = null;
+    holder = '';
+    spacing = false;
+    autoDefence = false;
+  };
+
   events.forEach((ev, i) => {
     switch (ev.type) {
       case 'fastBreak': {
@@ -802,10 +1141,12 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         // Help has to get there before a block can happen: the shooter gathers while it comes.
         const toRim = dist(from, HOOP) || 1;
         const basketSide = { x: from.x + ((HOOP.x - from.x) / toRim) * 0.85, y: from.y + ((HOOP.y - from.y) / toRim) * 0.85 };
-        if (ev.blockerId && dist(at[kDef(ev.blockerId)], from) > 1.5) {
-          place(kDef(ev.blockerId), basketSide);
-          paceFor[kDef(ev.blockerId)] = 'sprint';
-          mustArrive = [kDef(ev.blockerId)];
+        // A shot that is blocked, or fouled on the way in, has its defender right there.
+        const onShooter = ev.blockerId ? kDef(ev.blockerId) : andOne?.type === 'foul' ? kDef(andOne.playerId) : null;
+        if (onShooter && dist(at[onShooter], from) > 1.5) {
+          place(onShooter, basketSide);
+          paceFor[onShooter] = 'sprint';
+          mustArrive = [onShooter];
           push(0.15, { kind: 'held', holder: shooterKey, dribble: true }, [], undefined, shooterKey);
         }
         if (style === 'layup' || style === 'dunk') at[shooterKey] = { x: 25.45, y: MID_Y + (from.y - MID_Y) * 0.3 };
@@ -815,14 +1156,17 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         // Someone always comes out at the shooter, on the basket side: the blocker if there is one,
         // otherwise whoever is nearest. Whether they get there in time is down to their legs.
         const nearest = defIds.map(kDef).sort((a, b) => dist(at[a], from) - dist(at[b], from))[0];
-        challenger = ev.blockerId ? kDef(ev.blockerId) : nearest;
+        challenger = onShooter ?? nearest;
         blocking = !!ev.blockerId;
+        // And one: the whistle goes as it drops.
+        const fired = andOne ? [andOneAt, i] : [i];
+        andOne = null;
         place(challenger, { x: at[shooterKey].x + ((HOOP.x - from.x) / toRim) * 0.85, y: at[shooterKey].y + ((HOOP.y - from.y) / toRim) * 0.85 });
         paceFor[challenger] = 'sprint';
         if (ev.blockerId) {
           push(0.8, { kind: 'fromPlayer', from: shooterKey, to: ballAbs({ x: from.x - 2.1, y: from.y + 1.5, z: 0.3 }), arc: 0.9, style }, [i], undefined, undefined, minSeconds);
         } else if (ev.made) {
-          push(0.8 + shotDist * 0.033, { kind: 'fromPlayer', from: shooterKey, to: ballAbs(RIM), arc, style }, [i], undefined, undefined, minSeconds);
+          push(0.8 + shotDist * 0.033, { kind: 'fromPlayer', from: shooterKey, to: ballAbs(RIM), arc, style }, fired, undefined, undefined, minSeconds);
           spacing = false;
           autoDefence = false;
           push(0.2, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, style === 'dunk' ? 0.2 : 0.3);
@@ -842,6 +1186,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         const k = sideOf(ev.side)(ev.playerId);
         spacing = false;
         autoDefence = false;
+        refSpot = {};
         if (rimHit) {
           // Off the iron: the ball pops up, everyone nearby crashes, and they fight for it in the air.
           const { contact: hit, from } = rimHit;
@@ -943,7 +1288,10 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         } else if (ev.cause === 'travel' || ev.cause === 'shotClock') {
           // A whistle, not a loose ball: the handler stops and gives it up.
           push(0.3, ev.cause === 'travel' ? dribble() : hold());
-          push(0.3, hold(), [i], undefined, handler, 0.8);
+          spacing = false;
+          autoDefence = false;
+          deadBeat = true;
+          push(0, hold(), [i], undefined, handler, 0.8);
         } else if (ev.cause === 'offensiveFoul') {
           // A charge: the nearest defender plants himself in the handler's path to the rim, and the
           // handler drives into him.
@@ -957,15 +1305,38 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           at[handler] = { x: planted.x - ((HOOP.x - h.x) / toRim) * 1, y: planted.y - ((HOOP.y - h.y) / toRim) * 1 };
           paceFor[handler] = 'jog';
           push(0.3, dribble());
-          placed.add(man);
-          push(0.3, hold(), [i], undefined, handler, 0.8);
+          spacing = false;
+          autoDefence = false;
+          deadBeat = true;
+          push(0, hold(), [i], undefined, handler, 0.8);
         } else {
           push(0.35, { kind: 'fromPlayer', from: handler, to: ballAbs({ x: h.x - 1.5, y: h.y < MID_Y ? -0.45 : COURT.h + 0.45, z: 0.3 }), arc: 0.45, style: 'throw' }, [i], undefined, undefined, 0.6);
         }
         break;
       }
       case 'foul': {
-        push(0.25, holder ? hold() : { kind: 'fixed', from: ballAbs(ballSpot), to: ballAbs(ballSpot), arc: 0 }, [i]);
+        const next = events.slice(i + 1).find((e) => e.type === 'shot' || e.type === 'freeThrow');
+        if (ev.shooting && next?.type === 'shot') {
+          // The basket counts: the whistle comes with it.
+          andOne = ev;
+          andOneAt = i;
+          break;
+        }
+        if (ev.shooting) {
+          fouledShot(ev, i, next?.type === 'freeThrow' ? next.of : 2);
+          break;
+        }
+        whistle(i);
+        if (next?.type !== 'freeThrow') {
+          // Side out: thrown in from the sideline level with the foul, and the offence sets up again.
+          const where = at[holder] ?? ballSpot;
+          const spot: Pos = { x: Math.max(COURT.w / 2 + 1, Math.min(COURT.w - 2.5, where.x)), y: where.y < MID_Y ? -OUT_M : COURT.h + OUT_M };
+          const thrower = offKeys.filter((k) => k !== holder && k !== pg).sort((a, b) => dist(at[a], spot) - dist(at[b], spot))[0];
+          throwIn(spot, thrower, pg, () => setForThrowIn(spot));
+          refSpot = {};
+          spacing = true;
+          autoDefence = true;
+        }
         break;
       }
       case 'freeThrow': {
@@ -973,27 +1344,47 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         spacing = false;
         autoDefence = false;
         rimHit = null;
+        const last = ev.attempt === ev.of;
         if (ev.attempt === 1) {
-          at[k] = { ...FT_SPOT };
-          let lane = 0;
-          for (const key of [...offKeys, ...defIds.map(kDef)]) if (key !== k) at[key] = pos(LANE[lane++ % LANE.length]);
-          holder = k;
-          push(0.35, hold(), [], `${n(ev.side, ev.shooterId)} steps to the line for ${ev.of}.`, k);
-        } else {
-          holder = k;
-          push(0.15, hold());
+          // Everyone walks to his place while the lead official gets the ball under the basket.
+          Object.assign(at, ftPlaces(k));
+          refSpot = { [trail]: { x: FT_SPOT.x - 2, y: TRAIL_Y }, [centre]: { x: FT_SPOT.x - 2, y: CENTRE_Y } };
+          const walk = walkTo();
+          const mark = beats.length;
+          getBall(lead);
+          const over = dist(at[lead], FT_LEAD) / PACE_M_S.walk + 0.5;
+          refSpot[lead] = { ...FT_LEAD };
+          deadBeat = true;
+          push(0, hold(), [], `${n(ev.side, ev.shooterId)} steps to the line for ${ev.of}.`, k, Math.max(0.8, walk - since(mark), over));
         }
-        push(0.2, dribble());
+        // The lead bounces it to the shooter: his dribbles, a breath, and up it goes.
+        holder = k;
+        deadBeat = true;
+        push(0, { kind: 'pass', from: lead, to: k, arc: 0, style: 'bounce' }, [], undefined, undefined, dist(FT_LEAD, FT_SPOT) / PASS_SPEED.bounce + 0.3);
+        deadBeat = true;
+        push(0, dribble(), [], undefined, undefined, 1.3);
+        deadBeat = true;
+        push(0, hold(), [], undefined, undefined, 0.6);
+        // On the last one the lane comes in as the ball leaves his hands; before that nobody moves.
+        if (last) stepIn();
         const arc = shotArc(FT_SPOT, 'set');
+        const to = ev.made ? RIM : rimContact(FT_SPOT, seed + i);
+        deadBeat = !last;
+        push(0, { kind: 'fromPlayer', from: k, to: ballAbs(to), arc, style: 'set' }, [i], undefined, undefined, 0.9);
         if (ev.made) {
-          push(0.4, { kind: 'fromPlayer', from: k, to: ballAbs(RIM), arc, style: 'set' }, [i], undefined, undefined, 0.9);
-          push(0.15, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, 0.25);
-        } else {
-          const contactAt = rimContact(FT_SPOT, seed + i);
-          push(0.4, { kind: 'fromPlayer', from: k, to: ballAbs(contactAt), arc, style: 'set' }, [i], undefined, undefined, 0.9);
-          rimHit = { contact: contactAt, from: FT_SPOT };
+          deadBeat = !last;
+          push(0, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, 0.25);
         }
         holder = '';
+        if (!last) {
+          // Back to the lead for the next one.
+          const bounce: Ball = { x: HOOP.x + 0.9, y: MID_Y + 1.3, z: 0.11 };
+          deadBeat = true;
+          push(0, { kind: 'fixed', from: ballAbs(ev.made ? NET : to), to: ballAbs(bounce), arc: ev.made ? 0.3 : 0.45 }, [], undefined, undefined, ev.made ? 0.4 : 0.6);
+          holder = lead;
+          deadBeat = true;
+          push(0, { kind: 'toPlayer', from: ballAbs(bounce), to: lead, arc: 0.35 }, [], undefined, undefined, 0.45);
+        } else if (!ev.made) rimHit = { contact: to, from: FT_SPOT };
         break;
       }
       default:
@@ -1019,9 +1410,12 @@ function flightOnly(b: Beat): boolean {
   return b.minSeconds !== undefined && (b.ball.kind === 'fromPlayer' || b.ball.kind === 'toPlayer' || b.ball.kind === 'fixed');
 }
 
-/** Real seconds per beat: flights take their own time, the rest share what is left (scaled by speed). */
+/**
+ * Real seconds per beat: flights take their own time, the rest share what is left (scaled by speed).
+ * A dead ball takes as long as it takes, on top: the clock is stopped.
+ */
 export function beatDurations(script: Script, totalSeconds: number, minScale = 1): number[] {
-  const fixed = script.beats.reduce((s, b) => s + (flightOnly(b) ? (b.minSeconds ?? 0) * minScale : 0), 0);
+  const fixed = script.beats.reduce((s, b) => s + (flightOnly(b) && !b.dead ? (b.minSeconds ?? 0) * minScale : 0), 0);
   const weights = script.beats.reduce((s, b) => s + (flightOnly(b) ? 0 : b.weight), 0) || 1;
   // Everything else always keeps some of the time, even when the flights alone fill it.
   const left = Math.max(totalSeconds - fixed, totalSeconds * 0.3);

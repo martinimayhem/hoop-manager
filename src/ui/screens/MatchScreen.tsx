@@ -10,7 +10,7 @@ import type { Setup } from '../App';
 import { BoxScoreTables } from '../components/BoxScoreTable';
 import { EnergyBar } from '../components/common';
 import { PlanEditor } from '../components/PlanEditor';
-import { playerKey } from '../court/animation';
+import { REFS, playerKey } from '../court/animation';
 import { CANVAS_H, CANVAS_W, CourtRenderer, type DotInfo } from '../court/render';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
 import { HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
@@ -99,6 +99,7 @@ export function MatchScreen({
             dots[k] = { label: String(p.number), side, heightM: p.heightCm / 100, hasBall: holder === k };
           }
         }
+        for (const k of REFS) dots[k] = { label: '', side: 0, heightM: 1.84, hasBall: holder === k, ref: true };
         rendererRef.current!.draw(ctx, m.frame(), dots, now / 1000);
         if (badgeRef.current) badgeRef.current.hidden = !m.isFastForwarding();
       }

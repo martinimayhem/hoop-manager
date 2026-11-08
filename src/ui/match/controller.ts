@@ -13,7 +13,7 @@ import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
 import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
-import { beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Script } from '../court/animation';
+import { COURT, beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Restart, type Script } from '../court/animation';
 import { Motion, facingScene } from '../court/motion';
 import { excitement } from './highlights';
 
@@ -313,8 +313,7 @@ export class LiveMatch {
     }
     this.t += dt;
     const sc = this.script;
-    const total = this.beatEnds[this.beatEnds.length - 1] ?? 0;
-    this.clock = sc.clockStart - (sc.clockStart - sc.clockEnd) * Math.min(1, this.t / Math.max(0.001, total));
+    this.clock = sc.clockStart - (sc.clockStart - sc.clockEnd) * this.running();
     while (this.firedBeats < sc.beats.length && this.t >= this.beatEnds[this.firedBeats]) {
       const beat = sc.beats[this.firedBeats];
       for (const i of beat.fire) this.publish(this.scriptEvents[i]);
@@ -338,6 +337,7 @@ export class LiveMatch {
       marking: beat.marking,
       pressing: beat.pressing,
       ball: this.lastFrame?.ball,
+      dead: beat.dead,
     });
     const ball = this.motion.ball(beat.ball, u, sc.dir);
     this.motion.updateFacing(facingScene(sc, this.durations, index, u, ball, rate * speedScale), dt * rate, speedScale);
@@ -480,6 +480,7 @@ export class LiveMatch {
         clockStart,
         clockEnd: s.clock,
         start: how,
+        restart: how === 'none' ? this.restartAfter(start) : undefined,
         name,
       },
       this.scriptEvents,
@@ -548,6 +549,36 @@ export class LiveMatch {
     this.lastFrame = null;
     this.motion.reset();
     this.endPossession();
+  }
+
+  /** How much of the possession's running time has gone: the clock stands still while the ball is dead. */
+  private running(): number {
+    const sc = this.script;
+    if (!sc) return 1;
+    let run = 0;
+    let total = 0;
+    let start = 0;
+    sc.beats.forEach((b, i) => {
+      const d = this.durations[i] ?? 0;
+      if (!b.dead) {
+        total += d;
+        run += Math.max(0, Math.min(d, this.t - start));
+      }
+      start += d;
+    });
+    return total > 0 ? Math.min(1, run / total) : this.t >= start ? 1 : 0;
+  }
+
+  /** How the ball comes back into play, from whatever ended the play before the possession starting at event `from`. */
+  private restartAfter(from: number): Restart {
+    const events = this.s.events;
+    for (let i = from - 1; i >= 0; i--) {
+      const e = events[i];
+      if (e.type === 'quarterStart') return e.quarter === 1 || e.quarter >= 5 ? { kind: 'tip' } : { kind: 'centre' };
+      if (e.type === 'shot' || e.type === 'freeThrow') return { kind: 'made' };
+      if (e.type === 'turnover' || e.type === 'foul') return { kind: 'sideline', at: this.lastFrame?.ball ?? { x: COURT.w / 2, y: 0 } };
+    }
+    return { kind: 'tip' };
   }
 
   private skips(beat: Beat): boolean {
