@@ -69,11 +69,12 @@ export function PrepScreen({ setup, teams, onReady, onMenu }: { setup: Setup; te
             team={team}
             opponent={opponent}
             plan={plans[side]}
+            side={side}
             onChange={(p) => setPlans((prev) => (side === 0 ? [p, prev[1]] : [prev[0], p]))}
           />
         </div>
         <div className="panel">
-          <ScoutingReport opponent={opponent} us={team} />
+          <ScoutingReport opponent={opponent} us={team} side={side === 0 ? 1 : 0} />
         </div>
       </div>
     </div>

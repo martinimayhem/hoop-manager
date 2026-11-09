@@ -18,6 +18,9 @@ export function excitement(events: TimedEvent[], scoreBefore: [number, number], 
         else points += 1.5;
         // An and-one: fouled and it still goes in.
         if (ev.made && shootingFoul) points += 1.5;
+        // Beating the buzzer or the shot clock.
+        if (ev.made && ev.buzzer) points += 2;
+        else if (ev.made && ev.lateClock) points += 1;
         break;
       case 'foul':
         if (ev.shooting) shootingFoul = true;

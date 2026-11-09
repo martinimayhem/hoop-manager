@@ -12,6 +12,7 @@
 import { HARBOR_HAMMERS, SKYLINE_SPARKS, mirrorTeam } from '../src/data/teams';
 import { composite, makePlan, simulateMatch } from '../src/engine';
 import { createRng, next, pick } from '../src/engine/rng';
+import { ZONES, type ShotZone } from '../src/engine/court';
 import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type Team } from '../src/engine/types';
 import { parseArgs, oneOf } from './args';
 
@@ -65,6 +66,9 @@ let totalPossessions = 0;
 let fga = 0, fgm = 0, tpa = 0, tpm = 0, tov = 0, oreb = 0, overtimes = 0, homeWins = 0, played = 0;
 let starterSeconds = 0, starterCount = 0;
 let maxMargin = 0, closeGames = 0;
+/** Shots per zone, and the late-clock and buzzer shots. */
+const zoneShots = new Map<ShotZone, { att: number; made: number }>();
+let lateClockShots = 0, buzzerShots = 0, shotClockViolations = 0, allShots = 0;
 
 const pairs = Math.ceil(games / 2);
 const start = Date.now();
@@ -95,6 +99,17 @@ for (let pair = 0; pair < pairs; pair++) {
     const margin = Math.abs(box.teams[0].score - box.teams[1].score);
     maxMargin = Math.max(maxMargin, margin);
     if (margin <= 5) closeGames++;
+    for (const ev of state.events) {
+      if (ev.type === 'turnover' && ev.cause === 'shotClock') shotClockViolations++;
+      if (ev.type !== 'shot') continue;
+      allShots++;
+      if (ev.lateClock) lateClockShots++;
+      if (ev.buzzer) buzzerShots++;
+      const z = zoneShots.get(ev.zone) ?? { att: 0, made: 0 };
+      z.att++;
+      if (ev.made) z.made++;
+      zoneShots.set(ev.zone, z);
+    }
 
     const sides = [
       { plan: homePlan, team: home, box: box.teams[0], oppPlan: awayPlan, won: winner === 0 },
@@ -173,6 +188,22 @@ console.log(
   `  Home wins ${pct(homeWins / played)}   Overtime ${pct(overtimes / played)}   ` +
     `Within 5 pts ${pct(closeGames / played)}   Biggest margin ${maxMargin}`,
 );
+
+/** NBA league shooting by zone (NBA.com, recent seasons, rounded): share of field-goal attempts and FG%. */
+const NBA_ZONES: Record<ShotZone, [number, number]> = {
+  restricted: [0.3, 0.655],
+  paint: [0.17, 0.43],
+  mid: [0.11, 0.42],
+  corner3: [0.1, 0.39],
+  aboveBreak3: [0.32, 0.355],
+};
+console.log('\nShots by zone (share of attempts, FG%) next to the NBA');
+for (const zone of ZONES) {
+  const z = zoneShots.get(zone) ?? { att: 0, made: 0 };
+  const [share, fg] = NBA_ZONES[zone];
+  console.log(`  ${zone.padEnd(12)} ${pct(z.att / allShots).padStart(6)} ${pct(z.made / Math.max(1, z.att)).padStart(6)}   NBA ${pct(share).padStart(6)} ${pct(fg).padStart(6)}`);
+}
+console.log(`  Late-clock shots ${pct(lateClockShots / allShots)}   Buzzer shots ${(buzzerShots / played).toFixed(2)} a game   Shot-clock violations ${(shotClockViolations / teamGames).toFixed(2)} a team a game`);
 
 console.log(`\nWin rate when the two sides chose different options (50% = no edge, flag outside ${pct(FLAG_LOW)}–${pct(FLAG_HIGH)})`);
 printTally('Offensive focus', byOffence, OFFENSIVE_FOCI);

@@ -74,6 +74,7 @@ function teamState(team: Team, plan: GamePlan): TeamGameState {
     score: 0,
     quarterPoints: [0, 0, 0, 0],
     quarterFouls: 0,
+    lateFouls: 0,
     timeoutsLeft: TIMEOUTS_FIRST_HALF,
     lateTimeoutsUsed: 0,
     extras: emptyExtras(),
@@ -92,6 +93,7 @@ export function createMatch(home: Team, away: Team, homePlan: GamePlan, awayPlan
     teams: [teamState(home, homePlan), teamState(away, awayPlan)],
     momentum: 0,
     transition: 'none',
+    nextTransition: null,
     calls: null,
     events: [],
     finished: false,
@@ -134,6 +136,7 @@ function endPeriod(s: MatchState): void {
   restAll(s, s.quarter === 3 ? HALFTIME_RECOVERY : QUARTER_BREAK_RECOVERY);
   for (const team of s.teams) {
     team.quarterFouls = 0;
+    team.lateFouls = 0;
     if (s.quarter === 3) team.timeoutsLeft = TIMEOUTS_SECOND_HALF;
     if (s.quarter >= 5) team.timeoutsLeft = TIMEOUTS_OVERTIME;
     if (team.quarterPoints.length < s.quarter) team.quarterPoints.push(0);

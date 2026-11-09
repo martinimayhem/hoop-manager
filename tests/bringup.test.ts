@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
+import { COURT, HALF_X } from '../src/engine/court';
 import type { Tempo } from '../src/engine/types';
 import { beatAt, isRef, type Script } from '../src/ui/court/animation';
 import { LiveMatch } from '../src/ui/match/controller';
@@ -52,9 +53,9 @@ function play(tempo: Tempo, seed: number): Watch {
     }
     const { index } = beatAt(sc, inner.durations, inner.t);
     const beat = sc.beats[index];
-    const upFloor = (x: number) => (sc.dir === 1 ? x : 28 - x);
+    const upFloor = (x: number) => (sc.dir === 1 ? x : COURT.w - x);
     const ball = inner.lastFrame?.ball;
-    if (start === 'rebound' && !crossed && ball && upFloor(ball.x) > 14) {
+    if (start === 'rebound' && !crossed && ball && upFloor(ball.x) > HALF_X) {
       crossed = true;
       watch.crossings.push(sc.clockStart - m.clock);
     }
@@ -74,7 +75,7 @@ function play(tempo: Tempo, seed: number): Watch {
     // At the end of a quarter, holding for the last shot is the point.
     if (sc.clockStart > 24 && beat.phase === 'play') watch.longestPlay = Math.max(watch.longestPlay, time - still.since);
     else if (sc.clockStart > 24 && !still.chin) watch.longestBringUp = Math.max(watch.longestBringUp, time - still.since);
-    if (!still.counted && !still.chin && time - still.since >= 0.5 && upFloor(mo.pos[h].x) < 16 && !(m.caption?.text ?? '').includes('trapped')) {
+    if (!still.counted && !still.chin && time - still.since >= 0.5 && upFloor(mo.pos[h].x) < HALF_X + 2 && !(m.caption?.text ?? '').includes('trapped')) {
       still.counted = true;
       watch.backcourtStops++;
     }

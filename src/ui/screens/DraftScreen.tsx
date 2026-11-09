@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { positionGroup } from '../../engine/ratings';
 import { createRng } from '../../engine/rng';
-import type { Position, Team } from '../../engine/types';
+import type { Position, Side, Team } from '../../engine/types';
 import { aiDraftAll, aiDraftPick, aiSnakeTurns } from '../../game/ai';
 import {
   canPick,
@@ -23,6 +23,7 @@ import { playerPool, type PoolPlayer } from '../../game/pool';
 import { ATTRIBUTE_GROUPS, DEFAULT_SCOUT_ACCURACY, formatRange, potentialStars, scoutAttr, scoutGroup } from '../../game/scouting';
 import type { Setup } from '../App';
 import { RangeCell, Stars } from '../components/common';
+import { Portrait } from '../components/Portrait';
 import { abbrOf } from '../labels';
 
 type SortKey = 'price' | 'name' | 'physical' | 'scoring' | 'playmaking' | 'defence';
@@ -150,6 +151,7 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
                 <th className="left">Player</th>
                 <th className="left">Pos</th>
                 <th>Height</th>
+                <th>Weight</th>
                 {ATTRIBUTE_GROUPS.map((g) => (
                   <th key={g.key}>{g.label}</th>
                 ))}
@@ -187,10 +189,17 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
                       )}
                     </td>
                     <td className="left">
-                      <b>{p.player.name}</b> <span className="tag">{p.player.archetype}</span>
+                      <span className="player-cell">
+                        <Portrait player={p.player} side={owner} size={40} />
+                        <span className="who">
+                          <b>{p.player.name}</b>
+                          <span className="tag">{p.player.archetype}</span>
+                        </span>
+                      </span>
                     </td>
                     <td className="left">{p.player.position}</td>
                     <td>{p.player.heightCm} cm</td>
+                    <td>{p.player.weightKg} kg</td>
                     {ATTRIBUTE_GROUPS.map((g) => (
                       <td key={g.key}>
                         <RangeCell r={scoutGroup(p.player, g, p.hype, DEFAULT_SCOUT_ACCURACY)} />
@@ -213,6 +222,7 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
           <PlayerDetail
             p={sel}
             owner={state.owner[sel.player.id] !== undefined ? state.teams[state.owner[sel.player.id]].name : null}
+            ownerSide={state.owner[sel.player.id]}
             check={actingTeam !== null ? canPick(state, actingTeam, sel.player.id) : { ok: false, reason: 'Not your turn' }}
             onSign={() => doPick(sel.player.id)}
           />
@@ -246,6 +256,7 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
                   const p = findPool(state, id);
                   return (
                     <div key={id} className="roster-slot">
+                      <Portrait player={p.player} side={team} size={34} />
                       <span className="tag">{p.player.position}</span>
                       <span style={{ flex: 1, cursor: 'pointer' }} onClick={() => setSelected(id)}>
                         {p.player.name}
@@ -274,11 +285,12 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
   );
 }
 
-function PlayerDetail({ p, owner, check, onSign }: { p: PoolPlayer; owner: string | null; check: { ok: boolean; reason?: string }; onSign: () => void }) {
+function PlayerDetail({ p, owner, ownerSide, check, onSign }: { p: PoolPlayer; owner: string | null; ownerSide?: Side; check: { ok: boolean; reason?: string }; onSign: () => void }) {
   const pl = p.player;
   return (
     <div className="panel">
       <div className="row">
+        <Portrait player={pl} side={ownerSide} size={120} number={false} />
         <h2 style={{ margin: 0 }}>{pl.name}</h2>
         <div className="spacer" />
         {owner ? (

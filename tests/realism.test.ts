@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
+import { COURT, HOOP_X, MID_Y } from '../src/engine/court';
 import { beatAt, isRef, type Script } from '../src/ui/court/animation';
 import { angleDiff, type Motion } from '../src/ui/court/motion';
 import { project } from '../src/ui/court/render';
@@ -167,7 +168,7 @@ function measure(seed: number) {
       if (d && mo.pos[d] && beat.marking?.[d]) {
         const hp = mo.pos[holder];
         const dp = mo.pos[d];
-        const hoop = holder.startsWith(`${sc.offence}:`) === (sc.dir === 1) ? { x: 26.425, y: 7.5 } : { x: 1.575, y: 7.5 };
+        const hoop = holder.startsWith(`${sc.offence}:`) === (sc.dir === 1) ? { x: HOOP_X, y: MID_Y } : { x: COURT.w - HOOP_X, y: MID_Y };
         const ang = Math.abs(deg(angleDiff(Math.atan2(hoop.y - hp.y, hoop.x - hp.x), Math.atan2(dp.y - hp.y, dp.x - hp.x))));
         const gs = dist(dp, hoop) < dist(hp, hoop) && ang < 70;
         r.onBall++;
@@ -187,7 +188,7 @@ function measure(seed: number) {
     const live = m.holderKey();
     if (live && mo.pos[live] && beat.ball.kind === 'held' && !sc.beats.some((b) => b.caption?.includes('to the line'))) {
       const p = mo.pos[live];
-      const hoop = live.startsWith(`${sc.offence}:`) === (sc.dir === 1) ? { x: 26.425, y: 7.5 } : { x: 1.575, y: 7.5 };
+      const hoop = live.startsWith(`${sc.offence}:`) === (sc.dir === 1) ? { x: HOOP_X, y: MID_Y } : { x: COURT.w - HOOP_X, y: MID_Y };
       const d = dist(p, hoop);
       const dx = hoop.x - p.x;
       const dy = hoop.y - p.y;

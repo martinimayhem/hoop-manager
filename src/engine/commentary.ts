@@ -77,6 +77,8 @@ export function describe(ev: TimedEvent, names: Names): string | null {
         let line = fmt(variant(ev, ev.dunk ? DUNKS : SHOT_MADE[ev.shotType]), p);
         if (ev.assistId) line += ` (assist ${names.player(ev.side, ev.assistId)})`;
         if (ev.andOne) line += ' AND ONE!';
+        if (ev.buzzer) line += ' At the buzzer!';
+        else if (ev.lateClock) line += variant(ev, [' Just beats the shot clock!', ' With the shot clock about to go!']);
         return line;
       }
       if (ev.blockerId) {
