@@ -1,8 +1,10 @@
 import { playerRating, type BoxScore, type TeamBox } from '../../engine/stats';
+import type { Side } from '../../engine/types';
+import { Portrait, ShirtNumber } from './Portrait';
 
 const pct = (m: number, a: number) => (a ? `${Math.round((100 * m) / a)}%` : '–');
 
-function TeamTable({ t, colour }: { t: TeamBox; colour: string }) {
+function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side }) {
   return (
     <div>
       <h2 style={{ color: colour }}>
@@ -31,7 +33,11 @@ function TeamTable({ t, colour }: { t: TeamBox; colour: string }) {
           {t.players.map(({ player, starter, stats: s }) => (
             <tr key={player.id}>
               <td className="left">
-                {starter ? <b>#{player.number} {player.name}</b> : `#${player.number} ${player.name}`} <span className="muted small">{player.position}</span>
+                <span className="player-cell">
+                  <Portrait player={player} side={side} size={40} />
+                  <ShirtNumber player={player} side={side} />
+                  {starter ? <b>{player.name}</b> : player.name}&nbsp;<span className="muted small">{player.position}</span>
+                </span>
               </td>
               {s.seconds === 0 ? (
                 <td colSpan={13} className="muted">
@@ -102,8 +108,8 @@ export function LineScore({ box }: { box: BoxScore }) {
 export function BoxScoreTables({ box }: { box: BoxScore }) {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      <TeamTable t={box.teams[0]} colour="var(--home)" />
-      <TeamTable t={box.teams[1]} colour="var(--away)" />
+      <TeamTable t={box.teams[0]} colour="var(--home)" side={0} />
+      <TeamTable t={box.teams[1]} colour="var(--away)" side={1} />
     </div>
   );
 }

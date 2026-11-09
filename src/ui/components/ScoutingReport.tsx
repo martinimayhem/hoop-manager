@@ -1,16 +1,17 @@
 // Pre-match report on the opponent: fuzzy ratings and a guess at their game plan.
 
 import { composite } from '../../engine/ratings';
-import type { Team } from '../../engine/types';
+import type { Side, Team } from '../../engine/types';
 import { scoutedTendencies } from '../../game/ai';
 import { poolById } from '../../game/pool';
 import { ATTRIBUTE_GROUPS, DEFAULT_SCOUT_ACCURACY, potentialStars, scoutGroup } from '../../game/scouting';
 import { DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO } from '../labels';
 import { ProbBars, RangeCell, Stars } from './common';
+import { Portrait, ShirtNumber } from './Portrait';
 
 const HYPE_FALLBACK = 50;
 
-export function ScoutingReport({ opponent, us }: { opponent: Team; us: Team }) {
+export function ScoutingReport({ opponent, us, side }: { opponent: Team; us: Team; /** The opponent's kit. */ side?: Side }) {
   const pool = poolById();
   const hype = (id: string) => pool.get(id)?.hype ?? HYPE_FALLBACK;
   const t = scoutedTendencies(opponent, us, DEFAULT_SCOUT_ACCURACY);
@@ -28,6 +29,7 @@ export function ScoutingReport({ opponent, us }: { opponent: Team; us: Team }) {
               <th className="left">Player</th>
               <th className="left">Pos</th>
               <th>Ht</th>
+              <th>Wt</th>
               {ATTRIBUTE_GROUPS.map((g) => (
                 <th key={g.key}>{g.label}</th>
               ))}
@@ -38,10 +40,18 @@ export function ScoutingReport({ opponent, us }: { opponent: Team; us: Team }) {
             {players.map((p) => (
               <tr key={p.id}>
                 <td className="left">
-                  #{p.number} {p.name} <span className="tag">{p.archetype}</span>
+                  <span className="player-cell">
+                    <Portrait player={p} side={side} size={40} />
+                    <ShirtNumber player={p} side={side} />
+                    <span className="who">
+                      {p.name}
+                      <span className="tag">{p.archetype}</span>
+                    </span>
+                  </span>
                 </td>
                 <td className="left">{p.position}</td>
                 <td>{p.heightCm}</td>
+                <td>{p.weightKg}</td>
                 {ATTRIBUTE_GROUPS.map((g) => (
                   <td key={g.key}>
                     <RangeCell r={scoutGroup(p, g, hype(p.id), DEFAULT_SCOUT_ACCURACY)} />

@@ -3,17 +3,20 @@
 
 import { useState } from 'react';
 import { composite } from '../../engine/ratings';
-import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type Team } from '../../engine/types';
+import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type Side, type Team } from '../../engine/types';
 import { suggestPlan } from '../../game/ai';
 import type { TeamView } from '../match/controller';
 import { DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO, type OptionInfo } from '../labels';
 import { EnergyBar, Rating } from './common';
+import { Portrait, ShirtNumber } from './Portrait';
 
 interface Props {
   team: Team;
   opponent: Team;
   plan: GamePlan;
   onChange: (plan: GamePlan) => void;
+  /** Which kit the portraits wear. */
+  side?: Side;
   /** Live numbers during a match. */
   live?: TeamView;
 }
@@ -28,7 +31,7 @@ const COLUMNS = [
   { key: 'rebounding', label: 'Boards', tip: 'Rebounding' },
 ] as const;
 
-export function PlanEditor({ team, opponent, plan, onChange, live }: Props) {
+export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props) {
   const byId = new Map(team.players.map((p) => [p.id, p]));
   const bench = [...plan.bench, ...team.players.map((p) => p.id).filter((id) => !plan.starters.includes(id) && !plan.bench.includes(id))];
   const set = (patch: Partial<GamePlan>) => onChange({ ...plan, ...patch });
@@ -81,7 +84,14 @@ export function PlanEditor({ team, opponent, plan, onChange, live }: Props) {
         title={out ? 'Fouled out' : 'Click to swap'}
       >
         <td className="left">
-          <b>#{p.number}</b> {p.name} <span className="tag">{p.archetype}</span>
+          <span className="player-cell">
+            <Portrait player={p} side={side} size={40} />
+            <ShirtNumber player={p} side={side} />
+            <span className="who">
+              {p.name}
+              <span className="tag">{p.archetype}</span>
+            </span>
+          </span>
         </td>
         <td className="left">{p.position}</td>
         {COLUMNS.map((col) => (

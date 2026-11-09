@@ -12,6 +12,7 @@ import {
   RESTRICTED_M,
   THREE_ARC_M,
 } from '../../engine/court';
+import { FEATURE_BOX, FEATURE_CENTRE, lookOf, type SpriteLook } from '../looks';
 import type { Fx } from '../match/controller';
 import { COURT, HOOP_X, MID_Y, PACE_M_S, RIM_HEIGHT, type Frame } from './animation';
 
@@ -107,6 +108,26 @@ export interface DotInfo {
   hasBall: boolean;
   /** An official: striped shirt, black trousers, no number. */
   ref?: boolean;
+  /** The player's look, shared with his portrait. Officials get a plain one from their key. */
+  look?: SpriteLook;
+  /** His portrait's face features (an image URL), worn on the front of the head. */
+  features?: string;
+}
+
+/** Sprite pixels per portrait unit for the face features, and how finely they are rasterised. */
+const FEATURE_SCALE_X = 0.05;
+const FEATURE_SCALE_Y = 0.037;
+const FEATURE_RES = 0.6;
+
+/** The head on the figure: its centre and radius in sprite pixels. The chin sits just above the collar. */
+const HEAD_Y = -47;
+const HEAD_R = 7;
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+/** An official's look: a face and build of his own, but no headband or eye black. */
+function plainLook(key: string): SpriteLook {
+  return { ...lookOf({ id: key, heightCm: 184, weightKg: 84 }).sprite, headband: false, eyeBlack: false };
 }
 
 /** The officials' kit: grey shirt with black stripes, black trousers and shoes. */
@@ -142,6 +163,8 @@ const OUTLINE = '#14201f';
 const LINE = '#f5fff7';
 const POST = '#4d7f9c';
 const FACING_CAMERA = (Math.PI * 3) / 4;
+/** Eight facings an eighth of a turn apart, starting square to the camera and turning clockwise. */
+export const FACING_ANGLES: readonly number[] = Array.from({ length: 8 }, (_, i) => FACING_CAMERA + (i * Math.PI) / 4);
 /** How much a distance across the floor shrinks on screen when it runs towards the camera. */
 const DEPTH = TILE_Y / TILE_X;
 
@@ -149,6 +172,12 @@ function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
+}
+
+/** Relative brightness of a #rrggbb colour, 0 (black) to 1 (white). */
+function luminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
 }
 
 function darken(hex: string, f: number): string {
@@ -188,6 +217,8 @@ export function spriteScale(heightM: number): number {
 
 export class CourtRenderer {
   private last: Record<string, { x: number; y: number }> = {};
+  /** Face features by URL: a bitmap once loaded, null while loading (the drawn face stands in). */
+  private features = new Map<string, HTMLCanvasElement | null>();
   private stride: Record<string, number> = {};
   /** Each player's speed in match metres a second, smoothed, so a nudge does not flip walk and run. */
   private gaitSpeed: Record<string, number> = {};
@@ -741,6 +772,18 @@ export class CourtRenderer {
     }
   }
 
+  /**
+   * One standing figure with its feet at (x, y) on the canvas, facing `facing` (radians, court
+   * frame; FACING_ANGLES lists the eight compass points). For the dev turntable.
+   */
+  drawFigure(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, info: DotInfo, facing: number): void {
+    const origin = project(0, 0);
+    ctx.save();
+    ctx.translate(x - origin.x, y - origin.y);
+    this.drawPlayer(ctx, key, 0, 0, info, { x: 0, y: 50, z: 0 }, 0, false, facing, 0, undefined, 0);
+    ctx.restore();
+  }
+
   private drawPlayer(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, info: DotInfo, ball: Frame['ball'], lift: number, shooting: boolean, facing: number, handsUp: number, look?: number, stance = 0): void {
     const foot = project(x, y, lift);
     const prev = this.last[key];
@@ -754,8 +797,12 @@ export class CourtRenderer {
     const { side, toward } = bodyView(facing);
     const at = (forward: number, right: number, up: number): Floor => [forward * side - right * toward, -up + (forward * toward + right * side) * DEPTH];
     const across = Math.abs(toward);
+    const ref = !!info.ref;
+    const looks = info.look ?? plainLook(key);
+    /** Build: a heavy player is wider through the shoulders, chest, hips and stance. */
+    const g = looks.girth;
     /** Half the width of a body part that is wider than it is deep, seen from this angle. */
-    const wide = (half: number) => Math.hypot(half * toward, half * 0.72 * side);
+    const wide = (half: number) => Math.hypot(half * g * toward, half * g * 0.72 * side);
 
     // Speed in match time, not on the screen: at double speed or fast-forward a walk is still a walk.
     // Smoothed over a quarter of a second of match time, and held still while the match is paused.
@@ -791,9 +838,8 @@ export class CourtRenderer {
     // Leaning into it: a little on a jog, more flat out.
     const lean = run * (1.5 + 3.5 * sprint);
 
-    const ref = !!info.ref;
     const team = ref ? { fill: REF_SHIRT, text: REF_BLACK } : this.colours[info.side];
-    const skin = SKIN[hash(key) % SKIN.length];
+    const skin = looks.skin;
     const shin = ref ? REF_BLACK : skin;
     const k = spriteScale(info.heightM);
     /** Whichever side of the body is further from the camera comes first. */
@@ -820,7 +866,7 @@ export class CourtRenderer {
       const stepU = Math.max(0, s) * (1.2 + run * 1.8) * (1 - sideways) + drive * 6 + tuck;
       const knee = at(1 + stepF * 0.5 + stance * 2 + drive * 4, leg * (3.8 + stance * 1.5), 12 + tuck * 0.5 - crouch * 0.3 + drive * 6);
       const ankle = at(stepF, stepR, stepU + 3);
-      limb(ctx, [at(0, leg * 3.4, 23 - crouch), knee, ankle], 4.4, shin);
+      limb(ctx, [at(0, leg * 3.4 * g, 23 - crouch), knee, ankle], 4.4 * Math.sqrt(g), shin);
       limb(ctx, [[(knee[0] + ankle[0]) / 2, (knee[1] + ankle[1]) / 2], ankle], 4.2, ref ? REF_BLACK : '#f4f4ee');
       const [toeX, toeY] = at(stepF + 1.2, stepR, stepU + 1.3);
       ctx.fillStyle = ref ? REF_BLACK : '#ffffff';
@@ -868,7 +914,9 @@ export class CourtRenderer {
     const ballY = (b.y - foot.y) / k + bob - crouch;
     const ry = (ballY + leanY * HIP_UP) / (1 - leanY);
     const rx = (b.x - foot.x) / k + leanX * ry + leanX * HIP_UP;
-    const shoulderOf = (arm: 1 | -1) => at(0, arm * 8.2, shoulderUp);
+    const shoulderOf = (arm: 1 | -1) => at(0, arm * 8.2 * g, shoulderUp);
+    /** Arms hang clear of a wider body. */
+    const out = (g - 1) * 8;
     const toBall = (arm: 1 | -1) => Math.hypot(rx - shoulderOf(arm)[0], ry - shoulderOf(arm)[1]);
     const ballArm: 1 | -1 = toBall(1) < toBall(-1) ? 1 : -1;
     const drawArm = (arm: 1 | -1) => {
@@ -888,11 +936,11 @@ export class CourtRenderer {
         const s = -swing * arm * along;
         // Walking, the arms hang and swing loose; running, they bend at the elbow and pump, the
         // hand always ahead of the elbow and coming up to the chest on the way forward.
-        const walkHand = at(s * 5, arm * 10.5, 20 + Math.abs(s) * 2);
-        const walkElbow = at(s * 2, arm * 10.8, 28);
+        const walkHand = at(s * 5, arm * (10.5 + out), 20 + Math.abs(s) * 2);
+        const walkElbow = at(s * 2, arm * (10.8 + out), 28);
         const pump = s * (1 + sprint * 0.4);
-        const runHand = at(pump * 4.5 + 4, arm * 9.5, 29 + pump * 4);
-        const runElbow = at(pump * 4 - 1, arm * 10.6, 29.5 + Math.abs(pump) * 1.5);
+        const runHand = at(pump * 4.5 + 4, arm * (9.5 + out), 29 + pump * 4);
+        const runElbow = at(pump * 4 - 1, arm * (10.6 + out), 29.5 + Math.abs(pump) * 1.5);
         hand = [walkHand[0] + (runHand[0] - walkHand[0]) * run, walkHand[1] + (runHand[1] - walkHand[1]) * run];
         elbow = [walkElbow[0] + (runElbow[0] - walkElbow[0]) * run, walkElbow[1] + (runElbow[1] - walkElbow[1]) * run];
         if (stance > 0) {
@@ -913,7 +961,7 @@ export class CourtRenderer {
         hand = [hand[0] + (upHand[0] - hand[0]) * handsUp, hand[1] + (upHand[1] - hand[1]) * handsUp];
         elbow = [elbow[0] + (upElbow[0] - elbow[0]) * handsUp, elbow[1] + (upElbow[1] - elbow[1]) * handsUp];
       }
-      limb(ctx, [start, elbow, hand], 3.8, skin);
+      limb(ctx, [start, elbow, hand], 3.8 * Math.sqrt(g), skin);
     };
 
     // Arms behind the body are drawn before it: the far arm in profile, and the dribbling arm
@@ -970,94 +1018,320 @@ export class CourtRenderer {
 
     // The head turns towards the ball on its own; the body follows more slowly.
     const head = look === undefined ? { side, toward } : bodyView(look);
-    this.drawHead(ctx, key, skin, team.fill, head.side, head.toward);
+    this.drawHead(ctx, looks, team.fill, head.side, head.toward, info.features ? this.featureBitmap(info.features) : null);
     if (armsRaised) for (const arm of farFirst) if (!behind.has(arm)) drawArm(arm);
     ctx.restore();
   }
 
-  private drawHead(ctx: CanvasRenderingContext2D, key: string, skin: string, band: string, side: number, toward: number): void {
-    const hair = HAIR[hash(`${key}:hair`) % HAIR.length];
-    const style = hash(`${key}:style`) % 4;
-    const cy = -46;
-    const r = 7;
-    limb(ctx, [[0, -40], [0, -37.5]], 4.4, skin);
+  /**
+   * The head, drawn from the player's one appearance. The hair is a single shape that reads the
+   * same from every side (curls are curls from behind, a bald head is skin all round, a bun sits
+   * on the crown); only the face (eyes, brows, nose, mouth, beard) slides round as he turns, and
+   * it does so continuously, shrinking towards the edge of the head and out of sight.
+   */
+  /** The portrait's face features as a small bitmap, loading them the first time they are asked for. */
+  private featureBitmap(url: string): HTMLCanvasElement | null {
+    if (this.features.has(url)) return this.features.get(url)!;
+    this.features.set(url, null);
+    if (typeof Image === 'undefined' || typeof document === 'undefined') return null;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(FEATURE_BOX.w * FEATURE_RES);
+      canvas.height = Math.round(FEATURE_BOX.h * FEATURE_RES);
+      // The image is the whole 400 x 600 portrait; keep only the box the features sit in.
+      const k = img.naturalWidth / 400 || 1;
+      canvas.getContext('2d')?.drawImage(img, FEATURE_BOX.x * k, FEATURE_BOX.y * k, FEATURE_BOX.w * k, FEATURE_BOX.h * k, 0, 0, canvas.width, canvas.height);
+      this.features.set(url, canvas);
+    };
+    img.src = url;
+    return null;
+  }
 
-    if (style === 1) {
-      ctx.fillStyle = hair;
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 0.9;
+  private drawHead(ctx: CanvasRenderingContext2D, look: SpriteLook, band: string, side: number, toward: number, features: HTMLCanvasElement | null): void {
+    const { skin, hairColour: hair, hairstyle } = look;
+    const cy = HEAD_Y;
+    const r = HEAD_R;
+    const bare = hairstyle === 'bald' || hairstyle === 'shaved';
+    // A fuller face on a heavier build, through the neck and cheeks.
+    limb(ctx, [[0, cy + r - 1], [0, -37.5]], 4.4 * look.girth, skin);
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.9;
+    ctx.lineJoin = 'round';
+
+    // Hair that stands outside the head: long hair (a bob) and curls. Hair and head are one shape
+    // with one outline: an outline round the head as well would show a head inside a hood.
+    const headPath = () => {
       ctx.beginPath();
-      ctx.arc(-side * 1.5, cy - 2.5, r + 2.6, 0, Math.PI * 2);
+      ctx.arc(0, cy, r, 0, Math.PI * 2);
+    };
+    let hairPath: (() => void) | null = null;
+    /** Long hair: where it ends and how wide it is, for the strands below. */
+    let bob: { x0: number; half: number; hang: number } | null = null;
+    if (hairstyle === 'long') {
+      // A bob, barely wider than the head and no higher than the crown, flat at the bottom (a
+      // rounded end under the head reads as a beard). Facing away it ends at the nape, just above
+      // the collar; facing us only its sides show beside the face, down to the jaw, and it never
+      // hangs over the chest (the head is drawn after the body). In between it follows the turn.
+      const half = r * 1.08;
+      const x0 = -side * 0.8;
+      const hang = cy + r * 0.6 + (r * 0.4 + 1.5) * clamp01((0.3 - toward) / 0.8);
+      bob = { x0, half, hang };
+      hairPath = () => {
+        ctx.beginPath();
+        ctx.moveTo(x0 - half, cy);
+        ctx.lineTo(x0 - half, hang - 1.2);
+        ctx.quadraticCurveTo(x0 - half, hang, x0 - half + 1.2, hang);
+        ctx.lineTo(x0 + half - 1.2, hang);
+        ctx.quadraticCurveTo(x0 + half, hang, x0 + half, hang - 1.2);
+        ctx.lineTo(x0 + half, cy);
+        // Over the top along the crown, not above it.
+        ctx.ellipse(x0, cy, half, r, 0, 0, Math.PI, true);
+        ctx.closePath();
+      };
+    } else if (hairstyle === 'curly') {
+      hairPath = () => {
+        ctx.beginPath();
+        for (let k = 0; k <= 8; k++) {
+          const a = -Math.PI - 0.3 + (k / 8) * (Math.PI + 0.6);
+          // Close-cropped curls, like the portraits: texture round the top, not an afro.
+          const bx = Math.cos(a) * r * 0.93;
+          const by = cy + Math.sin(a) * r * 0.93;
+          ctx.moveTo(bx + 1.7, by);
+          ctx.arc(bx, by, 1.7, 0, Math.PI * 2);
+        }
+      };
+    }
+
+    if (hairPath) {
+      // Stroke hair and head twice as wide, then fill both over it: the fills cover every inner
+      // line and leave a single outline round the outside.
+      ctx.lineWidth = 1.8;
+      hairPath();
+      ctx.stroke();
+      headPath();
+      ctx.stroke();
+      ctx.fillStyle = hair;
+      hairPath();
+      ctx.fill();
+      headPath();
+      ctx.fill();
+      ctx.lineWidth = 0.9;
+      if (bob && toward < 0.3) {
+        // A few strands, faint, so the bob reads as hair and not a hood: lighter on dark hair,
+        // darker on light hair. Strongest from behind, gone as the face comes round.
+        const strands = clamp01((0.3 - toward) / 0.8);
+        ctx.save();
+        ctx.globalAlpha = 0.35 * strands;
+        ctx.strokeStyle = luminance(hair) < 0.25 ? '#ffffff' : darken(hair, 0.55);
+        ctx.lineWidth = 0.5;
+        ctx.lineCap = 'round';
+        for (const u of [-0.55, 0, 0.55]) {
+          const x = bob.x0 + u * bob.half;
+          ctx.beginPath();
+          ctx.moveTo(x - u * 0.6, cy - r * 0.45);
+          ctx.quadraticCurveTo(x + u * 0.4, cy + r * 0.4, x + u * 0.2, bob.hang - 0.8);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    } else {
+      // The head: hair all round, or skin for a bald or shaved head (shaved shows a shadow of hair).
+      ctx.fillStyle = bare ? skin : hair;
+      headPath();
+      ctx.fill();
+      if (hairstyle === 'shaved') {
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = hair;
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.stroke();
+    }
+
+    // The face: a patch of skin whose top edge is the hairline. It sits at the front of the head
+    // and slides round with it, narrowing side-on and gone as soon as he is past side-on: from
+    // three-quarters behind you see the back of his head, not a sliver of face or beard.
+    const shown = clamp01((toward + 0.25) / 0.65);
+    const faceX = side * r * 0.42;
+    const faceRx = r * (0.55 + 0.4 * Math.abs(toward)) * Math.sqrt(shown);
+    const faceRy = r * (0.5 + 0.38 * shown);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, cy, r - 0.3, 0, Math.PI * 2);
+    ctx.clip();
+    if (shown > 0) {
+      ctx.fillStyle = skin;
+      ctx.beginPath();
+      ctx.ellipse(faceX, cy + 1.8, faceRx, faceRy, 0, 0, Math.PI * 2);
+      ctx.fill();
+      if (features) {
+        // The portrait's own face, sliding round with the face patch and narrowing with it.
+        // Wider than true scale so the eyes read, but squashed top to bottom so the mouth and
+        // beard stay up on the face instead of swallowing the chin.
+        // Kept inside the face patch: a full beard wraps the jaw to the ears in the portrait, and
+        // must not wrap round to the back of the head here.
+        const kx = FEATURE_SCALE_X;
+        const ky = FEATURE_SCALE_Y;
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(faceX, cy + 1.8, faceRx, faceRy, 0, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.translate(faceX, cy - 0.9);
+        ctx.scale(faceRx / (r * 0.95), 1);
+        ctx.drawImage(features, (FEATURE_BOX.x - FEATURE_CENTRE.x) * kx, (FEATURE_BOX.y - FEATURE_CENTRE.y) * ky, FEATURE_BOX.w * kx, FEATURE_BOX.h * ky);
+        ctx.restore();
+      }
+      // Facial hair, in the hair colour, on the lower face (the portrait brings its own).
+      ctx.fillStyle = hair;
+      ctx.strokeStyle = hair;
+      if (features) {
+        // Drawn above.
+      } else if (look.facialHair === 'full' || look.facialHair === 'stubble') {
+        ctx.save();
+        if (look.facialHair === 'stubble') ctx.globalAlpha = 0.32;
+        ctx.beginPath();
+        ctx.ellipse(faceX, cy + 6.4, faceRx * 0.92, 2.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (look.facialHair === 'goatee') {
+        ctx.beginPath();
+        ctx.ellipse(faceX + side * 0.4, cy + 6, Math.max(0.4, faceRx * 0.3), 1.7 * shown, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (look.facialHair === 'moustache') {
+        ctx.lineWidth = 1.1;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(faceX + side * 0.6 - faceRx * 0.35, cy + 3.4);
+        ctx.lineTo(faceX + side * 0.6 + faceRx * 0.35, cy + 3.4);
+        ctx.stroke();
+      }
+    }
+    if (hairstyle === 'cornrows') {
+      // Partings between the rows, front to back across the crown, turning with the head.
+      ctx.strokeStyle = skin;
+      ctx.globalAlpha = 0.75;
+      ctx.lineWidth = 0.55;
+      for (const u of [-0.5, 0, 0.5]) {
+        ctx.beginPath();
+        ctx.moveTo(u * r * toward - r * side, cy - r * 0.15);
+        ctx.quadraticCurveTo(u * r * toward, cy - r * 1.1, u * r * toward + r * side, cy - r * 0.15);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    // On top of the head, seen from every side.
+    ctx.fillStyle = hair;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.9;
+    const onHead = (x: number) => cy - Math.sqrt(Math.max(0, r * r - x * x));
+    if (hairstyle === 'spiky') {
+      // A textured top: short, close-set tufts, like the portrait's spiked and messy cuts.
+      for (let k = 0; k < 8; k++) {
+        const a = -Math.PI + 0.5 + (k / 7) * (Math.PI - 1);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a - 0.2) * r * 0.94, cy + Math.sin(a - 0.2) * r * 0.94);
+        ctx.lineTo(Math.cos(a) * (r + 1.5), cy + Math.sin(a) * (r + 1.5));
+        ctx.lineTo(Math.cos(a + 0.2) * r * 0.94, cy + Math.sin(a + 0.2) * r * 0.94);
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else if (hairstyle === 'mohawk') {
+      // A fin from front to back: long side-on, a narrow crest face-on or from behind.
+      const half = 1.5 + r * 0.72 * Math.abs(side);
+      ctx.beginPath();
+      ctx.moveTo(-half, onHead(-half) + 0.6);
+      ctx.quadraticCurveTo(-half * 0.4, cy - r - 4.2, 0, cy - r - 3.8);
+      ctx.quadraticCurveTo(half * 0.4, cy - r - 4.2, half, onHead(half) + 0.6);
+      ctx.fill();
+      ctx.stroke();
+    } else if (hairstyle === 'flattop') {
+      // A flat-topped block, a cylinder on the head: the same from every side.
+      const w = r * 0.82;
+      const base = onHead(w);
+      const top = cy - r - 3.4;
+      const right = Math.atan2(base - cy, w);
+      const left = Math.atan2(base - cy, -w);
+      ctx.beginPath();
+      ctx.moveTo(-w, base);
+      ctx.lineTo(-w * 0.95, top);
+      ctx.lineTo(w * 0.95, top);
+      ctx.lineTo(w, base);
+      ctx.arc(0, cy, r, right, left, true);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-w, base);
+      ctx.lineTo(-w * 0.95, top);
+      ctx.lineTo(w * 0.95, top);
+      ctx.lineTo(w, base);
+      ctx.stroke();
+    } else if (hairstyle === 'bun') {
+      // A topknot on the crown, a little towards the back of the head.
+      ctx.beginPath();
+      ctx.arc(-side * r * 0.3, cy - r - 1.2 + Math.max(0, toward) * 0.6, 2.7, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
 
-    // The head is hair all round, with the face a patch that slides round it and disappears from behind.
-    ctx.fillStyle = hair;
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 0.9;
-    ctx.beginPath();
-    ctx.arc(0, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    const shown = Math.max(0, Math.min(1, (toward + 0.45) / 0.75));
-    if (shown > 0) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(0, cy, r - 0.3, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.fillStyle = skin;
-      ctx.beginPath();
-      ctx.ellipse(side * r * 0.42, cy + 1.8, r * (0.55 + 0.4 * Math.abs(toward)) * shown, r * (0.5 + 0.38 * shown), 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    if (style === 2) {
-      ctx.fillStyle = hair;
-      ctx.fillRect(-6.4, cy - 10, 12.8, 5);
-    }
-    if (style === 3) {
+    if (look.headband) {
       ctx.strokeStyle = band;
       ctx.lineWidth = 2;
       ctx.lineCap = 'butt';
       ctx.beginPath();
-      ctx.moveTo(-r + 0.3, cy - 2.2);
-      ctx.quadraticCurveTo(0, cy - 3 - 1 * toward, r - 0.3, cy - 2.2);
+      ctx.moveTo(-(r - 0.3), cy - 2.2);
+      ctx.quadraticCurveTo(0, cy - 3 - toward, r - 0.3, cy - 2.2);
       ctx.stroke();
     }
 
-    // A nose gives the profile away; eyes and mouth only show on the side the camera can see.
-    if (Math.abs(side) > 0.6 && toward > -0.3) {
+    // Features grow and shrink with how much of the face is towards us; none of them pops.
+    const profile = clamp01((Math.abs(side) - 0.35) / 0.35) * clamp01((toward + 0.25) / 0.35);
+    if (profile > 0) {
+      // The nose gives the profile away.
       ctx.fillStyle = skin;
       ctx.strokeStyle = OUTLINE;
       ctx.lineWidth = 0.7;
       ctx.beginPath();
-      ctx.arc(side * (r + 0.3), cy + 1.4, 1.3, 0, Math.PI * 2);
+      ctx.arc(Math.sign(side) * (r + 0.3), cy + 1.4, 1.3 * profile, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
-    for (const eye of [-0.47, 0.47]) {
+    // Without the portrait's features (still loading, or an official), a simple drawn face.
+    for (const eye of features ? [] : [-0.47, 0.47]) {
       const visible = 0.88 * toward + eye * side;
-      if (visible < 0.15) continue;
+      if (visible <= 0) continue;
+      const open = clamp01(visible / 0.45) * clamp01(shown * 3);
       const ex = (0.88 * side - eye * toward) * r * 0.82;
+      // Brow, in the hair colour.
+      ctx.strokeStyle = hair;
+      ctx.lineWidth = 0.75;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ex - 1.3 * open, cy - 1.9);
+      ctx.lineTo(ex + 1.3 * open, cy - 1.9);
+      ctx.stroke();
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.ellipse(ex, cy + 0.2, 1.35 * Math.min(1, 0.45 + visible * 0.7), 1.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, cy + 0.2, 1.35 * open, 1.6, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#1b1b18';
       ctx.beginPath();
-      ctx.arc(ex + side * 0.35, cy + 0.3, 0.85, 0, Math.PI * 2);
+      ctx.arc(ex + side * 0.35 * open, cy + 0.3, 0.85 * open, 0, Math.PI * 2);
       ctx.fill();
+      if (look.eyeBlack) ctx.fillRect(ex - 1.1 * open, cy + 2.2, 2.2 * open, 0.9);
     }
-    if (toward > 0.2) {
+    const mouthOpen = clamp01(toward / 0.35);
+    if (mouthOpen > 0 && !features) {
       const mouth = side * r * 0.72;
-      const half = 0.6 + 0.9 * toward;
+      const half = (0.6 + 0.9 * toward) * mouthOpen;
       ctx.strokeStyle = darken(skin, 0.55);
       ctx.lineWidth = 0.8;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(mouth - half, cy + 3.9);
-      ctx.quadraticCurveTo(mouth, cy + 4.7, mouth + half, cy + 3.9);
+      ctx.moveTo(mouth - half, cy + 4.3);
+      ctx.quadraticCurveTo(mouth, cy + 5.1, mouth + half, cy + 4.3);
       ctx.stroke();
     }
   }

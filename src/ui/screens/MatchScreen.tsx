@@ -8,6 +8,8 @@ import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type Possession
 import type { Controller } from '../../game/draft';
 import type { Setup } from '../App';
 import { BoxScoreTables } from '../components/BoxScoreTable';
+import { Portrait, ShirtNumber } from '../components/Portrait';
+import { featuresUrl, lookOf } from '../looks';
 import { EnergyBar } from '../components/common';
 import { PlanEditor } from '../components/PlanEditor';
 import { REFS, playerKey } from '../court/animation';
@@ -100,7 +102,7 @@ export function MatchScreen({
         for (const side of [0, 1] as const) {
           for (const p of m.s.teams[side].team.players) {
             const k = playerKey(side, p.id);
-            dots[k] = { label: String(p.number), side, heightM: p.heightCm / 100, hasBall: holder === k };
+            dots[k] = { label: String(p.number), side, heightM: p.heightCm / 100, hasBall: holder === k, look: lookOf(p).sprite, features: featuresUrl(p) };
           }
         }
         for (const k of REFS) dots[k] = { label: '', side: 0, heightM: 1.84, hasBall: holder === k, ref: true };
@@ -419,22 +421,23 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
         onClick={() => click(id)}
         title={canAct ? 'Click a player on court and one on the bench to substitute' : undefined}
       >
-        <span className="num" style={{ background: colour, color: side === 0 ? '#1b0d00' : '#fff' }}>
-          {p.number}
-        </span>
-        <span>
-          {p.name} <span className="muted">{p.position}</span>
+        <Portrait player={p} side={side} size={42} />
+        <span className="pl-name">
+          <ShirtNumber player={p} side={side} />
+          {p.name}&nbsp;<span className="muted">{p.position}</span>
           {goingOut && <span className="pending"> ⬇ out</span>}
           {comingIn && <span className="pending"> ⬆ in</span>}
         </span>
-        <span title="Match rating (1-10, 6 = average)">
+        <span className="pl-stat" title="Match rating (1-10, 6 = average)">
           <RatingBadge r={v.rating} /> <b>{v.pts}</b>
           <span className="muted"> pts</span>
         </span>
-        <span className="mins" title="Minutes played">
-          {Math.floor(v.seconds / 60)}′
+        <span className="pl-sub">
+          <EnergyBar energy={v.energy} width={88} />
+          <span className="mins muted" title="Minutes played">
+            {Math.floor(v.seconds / 60)}′
+          </span>
         </span>
-        <EnergyBar energy={v.energy} width={110} />
         <span className="fouls" title="Personal fouls">
           {v.fouledOut ? 'OUT' : '●'.repeat(v.fouls)}
         </span>
@@ -568,6 +571,7 @@ function PauseModal({ m, controllers, onDone }: { m: LiveMatch; controllers: [Co
           <PlanEditor
             key={tab}
             team={m.s.teams[tab].team}
+            side={tab}
             opponent={m.s.teams[tab === 0 ? 1 : 0].team}
             plan={drafts[tab]}
             live={m.view[tab]}

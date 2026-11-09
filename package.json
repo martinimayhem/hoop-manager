@@ -23,6 +23,7 @@
     "vitest": "^5.0.5"
   },
   "dependencies": {
+    "facesjs": "5.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   }
