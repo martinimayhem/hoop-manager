@@ -6,14 +6,14 @@ import { describe as commentate, namesFor, type Names } from '../../engine/comme
 import { callTimeout, canCallTimeout, createMatch, setGamePlan, stepPossession } from '../../engine/match';
 import { composite } from '../../engine/ratings';
 import { emit, other } from '../../engine/state';
-import type { DefenceCall, GamePlan, MatchState, OffenceCall, PlayerGameState, PossessionCalls, Side, Team, TimedEvent } from '../../engine/types';
+import type { DefenceCall, DefenceScheme, GamePlan, MatchState, OffenceCall, PlayerGameState, PossessionCalls, Side, Team, TimedEvent, Transition } from '../../engine/types';
 import { playerRating } from '../../engine/stats';
 import { aiCall, asksForCall, isClutch } from '../../game/clutch';
 import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
 import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
-import { COURT, beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Restart, type Script } from '../court/animation';
+import { COURT, beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
 import { GATHER_STEPS_M, Motion, facingScene } from '../court/motion';
 import { clockString } from '../labels';
 import { excitement } from './highlights';
@@ -31,6 +31,38 @@ const SPEEDS: Record<Speed, { div: number; min: number; max: number }> = {
 };
 
 /** How much faster bring-up and set-up play on a routine possession. */
+/** Two players at full speed straight at each other (m/s of game time). */
+const CLOSING_M_S = 16;
+/** The most two players may close on each other in one movement step: half a body width. */
+const MAX_CLOSING_STEP_M = 0.4;
+
+/** A possession as it stood before it was played: what its animation script is built from. */
+interface PossessionStart {
+  offence: Side;
+  lineups: [string[], string[]];
+  defence: DefenceScheme;
+  clockStart: number;
+  how: Transition;
+  /** Index of its first event. */
+  start: number;
+}
+
+/** Where the ball is at the end of a beat. */
+function endBall(beat: Beat): Pos {
+  const b = beat.ball;
+  const of = (k: string): Pos => beat.players[k] ?? { x: COURT.w / 2, y: COURT.h / 2 };
+  switch (b.kind) {
+    case 'held':
+      return of(b.holder);
+    case 'pass':
+    case 'toPlayer':
+      return of(b.to);
+    case 'fromPlayer':
+    case 'fixed':
+      return { x: b.to.x, y: b.to.y };
+  }
+}
+
 const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
 /** In highlights mode, how many plays of each quarter are shown; the rest are played out instantly. */
 export const HIGHLIGHTS_PER_QUARTER = 5;
@@ -173,6 +205,11 @@ export class LiveMatch {
   private t = 0;
   private firedBeats = 0;
   private lastFrame: Frame | null = null;
+  /**
+   * Where everyone stood when the last skipped possession ended (highlights mode): the next clip
+   * starts from there, so a fast break begins with the defence where it really was.
+   */
+  private carry: Frame | null = null;
   private motion = new Motion();
   private holder: string | null = null;
   private time = 0;
@@ -377,17 +414,24 @@ export class LiveMatch {
     this.holder = b.kind === 'held' ? b.holder : b.kind === 'pass' && this.motion.passArrived(b) ? b.to : null;
     const speedScale = (this.speed === 'fast' ? 2.1 : 1) / (this.slowMo ? 1.8 : 1);
     const rate = this.skips(beat) ? FAST_FORWARD[this.speed] : beat.slow ? 0.45 : 1;
-    this.motion.update(beat.players, dt * rate, speedScale, this.holder, beat.pace, beat.outOfBounds, {
-      offence: sc.offence,
-      dir: sc.dir,
-      marking: beat.marking,
-      pressing: beat.pressing,
-      ball: this.lastFrame?.ball,
-      dead: beat.dead,
-      posting: beat.posting,
-      through: beat.through,
-      action: beat.ball,
-    });
+    // In small enough steps that two players running at each other can never close more than half a
+    // body width between two looks at them: otherwise, played fast, they could step through each other.
+    const steps = Math.max(1, Math.ceil((dt * rate * speedScale * CLOSING_M_S) / MAX_CLOSING_STEP_M));
+    for (let k = 0; k < steps; k++) {
+      this.motion.update(beat.players, (dt * rate) / steps, speedScale, this.holder, beat.pace, beat.outOfBounds, {
+        offence: sc.offence,
+        dir: sc.dir,
+        marking: beat.marking,
+        pressing: beat.pressing,
+        ball: this.lastFrame?.ball,
+        dead: beat.dead,
+        posting: beat.posting,
+        through: beat.through,
+        action: beat.ball,
+        openBreak: beat.openBreak,
+        openFloor: beat.phase === 'bringUp' || !!beat.openBreak,
+      });
+    }
     if (this.debugTravels) this.checkFootwork();
     const ball = this.motion.ball(beat.ball, u, sc.dir);
     this.motion.updateFacing(facingScene(sc, this.durations, index, u, ball, rate * speedScale), dt * rate, speedScale);
@@ -482,6 +526,7 @@ export class LiveMatch {
         this.clock = s.clock;
         this.quarter = s.quarter;
         this.lastFrame = null;
+        this.carry = null;
         this.motion.reset();
         for (const sd of [0, 1] as const) {
           if (this.controllers[sd] !== 'ai') continue;
@@ -503,12 +548,9 @@ export class LiveMatch {
     }
     this.skipping = false;
 
-    const offence = s.possession;
-    const lineups: [string[], string[]] = [[...s.teams[0].lineup], [...s.teams[1].lineup]];
-    const defence = s.teams[other(offence)].plan.defence;
-    const clockStart = s.clock;
-    const how = s.transition;
-    const start = s.events.length;
+    const before = this.possessionStart();
+    const offence = before.offence;
+    const start = before.start;
     this.slowMo = false;
     // Decided from the game situation alone: if the result decided it, slowing down would spoil it.
     const margin = Math.abs(s.teams[0].score - s.teams[1].score);
@@ -524,29 +566,11 @@ export class LiveMatch {
     stepPossession(s);
     this.scriptEvents = s.events.slice(start);
     this.quarter = s.quarter;
-    const name = (sd: Side, id: string) => this.names.player(sd, id);
     const energy: Record<string, number> = {};
-    for (const side of [0, 1] as const) for (const id of lineups[side]) energy[playerKey(side, id)] = s.teams[side].players[id].energy;
+    for (const side of [0, 1] as const) for (const id of before.lineups[side]) energy[playerKey(side, id)] = s.teams[side].players[id].energy;
     this.motion.setEnergy(energy);
-    this.script = buildScript(
-      {
-        offence,
-        quarter: s.quarter,
-        lineups,
-        focus: s.teams[offence].plan.offence,
-        defence,
-        keyMatchup: s.teams[other(offence)].plan.keyMatchup,
-        moveFactor: (key) => this.motion.moveFactor(key),
-        clockStart,
-        clockEnd: s.clock,
-        start: how,
-        restart: how === 'none' ? this.restartAfter(start) : undefined,
-        tempo: s.teams[offence].plan.tempo,
-        name,
-      },
-      this.scriptEvents,
-      this.lastFrame,
-    );
+    const prev = this.lastFrame ?? this.carry;
+    this.script = this.buildFrom(before, this.scriptEvents, prev);
     this.retime();
     this.t = 0;
     this.firedBeats = 0;
@@ -554,11 +578,16 @@ export class LiveMatch {
     this.publishedThrough = s.events.length;
     if (this.cut) {
       // Like a highlight on television, it starts at the set-up: the bring-up is not news. Anything
-      // that happened on the way (a substitution, say) still fires as the clock passes it.
+      // that happened on the way (a substitution, say) still fires as the clock passes it. The
+      // picture cuts straight to where everyone is at that moment; nobody runs there from the last
+      // clip shown.
       this.cut = false;
       const setUp = this.script.beats.findIndex((b) => b.phase === 'setUp');
       if (setUp > 0) this.t = this.beatEnds[setUp - 1];
+      const at = setUp > 0 ? this.script.beats[setUp - 1].players : prev?.players;
+      if (at) this.motion.place(at);
     }
+    this.carry = null;
   }
 
   private retime(): void {
@@ -604,13 +633,58 @@ export class LiveMatch {
     if (!this.skipping) this.setCaption('» To the next highlight…', null, null, 'setup');
     this.skipping = true;
     this.cut = true;
+    const before = this.possessionStart();
+    const prev = this.lastFrame ?? this.carry;
     stepPossession(s);
+    // Not shown, but worked out all the same, for where everyone is when it ends.
+    const script = this.buildFrom(before, s.events.slice(before.start), prev);
+    const end = script.beats[script.beats.length - 1];
+    this.carry = { players: end.players, ball: { ...endBall(end), z: 1 } };
     for (let i = this.publishedThrough; i < s.events.length; i++) this.publish(s.events[i], true);
     this.publishedThrough = s.events.length;
     this.quarter = s.quarter;
     this.lastFrame = null;
     this.motion.reset();
     this.endPossession();
+  }
+
+  /** What the animation needs to know about a possession, read before it is played. */
+  private possessionStart(): PossessionStart {
+    const s = this.s;
+    const offence = s.possession;
+    return {
+      offence,
+      lineups: [[...s.teams[0].lineup], [...s.teams[1].lineup]],
+      defence: s.teams[other(offence)].plan.defence,
+      clockStart: s.clock,
+      how: s.transition,
+      start: s.events.length,
+    };
+  }
+
+  /** The animation script of a possession just played, from where everyone was. */
+  private buildFrom(b: PossessionStart, events: TimedEvent[], prev: Frame | null): Script {
+    const s = this.s;
+    const name = (sd: Side, id: string) => this.names.player(sd, id);
+    return buildScript(
+      {
+        offence: b.offence,
+        quarter: s.quarter,
+        lineups: b.lineups,
+        focus: s.teams[b.offence].plan.offence,
+        defence: b.defence,
+        keyMatchup: s.teams[other(b.offence)].plan.keyMatchup,
+        moveFactor: (key) => this.motion.moveFactor(key),
+        clockStart: b.clockStart,
+        clockEnd: s.clock,
+        start: b.how,
+        restart: b.how === 'none' ? this.restartAfter(b.start) : undefined,
+        tempo: s.teams[b.offence].plan.tempo,
+        name,
+      },
+      events,
+      prev,
+    );
   }
 
   /**

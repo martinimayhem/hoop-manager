@@ -6,8 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
+import { makePlan } from '../src/engine/match';
+import type { TimedEvent } from '../src/engine/types';
 import { COURT, HOOP_X, MID_Y } from '../src/engine/court';
 import { beatAt, isRef, type Script } from '../src/ui/court/animation';
+import { BODY_M } from '../src/ui/court/formations';
 import { angleDiff, type Motion } from '../src/ui/court/motion';
 import { project } from '../src/ui/court/render';
 import { LiveMatch } from '../src/ui/match/controller';
@@ -277,4 +280,88 @@ describe('movement realism', () => {
     expect(r.ftMoving / r.ftFrames).toBeLessThan(0.06);
     expect(r.deadClockTicks).toBe(0);
   }, 180000);
+});
+
+// ---------------------------------------------------------------------------
+// Bodies: attackers and defenders never overlap, and on a break with nobody back no defender runs
+// back through the ball handler. (Before the fix, a fast break shown after skipped play started
+// with the whole defence standing in the lane, and in about one open-lane break in six a defender
+// ran back to a trailing spot straight through the handler, shoulder to shoulder at 0.78 m.)
+
+interface BodyWatch {
+  frames: number;
+  /** Closest an attacker and a defender ever came (m). */
+  closest: number;
+  /** Open-lane breaks watched, and the defenders who went from in front of the handler to behind him through his line. */
+  openBreaks: number;
+  crossings: string[];
+}
+
+function watchBodies(seed: number, highlights: boolean): BodyWatch {
+  const plans = [makePlan(HARBOR_HAMMERS, { offence: 'fastBreak', defence: 'man', tempo: 'fast' }), makePlan(SKYLINE_SPARKS, { offence: 'balanced', defence: 'zone', tempo: 'fast' })] as const;
+  const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [plans[0], plans[1]], seed, ['ai', 'ai'], 'normal');
+  m.highlights = highlights;
+  const inner = m as unknown as { script: Script | null; scriptEvents: TimedEvent[]; motion: Motion };
+  const w: BodyWatch = { frames: 0, closest: Infinity, openBreaks: 0, crossings: [] };
+  let seen: Script | null = null;
+  // The open-lane break being watched: its handler, the rim, and for each defender how far ahead
+  // of the handler (along his line to the rim) he is now and has been at most.
+  let brk: { handler: string; rim: P; ahead: Record<string, { now: number; most: number }> } | null = null;
+  for (let i = 0; i < 2_000_000 && m.phase !== 'final'; i++) {
+    m.tick(DT);
+    if (m.phase === 'timeout' || m.phase === 'break') m.resume();
+    const sc = inner.script;
+    if (!sc) continue;
+    if (sc !== seen) {
+      seen = sc;
+      brk = null;
+      const evs = inner.scriptEvents;
+      const tr = evs.find((e) => e.type === 'transition');
+      const fb = evs.find((e) => e.type === 'fastBreak');
+      if (tr?.type === 'transition' && tr.attack && tr.situation === 'lane' && fb?.type === 'fastBreak' && !evs.some((e) => e.type === 'transitionRead')) {
+        w.openBreaks++;
+        brk = { handler: `${sc.offence}:${fb.leaderId}`, rim: sc.dir === 1 ? { x: HOOP_X, y: MID_Y } : { x: COURT.w - HOOP_X, y: MID_Y }, ahead: {} };
+      }
+    }
+    const pos = inner.motion.pos;
+    const players = Object.keys(pos).filter((k) => !isRef(k));
+    const attackers = players.filter((k) => k.startsWith(`${sc.offence}:`));
+    const defenders = players.filter((k) => !k.startsWith(`${sc.offence}:`));
+    w.frames++;
+    for (const a of attackers) for (const d of defenders) w.closest = Math.min(w.closest, dist(pos[a], pos[d]));
+    const h = brk && pos[brk.handler];
+    if (!brk || !h) continue;
+    const len = dist(h, brk.rim);
+    if (len < 1.5) continue;
+    const ux = (brk.rim.x - h.x) / len;
+    const uy = (brk.rim.y - h.y) / len;
+    for (const d of defenders) {
+      const s = (pos[d].x - h.x) * ux + (pos[d].y - h.y) * uy;
+      const lat = Math.abs(-(pos[d].x - h.x) * uy + (pos[d].y - h.y) * ux);
+      const a = (brk.ahead[d] ??= { now: s, most: s });
+      // Clearly between him and the rim at some point, and now level or behind him, having come
+      // back across his line rather than round it.
+      if (a.most > BODY_M && a.now > 0 && s <= 0 && lat < BODY_M + 0.05) w.crossings.push(`seed ${seed} ${brk.handler} passed through by ${d}, ${lat.toFixed(2)} m off his line`);
+      a.now = s;
+      a.most = Math.max(a.most, s);
+    }
+  }
+  expect(m.phase).toBe('final');
+  return w;
+}
+
+describe('bodies', () => {
+  for (const highlights of [false, true]) {
+    it(`attackers and defenders never overlap, and nobody runs back through an open break (highlights ${highlights ? 'on' : 'off'})`, () => {
+      const seeds = highlights ? [1, 2, 3, 4, 5, 6] : [1, 2];
+      const all = seeds.map((seed) => watchBodies(seed, highlights));
+      const frames = all.reduce((n, w) => n + w.frames, 0);
+      const breaks = all.reduce((n, w) => n + w.openBreaks, 0);
+      expect(frames).toBeGreaterThan(highlights ? 5000 : 50000);
+      expect(breaks).toBeGreaterThan(highlights ? 8 : 15);
+      // One body width: shoulders touch, never more. (A hair less for rounding at the sidelines.)
+      for (const w of all) expect(w.closest).toBeGreaterThanOrEqual(BODY_M - 0.02);
+      expect(all.flatMap((w) => w.crossings)).toEqual([]);
+    }, 600000);
+  }
 });

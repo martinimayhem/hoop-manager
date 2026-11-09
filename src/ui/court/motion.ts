@@ -165,6 +165,10 @@ export interface LiveContext {
   action?: BallAction;
   /** Players passing through their spot on the way further: no pulling up at it. */
   through?: string[];
+  /** A break with nobody back: no defender cuts across in front of the ball handler. */
+  openBreak?: boolean;
+  /** Bringing the ball up or an open break: the open floor, where runners swerve round opponents. */
+  openFloor?: boolean;
 }
 
 /**
@@ -238,6 +242,84 @@ function keepApart(pos: Record<string, Pos>): void {
       }
     }
   }
+}
+
+/** How far to the side of a defender's body the ball handler aims, past his shoulder. */
+const STEER_CLEAR_M = BODY_M + 0.45;
+/** Below this speed (m/s of game time), outside an open break, nobody swerves round anyone. */
+const STEER_FROM_M_S = 3.5;
+/** How far ahead he looks for someone in his way. */
+const STEER_LOOK_M = 3;
+
+/**
+ * Where a player running from `p` to `target` should head so as not to run into an opponent: the
+ * nearest opponent in his way (other than those in `ignore`) (ahead of him, closer than the target, and less than a shoulder's
+ * width off his line) is gone round on the side he is already a little to, or the side with the
+ * target on it. With nobody in the way, the target itself.
+ */
+export function steerAround(p: Pos, target: Pos, pos: Record<string, Pos>, key: string, offence: Side, ignore: ReadonlySet<string> = new Set()): Pos {
+  const dx = target.x - p.x;
+  const dy = target.y - p.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 0.5) return target;
+  const ux = dx / d;
+  const uy = dy / d;
+  const mine = key.startsWith(`${offence}:`);
+  let block: { along: number; lat: number } | null = null;
+  for (const [k, o] of Object.entries(pos)) {
+    if (k === key || isRef(k) || ignore.has(k) || k.startsWith(`${offence}:`) === mine) continue;
+    const along = (o.x - p.x) * ux + (o.y - p.y) * uy;
+    if (along <= 0 || along > Math.min(STEER_LOOK_M, d)) continue;
+    const lat = -(o.x - p.x) * uy + (o.y - p.y) * ux;
+    if (Math.abs(lat) >= STEER_CLEAR_M) continue;
+    if (!block || along < block.along) block = { along, lat };
+  }
+  if (!block) return target;
+  // Round the side away from him (he is to the left of the line, so go right, and the other way),
+  // unless that side is off the floor: then round the other.
+  const b = block;
+  const pass = (side: number): Pos => {
+    const offset = b.lat + side * STEER_CLEAR_M;
+    return { x: p.x + ux * b.along - uy * offset, y: p.y + uy * b.along + ux * offset };
+  };
+  const away = b.lat > 0.02 ? -1 : b.lat < -0.02 ? 1 : hash(key) % 2 ? 1 : -1;
+  const offFloor = (q: Pos) => {
+    const inside = insideCourt(q);
+    return Math.hypot(inside.x - q.x, inside.y - q.y) > 0.05;
+  };
+  const first = pass(away);
+  if (!offFloor(first)) return first;
+  const second = pass(-away);
+  return offFloor(second) ? target : second;
+}
+
+/** A ball handler slower than this (m/s of game time) is not on the run. */
+const RUNNING_M_S = 2;
+/** How far to his side a defender keeps from a running handler's line, at least. */
+const SIDE_CLEAR_M = 1.6;
+
+/**
+ * Where a defender at `p` heading for `target` should go so as never to cut across in front of a
+ * ball handler at `h` running with velocity `v`: if he is in front of him (or level) and his target
+ * is on the other side of the handler's line, the target is moved back to his own side, at least
+ * SIDE_CLEAR_M off the line. Behind the handler, or with the handler not running, the target itself.
+ */
+export function keepToSide(p: Pos, target: Pos, h: Pos | undefined, v: Pos | undefined, speedScale: number): Pos {
+  if (!h || !v) return target;
+  const speed = Math.hypot(v.x, v.y) / speedScale;
+  if (speed < RUNNING_M_S) return target;
+  const ux = v.x / (speed * speedScale);
+  const uy = v.y / (speed * speedScale);
+  const along = (q: Pos) => (q.x - h.x) * ux + (q.y - h.y) * uy;
+  const across = (q: Pos) => -(q.x - h.x) * uy + (q.y - h.y) * ux;
+  if (along(p) < -BODY_M) return target;
+  const mine = across(p);
+  const theirs = across(target);
+  const side = Math.abs(mine) > 0.05 ? Math.sign(mine) : Math.sign(theirs) || 1;
+  if (Math.sign(theirs) === side && Math.abs(theirs) >= SIDE_CLEAR_M) return target;
+  const lat = side * Math.max(SIDE_CLEAR_M, Math.abs(theirs) * (Math.sign(theirs) === side ? 1 : 0));
+  const s = along(target);
+  return insideCourt({ x: h.x + ux * s - uy * lat, y: h.y + uy * s + ux * lat });
 }
 
 /**
@@ -324,6 +406,15 @@ export class Motion {
   private waiting: Record<string, number> = {};
   /** Where the ball left the shooter's hands, per shot action. */
   private releases = new WeakMap<BallAction, Ball>();
+
+  /** Everyone stood on these spots, at rest: a cut, as on television, not a run to get there. */
+  place(players: Record<string, Pos>): void {
+    this.reset();
+    for (const [k, p] of Object.entries(players)) {
+      this.pos[k] = { ...p };
+      this.vel[k] = { x: 0, y: 0 };
+    }
+  }
 
   reset(): void {
     this.pos = {};
@@ -440,6 +531,33 @@ export class Motion {
         tx += s.x + Math.sin(this.time * (0.7 + (h % 7) * 0.08) + h) * 0.08;
         ty += s.y + Math.cos(this.time * (0.6 + (h % 5) * 0.09) + h * 0.7) * 0.06;
       }
+      if (live?.openBreak && !live.dead && !man && ballHolder && key !== ballHolder && !isRef(key) && !key.startsWith(`${live.offence}:`)) {
+        // On a break with nobody back, a defender in front of the ball handler stays on his own side
+        // of the handler's line: wherever the beat sends him, he never cuts across in front of him.
+        const side = keepToSide(p, { x: tx, y: ty }, this.pos[ballHolder], this.vel[ballHolder], speedScale);
+        tx = side.x;
+        ty = side.y;
+      }
+      const running = this.vel[key] ? Math.hypot(this.vel[key].x, this.vel[key].y) / speedScale > STEER_FROM_M_S : false;
+      if (live && !live.dead && !man && key.startsWith(`${live.offence}:`) && (live.openBreak || (live.openFloor && running)) && key !== live.posting && !isRef(key)) {
+        // In the open floor anyone on the move goes round an opponent in his way, not through him:
+        // the ball handler round a defender, a runner round whoever is in his lane. He aims past the
+        // shoulder. (A defender on his man is already moving with him. In the half court, at a walk
+        // or a jog, the bodies easing apart is enough: a swerve there only loses his defender.)
+        // Not round the man guarding him: giving ground in front of him is that defender's job.
+        const guards = new Set(Object.entries(live.marking ?? {}).filter(([, m]) => m === key).map(([d]) => d));
+        const around = steerAround(p, { x: tx, y: ty }, this.pos, key, live.offence, guards);
+        // Only the direction changes: he heads past the shoulder at the same speed, without pulling
+        // up there as if it were where he was going.
+        const far = Math.hypot(tx - p.x, ty - p.y);
+        const ax = around.x - p.x;
+        const ay = around.y - p.y;
+        const a = Math.hypot(ax, ay);
+        if (a > 0.01) {
+          tx = p.x + (ax / a) * far;
+          ty = p.y + (ay / a) * far;
+        }
+      }
       let max = Math.min(TOP_SPEED, PACE_M_S[paces[key] ?? 'sprint'] * this.moveFactor(key)) * speedScale;
       const dx = tx - p.x;
       const dy = ty - p.y;
@@ -473,6 +591,9 @@ export class Motion {
       keepApart(next);
       for (const key of Object.keys(next)) if (key !== outOfBounds && !isRef(key)) keepInside(next, key, BOUNDS_M_S * dt * speedScale);
     }
+    // Bodies last: a player eased back onto the floor may have been put into someone. Whoever has
+    // a line at his back stays put; the other gives way.
+    keepApart(next);
     this.pos = next;
     this.vel = nextVel;
     for (const key of Object.keys(next)) this.updateCarry(key, dt * speedScale, speedScale, key === ballHolder);
