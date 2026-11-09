@@ -167,8 +167,10 @@ export type MatchEvent =
       andOne?: boolean;
       dunk?: boolean;
     }
-  | { type: 'rebound'; side: Side; playerId: string; offensive: boolean }
-  | { type: 'turnover'; side: Side; playerId: string; cause: TurnoverCause; stealerId?: string }
+  /** After a defensive rebound, `back` is how many of the other side got back in time: 0 to 3. */
+  | { type: 'rebound'; side: Side; playerId: string; offensive: boolean; back?: number }
+  /** After a steal, `back` is how many of the side that lost it got back in time: 0 to 3. */
+  | { type: 'turnover'; side: Side; playerId: string; cause: TurnoverCause; stealerId?: string; back?: number }
   | { type: 'foul'; side: Side; playerId: string; onId: string; shooting: boolean; bonus: boolean }
   | { type: 'freeThrow'; side: Side; shooterId: string; made: boolean; attempt: number; of: number }
   | { type: 'fastBreak'; side: Side; leaderId: string }
@@ -194,6 +196,15 @@ export type Transition = 'none' | 'rebound' | 'steal';
 
 /** What the offence has in transition: an open lane to the rim, or more attackers than defenders back. */
 export type TransitionSituation = 'lane' | 'twoOnOne' | 'threeOnTwo';
+/**
+ * What the side that has just won the ball has in front of it, decided the moment it wins it: who
+ * pushes it, the numbers, and whether he goes; or no advantage at all, the defence back in time.
+ */
+export type TransitionPlan =
+  | { handlerId: string; situation: TransitionSituation; attack: boolean }
+  | { situation: 'none' };
+/** How many defenders got back for each situation. */
+export const DEFENDERS_BACK: Record<TransitionSituation | 'none', number> = { lane: 0, twoOnOne: 1, threeOnTwo: 2, none: 3 };
 /** What the ball handler does with it: finish (through contact if the lane closed), dish to the open man, kick out for three, or pull back out. */
 export type TransitionFinish = 'finish' | 'dish' | 'kick' | 'pullBack';
 
@@ -220,6 +231,8 @@ export interface MatchState {
   momentum: number;
   /** How the current possession started, for fast-break chances. */
   transition: Transition;
+  /** What the side that just won the ball has in front of it, decided as it won it. */
+  nextTransition: TransitionPlan | null;
   /** Set plays called for the next possession only (clutch moments). */
   calls: PossessionCalls | null;
   events: TimedEvent[];

@@ -199,7 +199,8 @@ export function fastBreakChance(
 export function transitionAttackChance(situation: 'lane' | 'twoOnOne' | 'threeOnTwo', plan: GamePlan, driving: number, playmaking: number): number {
   const runs = plan.offence === 'fastBreak' || plan.tempo === 'fast';
   const walks = plan.tempo === 'slow' || plan.offence === 'inside' || plan.offence === 'pickAndRoll';
-  let p = situation === 'lane' ? (runs ? 0.95 : walks ? 0.7 : 0.85) : runs ? 0.9 : walks ? 0.55 : 0.75;
+  // With nobody or one man back, he goes; three on two takes a little more nerve.
+  let p = situation !== 'threeOnTwo' ? (runs ? 0.95 : walks ? 0.7 : 0.85) : runs ? 0.9 : walks ? 0.55 : 0.75;
   p += Math.max(-0.1, Math.min(0.1, (driving - 65) * 0.002 + (playmaking - 65) * 0.002));
   return Math.max(0.05, Math.min(0.98, p));
 }

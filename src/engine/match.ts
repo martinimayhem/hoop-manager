@@ -93,6 +93,7 @@ export function createMatch(home: Team, away: Team, homePlan: GamePlan, awayPlan
     teams: [teamState(home, homePlan), teamState(away, awayPlan)],
     momentum: 0,
     transition: 'none',
+    nextTransition: null,
     calls: null,
     events: [],
     finished: false,

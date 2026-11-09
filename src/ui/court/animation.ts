@@ -626,6 +626,19 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         paceFor[k] = 'sprint';
       });
   };
+  /**
+   * The attackers who get back as the ball is lost: the ones furthest from the basket, sprinting
+   * for their own end, so the other side has the defenders the engine says it has in front of it.
+   * Returns who they are.
+   */
+  const getBackFor = (count: number, exclude: string[]): string[] => {
+    const back = offKeys.filter((o) => !exclude.includes(o)).sort((a, b) => dist(at[b], HOOP) - dist(at[a], HOOP)).slice(0, count);
+    back.forEach((o, j) => {
+      place(o, { x: HALF_X - 2 - j * 3, y: MID_Y + (j === 1 ? 2.5 : j === 2 ? 0 : -2.5) });
+      paceFor[o] = 'sprint';
+    });
+    return back;
+  };
   /** Where the last defender back stands, to commit to the ball or to recover into the lane. */
   const lastBack = () => defIds.map(kDef).sort((a, b) => at[b].x - at[a].x)[0];
 
@@ -1436,6 +1449,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         spacing = false;
         autoDefence = false;
         refSpot = {};
+        // Off a defensive rebound, whoever the engine has getting back is already on his way.
+        const retreat = ev.offensive ? [] : getBackFor(ev.back ?? 0, [k]);
         if (rimHit) {
           // Off the iron: the ball pops up, everyone nearby crashes, and they fight for it in the air.
           const { contact: hit, from } = rimHit;
@@ -1444,7 +1459,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           const reach = 1.05 + dist(from, HOOP) * 0.25 + ((seed + i) % 3) * 0.3;
           const carom = insideCourt({ x: Math.min(HOOP_X - 0.82, HOOP.x + Math.cos(away) * reach), y: HOOP.y + Math.sin(away) * reach });
           const rivals = [...offKeys, ...defIds.map(kDef)]
-            .filter((o) => o !== k)
+            .filter((o) => o !== k && !retreat.includes(o))
             .sort((a, b) => dist(at[a], carom) - dist(at[b], carom))
             .slice(0, 3);
           at[k] = { ...carom };
@@ -1485,6 +1500,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         if (ev.stealerId) {
           const st = kDef(ev.stealerId);
           const stName = n(def, ev.stealerId);
+          // As the ball goes, whoever the engine has getting back turns and runs.
+          getBackFor(ev.back ?? 0, [handler, st]);
           const way = (seed + i) % 3;
           if (way === 0) {
             // Picked clean: the defender closes in and reaches for the dribble.

@@ -4,7 +4,7 @@
 // mirror-symmetric, so bounds also hold for absolute positions. Spots are measured from the hoop,
 // so they follow the court's lines.
 
-import { COURT, HALF_X, HOOP, HOOP_X, MID_Y, fromHoop } from '../../engine/court';
+import { COURT, HALF_X, HOOP, HOOP_X, MID_Y, THREE_ARC_M, fromHoop } from '../../engine/court';
 import type { OffensiveFocus } from '../../engine/types';
 import type { Pos } from './animation';
 
@@ -138,5 +138,9 @@ export function guardSpot(man: Pos, ball: Pos, onBall: boolean, pressing: boolea
   const wanted = pressing ? (onBall ? 1 : 1.2) : onBall ? 1 : Math.max(1.8, Math.min(3.6, 1.2 + fromBall * 0.28));
   const gap = Math.min(wanted, toHoop * 0.6);
   const spot = { x: man.x + (dx / toHoop) * gap, y: man.y + (dy / toHoop) * gap };
-  return pressing ? spot : { x: Math.max(spot.x, HALF_COURT_PICKUP_X), y: spot.y };
+  // Get back, stop the ball, then find your man: with the ball coming up the floor ahead of his man,
+  // a defender gets between the ball and the basket first, never left behind it, pressing or not.
+  const ahead = !onBall && ball.x < HOOP_X - THREE_ARC_M && man.x < ball.x ? Math.min(ball.x + 2, HOOP_X - 3) : 0;
+  if (pressing) return { x: Math.max(spot.x, ahead), y: spot.y };
+  return { x: Math.max(spot.x, HALF_COURT_PICKUP_X, ahead), y: spot.y };
 }

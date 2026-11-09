@@ -37,7 +37,7 @@ import {
   turnoverPlanMod,
   type HalfCourtPlay,
 } from './tactics';
-import type { MatchState, OffenceCall, PossessionCalls, ShotType, Side, TransitionSituation, TurnoverCause } from './types';
+import { DEFENDERS_BACK, type MatchState, type OffenceCall, type PossessionCalls, type ShotType, type Side, type TransitionPlan, type TransitionSituation, type TurnoverCause } from './types';
 
 const FOUL_LIMIT = 6;
 const BONUS_FOULS = 5;
@@ -112,7 +112,9 @@ export function playPossession(s: MatchState): void {
 
   let opened = false;
   // A called set play is run in the half court: no fast break, the ball is walked up.
-  if (trigger !== 'none' && !c.calls.offence) opened = runTransition(c, trigger);
+  const planned = s.nextTransition;
+  s.nextTransition = null;
+  if (trigger !== 'none' && !c.calls.offence) opened = runTransition(c, trigger, planned);
   if (!opened && s.teams[c.def].plan.defence === 'press') opened = runPress(c);
 
   // Half-court sets. Later segments are resets after an offensive rebound or a side-out foul.
@@ -274,17 +276,33 @@ function chooseZone(c: Ctx, type: ShotType): { zone: ShotZone; courtSide: CourtS
  * advantage is attacked, and the last defender has to choose. Returns true if the possession was
  * finished in transition; otherwise they set up in the half court.
  */
-function runTransition(c: Ctx, trigger: 'rebound' | 'steal'): boolean {
-  const s = c.s;
-  const offPlan = s.teams[c.off].plan;
-  const speedEdge = teamAvg(s, c.off, 'speed') - teamAvg(s, c.def, 'speed');
-  if (!chance(s.rng, fastBreakChance(trigger, offPlan, s.teams[c.def].plan, speedEdge))) return false;
-  const lineup = s.teams[c.off].lineup;
+/**
+ * The moment `side` wins the ball (a defensive rebound, a steal): did they get ahead of the defence,
+ * and how many of the other side got back? Decided now, so the floor can show it as it happens: the
+ * defenders who got back are already on their way. Who pushes it, and whether he goes, too.
+ */
+export function planTransition(s: MatchState, side: Side, trigger: 'rebound' | 'steal'): TransitionPlan {
+  const def = other(side);
+  const offPlan = s.teams[side].plan;
+  const speedEdge = teamAvg(s, side, 'speed') - teamAvg(s, def, 'speed');
+  if (!chance(s.rng, fastBreakChance(trigger, offPlan, s.teams[def].plan, speedEdge))) return { situation: 'none' };
+  const lineup = s.teams[side].lineup;
   // The quickest of them has the ball; a guard more often than a big.
-  const handler = weighted(s.rng, lineup, (id) => Math.exp((eff(s, c.off, id, 'speed') - 60) / 10) * (lineup.indexOf(id) < 2 ? 1.6 : 1));
+  const handlerId = weighted(s.rng, lineup, (id) => Math.exp((eff(s, side, id, 'speed') - 60) / 10) * (lineup.indexOf(id) < 2 ? 1.6 : 1));
   // A steal leaves the floor open more often than a rebound and outlet.
   const situation: TransitionSituation = chance(s.rng, trigger === 'steal' ? 0.6 : 0.4) ? 'lane' : chance(s.rng, 0.5) ? 'twoOnOne' : 'threeOnTwo';
-  const attack = chance(s.rng, transitionAttackChance(situation, offPlan, eff(s, c.off, handler, 'driving'), eff(s, c.off, handler, 'playmaking')));
+  const attack = chance(s.rng, transitionAttackChance(situation, offPlan, eff(s, side, handlerId, 'driving'), eff(s, side, handlerId, 'playmaking')));
+  return { handlerId, situation, attack };
+}
+
+function runTransition(c: Ctx, trigger: 'rebound' | 'steal', planned: TransitionPlan | null): boolean {
+  const s = c.s;
+  const speedEdge = teamAvg(s, c.off, 'speed') - teamAvg(s, c.def, 'speed');
+  const plan = planned ?? planTransition(s, c.off, trigger);
+  if (plan.situation === 'none') return false;
+  const { handlerId: handler, situation, attack } = plan;
+  const lineup = s.teams[c.off].lineup;
+  if (!lineup.includes(handler)) return false;
   emit(s, { type: 'transition', side: c.off, handlerId: handler, situation, attack });
   if (!attack) {
     // He pulls it out: a few seconds of pushing it up, then the half court.
@@ -745,14 +763,15 @@ function rebound(c: Ctx, afterFreeThrow: boolean): void {
   const st = pstate(s, side, rebounder).stats;
   if (offensive) st.oreb++;
   else st.dreb++;
-  emit(s, { type: 'rebound', side, playerId: rebounder, offensive });
-
   if (!offensive) {
+    s.nextTransition = planTransition(s, c.def, 'rebound');
+    emit(s, { type: 'rebound', side, playerId: rebounder, offensive, back: DEFENDERS_BACK[s.nextTransition.situation] });
     s.possession = c.def;
     s.transition = 'rebound';
     c.done = true;
     return;
   }
+  emit(s, { type: 'rebound', side, playerId: rebounder, offensive });
 
   c.secondChance = true;
   c.fastBreak = false;
@@ -782,7 +801,8 @@ function turnover(c: Ctx, playerId: string, stealerId: string | undefined, cause
       emit(s, { type: 'foulOut', side: c.off, playerId });
     }
   }
-  emit(s, { type: 'turnover', side: c.off, playerId, cause, stealerId });
+  s.nextTransition = stealerId ? planTransition(s, c.def, 'steal') : null;
+  emit(s, { type: 'turnover', side: c.off, playerId, cause, stealerId, back: s.nextTransition ? DEFENDERS_BACK[s.nextTransition.situation] : undefined });
   s.possession = c.def;
   s.transition = stealerId ? 'steal' : 'none';
   c.done = true;
