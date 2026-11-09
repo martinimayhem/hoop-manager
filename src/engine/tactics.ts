@@ -1,17 +1,18 @@
 // The counter system. Every tactical modifier lives in this file so balance
 // tuning happens in one place. Values are additive probabilities unless noted.
 
+import type { ShotZone } from './court';
 import type { DefenceScheme, GamePlan, OffensiveFocus, ShotType, Tempo } from './types';
 
 export type HalfCourtPlay = 'post' | 'drive' | 'pnr' | 'mid' | 'three';
 
 /** How often each focus calls each half-court play. */
 const PLAY_WEIGHTS: Record<OffensiveFocus, Record<HalfCourtPlay, number>> = {
-  inside: { post: 0.4, drive: 0.22, pnr: 0.12, mid: 0.1, three: 0.16 },
-  balanced: { post: 0.2, drive: 0.22, pnr: 0.18, mid: 0.15, three: 0.25 },
-  three: { post: 0.08, drive: 0.17, pnr: 0.15, mid: 0.08, three: 0.52 },
-  pickAndRoll: { post: 0.1, drive: 0.15, pnr: 0.45, mid: 0.1, three: 0.2 },
-  fastBreak: { post: 0.15, drive: 0.28, pnr: 0.15, mid: 0.12, three: 0.3 },
+  inside: { post: 0.32, drive: 0.22, pnr: 0.12, mid: 0.08, three: 0.26 },
+  balanced: { post: 0.14, drive: 0.22, pnr: 0.18, mid: 0.1, three: 0.36 },
+  three: { post: 0.05, drive: 0.15, pnr: 0.13, mid: 0.05, three: 0.62 },
+  pickAndRoll: { post: 0.07, drive: 0.14, pnr: 0.43, mid: 0.08, three: 0.28 },
+  fastBreak: { post: 0.1, drive: 0.27, pnr: 0.14, mid: 0.09, three: 0.4 },
 };
 
 export function playWeights(plan: GamePlan): Record<HalfCourtPlay, number> {
@@ -26,24 +27,110 @@ export function playWeights(plan: GamePlan): Record<HalfCourtPlay, number> {
   return w;
 }
 
+// ---------------------------------------------------------------------------
+// Where shots come from. The zone says where, the shot type says how.
+
 /**
- * Shot-quality modifier from the defensive scheme.
- * Zone: packs the paint, concedes open jumpers.
- * Press: half-court defence is a little scrambled after the press is broken.
+ * An average NBA shooter's field-goal percentage from each zone, as the NBA's own shooting
+ * statistics divide the floor. The shooter's rating is centred on 70, so this is the base.
  */
-const SCHEME_SHOT_MOD: Record<DefenceScheme, Partial<Record<ShotType, number>>> = {
-  man: {},
-  zone: { post: -0.065, drive: -0.05, pnrRoll: -0.03, putback: -0.01, mid: 0.015, pnrPull: 0.01, three: 0.025 },
-  press: { drive: 0.01, three: 0.005 },
+export const ZONE_BASE: Record<ShotZone, number> = {
+  restricted: 0.655,
+  paint: 0.43,
+  mid: 0.42,
+  corner3: 0.39,
+  aboveBreak3: 0.355,
 };
 
-export function schemeShotMod(defence: DefenceScheme, shot: ShotType): number {
-  return SCHEME_SHOT_MOD[defence][shot] ?? 0;
+/** How the shot is taken, on top of where: a contested drive is harder than a lob from a roll. */
+export const SHOT_TYPE_MOD: Record<ShotType, number> = {
+  drive: -0.035,
+  pnrRoll: -0.015,
+  fastBreak: 0.04,
+  pressBreak: -0.01,
+  putback: -0.09,
+  post: -0.01,
+  mid: -0.01,
+  pnrPull: 0.01,
+  three: 0,
+};
+
+/** How often a finish at the basket gets all the way to the rim, rather than a floater in the paint. */
+export const RIM_SHARE: Partial<Record<ShotType, number>> = {
+  drive: 0.7,
+  pnrRoll: 0.75,
+  fastBreak: 0.85,
+  pressBreak: 0.8,
+  putback: 0.8,
+  post: 0.25,
+};
+
+/** Of the threes, the share from the corners. */
+export const CORNER_SHARE = 0.26;
+
+/**
+ * Floor spacing: how many credible shooters are on the court, 0 to 5. A player rated 50 from three
+ * adds nothing, one rated 75 or better counts in full.
+ */
+export function spacingScore(threeRatings: number[]): number {
+  return threeRatings.reduce((sum, r) => sum + Math.max(0, Math.min(1, (r - 50) / 25)), 0);
 }
+
+/** Spacing is measured against a lineup with two and a half shooters. */
+export const SPACING_PIVOT = 2.5;
+/** Per shooter above that: more drives reach the rim, and finishes there are easier. */
+export const SPACING_RIM_SHARE = 0.05;
+export const SPACING_INSIDE_MOD = 0.008;
+
+/**
+ * What a defence gives up and what it takes away: how often the offence gets to the rim and to the
+ * corners, and how contested each zone is. Applies to the scheme and to a defensive call on top.
+ */
+export interface DefenceProfile {
+  rimShare: number;
+  cornerShare: number;
+  contest: Partial<Record<ShotZone, number>>;
+}
+
+const SCHEME_PROFILE: Record<DefenceScheme, DefenceProfile> = {
+  // Man to man: someone is on every shooter, closing out on the catch; with nobody sagging off,
+  // a driver who beats his man finds less help at the rim.
+  man: { rimShare: 0.03, cornerShare: -0.04, contest: { aboveBreak3: -0.04, corner3: -0.035, restricted: 0.01, paint: 0.01 } },
+  // A 2-3 zone packs the paint and gives up the corners and the gaps.
+  zone: { rimShare: -0.12, cornerShare: 0.12, contest: { restricted: -0.045, paint: -0.05, mid: 0.015, corner3: 0.02, aboveBreak3: 0.02 } },
+  // A press does its work full court; once it is broken the half court is a little scrambled.
+  press: { rimShare: 0, cornerShare: 0.02, contest: {} },
+};
+
+/** The clutch defensive calls change the profile for one possession. */
+const CALL_PROFILE: Record<'packPaint' | 'denyThree', DefenceProfile> = {
+  packPaint: { rimShare: -0.15, cornerShare: 0.1, contest: { restricted: -0.07, paint: -0.07, mid: 0.01, corner3: 0.04, aboveBreak3: 0.035 } },
+  denyThree: { rimShare: 0.08, cornerShare: -0.12, contest: { corner3: -0.08, aboveBreak3: -0.07, restricted: 0.035, paint: 0.035, mid: 0.02 } },
+};
+
+/**
+ * The defence the offence faces: its scheme, plus a called adjustment. A zone is weaker against a
+ * lineup that can shoot: good spacing stretches it, so it gives up more from three.
+ */
+export function defenceProfile(scheme: DefenceScheme, call: string | undefined, spacing: number): DefenceProfile {
+  const base = SCHEME_PROFILE[scheme];
+  const extra = call === 'packPaint' || call === 'denyThree' ? CALL_PROFILE[call] : null;
+  const contest: Partial<Record<ShotZone, number>> = { ...base.contest };
+  if (extra) for (const [z, v] of Object.entries(extra.contest) as [ShotZone, number][]) contest[z] = (contest[z] ?? 0) + v;
+  if (scheme === 'zone') {
+    const stretch = (spacing - SPACING_PIVOT) * ZONE_STRETCH;
+    contest.corner3 = (contest.corner3 ?? 0) + stretch;
+    contest.aboveBreak3 = (contest.aboveBreak3 ?? 0) + stretch;
+  }
+  return { rimShare: base.rimShare + (extra?.rimShare ?? 0), cornerShare: base.cornerShare + (extra?.cornerShare ?? 0), contest };
+}
+
+/** Against a zone, per shooter above the pivot: the open threes get more open. */
+export const ZONE_STRETCH = 0.006;
 
 /** A balanced attack is harder to key on: a small half-court bonus for not being predictable. */
 export function focusShotMod(focus: OffensiveFocus): number {
-  return focus === 'balanced' ? 0.012 : 0;
+  return focus === 'balanced' ? 0.004 : 0;
 }
 
 /** Against a zone, good ball movement finds the open man: extra on jumpers per point of team playmaking above 65. */

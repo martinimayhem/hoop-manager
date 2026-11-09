@@ -1,17 +1,14 @@
 // Where players stand: half-court formations per offensive focus, zone spots, the guarding rules
 // for each defence, and the bounds nobody may leave. Pure geometry in the normalised frame, where
-// the offence attacks to the right. Metres on a 28 x 15 m court, which is mirror-symmetric, so bounds
-// also hold for absolute positions.
+// the offence attacks to the right. Metres on the NBA court of engine/court.ts, which is
+// mirror-symmetric, so bounds also hold for absolute positions. Spots are measured from the hoop,
+// so they follow the court's lines.
 
+import { COURT, HALF_X, HOOP, HOOP_X, MID_Y, fromHoop } from '../../engine/court';
 import type { OffensiveFocus } from '../../engine/types';
 import type { Pos } from './animation';
 
-export const COURT = { w: 28, h: 15 };
-/** The line down the middle of the court, through both hoops. */
-export const MID_Y = COURT.h / 2;
-/** The rim's centre is 1.575 m in from the baseline. */
-export const HOOP_X = 26.425;
-export const HOOP: Pos = { x: HOOP_X, y: MID_Y };
+export { COURT, HOOP, HOOP_X, MID_Y };
 /** Teammates keep about 4 m apart, unless they are setting a screen. */
 export const MIN_SPACING_M = 4;
 /** Two sprites standing this close on the floor just touch. */
@@ -19,28 +16,39 @@ export const BODY_M = 0.8;
 
 const MARGIN = 0.45;
 /** Without a press, defenders wait for the offence just past half court. */
-const HALF_COURT_PICKUP_X = 15.5;
+const HALF_COURT_PICKUP_X = HALF_X + 1.2;
 /** Nobody stands behind a backboard: past this x, in front of the post. */
-const BEHIND_BOARD_X = 26.87;
+const BEHIND_BOARD_X = HOOP_X + 0.45;
 const BEHIND_BOARD_HALF_WIDTH = 1.5;
 
+/** A spot as metres out from the hoop and across from the middle (see `fromHoop`). */
 type Spot = [number, number];
 
-/** Spots per lineup slot (PG, SG, SF, PF, C). Every formation keeps its five at least 4 m apart. */
-export const FORMATIONS: Record<OffensiveFocus, Spot[]> = {
+/** Spots per lineup slot (PG, SG, SF, PF, C), from the hoop. Every formation keeps its five at least 4 m apart. */
+const FROM_HOOP: Record<OffensiveFocus, Spot[]> = {
   // High-low: two bigs on the blocks, shooters wide to give them room.
-  inside: [[19.7, 7.5], [21.5, 1.8], [21.5, 13.2], [24.7, 5.1], [24.7, 9.9]],
-  balanced: [[19.4, 7.5], [20.9, 2.7], [20.9, 12.3], [25, 3.6], [25, 10.2]],
+  inside: [[7.5, 0], [5.25, -6.08], [5.25, 6.08], [1.73, -2.4], [1.73, 2.4]],
+  balanced: [[7.55, 0], [5.9, -5.13], [5.9, 5.13], [1.44, -3.93], [1.43, 2.7]],
   // Five out: everybody behind the arc, the paint left empty for cutters.
-  three: [[19.4, 7.5], [21.5, 2.1], [21.5, 12.9], [25.6, 0.6], [25.6, 14.4]],
+  three: [[7.55, 0], [5.26, -5.77], [5.26, 5.77], [0.82, -7.02], [0.82, 7.02]],
   // Four out, one in: the big waits at the elbow to come up and screen.
-  pickAndRoll: [[18.8, 7.5], [21.5, 2.1], [25.6, 14.4], [21.5, 12.6], [22.9, 7.5]],
+  pickAndRoll: [[8.13, 0], [5.26, -5.77], [0.82, 7.02], [5.27, 5.46], [3.53, 0]],
   // Early offence: runners stay wide and deep, the bigs trail.
-  fastBreak: [[19.7, 7.5], [25, 1.5], [25, 13.5], [21.1, 3], [21.1, 12]],
+  fastBreak: [[7.5, 0], [1.52, -6.41], [1.52, 6.41], [5.71, -4.82], [5.71, 4.82]],
 };
 
+const toCourt = ([back, across]: Spot): Spot => {
+  const p = fromHoop(back, across);
+  return [p.x, p.y];
+};
+
+/** The formations as court positions [x, y] in the normalised frame. */
+export const FORMATIONS: Record<OffensiveFocus, Spot[]> = Object.fromEntries(
+  Object.entries(FROM_HOOP).map(([focus, spots]) => [focus, spots.map(toCourt)]),
+) as Record<OffensiveFocus, Spot[]>;
+
 /** A 2-3 zone: two up top, then both wings and the centre on the baseline side. */
-export const ZONE: Spot[] = [[21.2, 5.4], [21.2, 9.6], [24.1, 3], [24.1, 12], [25.3, 7.5]];
+export const ZONE: Spot[] = [[5.52, -2.22], [5.52, 2.22], [2.42, -4.68], [2.42, 4.68], [1.13, 0]].map((s) => toCourt(s as Spot));
 
 export function insideCourt(p: Pos, margin = MARGIN): Pos {
   let x = Math.max(margin, Math.min(COURT.w - margin, p.x));
@@ -97,8 +105,10 @@ export function spread(spots: Record<string, Pos>, keys: string[], mobility: (ke
     }
     if (!moved) return;
   }
-  // Still cramped (bunched in a corner, say): whoever can move walks to the nearest open spot.
-  keys.forEach((k, i) => {
+  // Still cramped (bunched in a corner, say): whoever can move walks to the nearest open spot, the
+  // freest first, so someone who should hold his spot only moves if that is not enough.
+  [...keys].sort((a, b) => mobility(b) - mobility(a)).forEach((k) => {
+    const i = keys.indexOf(k);
     if (mobility(k) === 0) return;
     const clear = (p: Pos) => keys.every((o) => o === k || Math.hypot(spots[o].x - p.x, spots[o].y - p.y) >= MIN_SPACING_M);
     if (clear(spots[k])) return;

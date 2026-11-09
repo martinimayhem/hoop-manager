@@ -340,7 +340,8 @@ function Scoreboard({ m, controllers }: { m: LiveMatch; controllers: [Controller
   const team = (side: Side) => {
     const t = m.s.teams[side];
     const v = m.view[side];
-    const bonus = v.quarterFouls >= 5;
+    // NBA: five team fouls in the period, or two in its last two minutes.
+    const bonus = v.quarterFouls >= 5 || v.lateFouls >= 2;
     return (
       <div className={`sb-team ${side === 1 ? 'right' : ''}`}>
         {side === 1 && <div className="sb-score away">{m.score[1]}</div>}

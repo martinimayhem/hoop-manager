@@ -1,5 +1,7 @@
 // Core data types for the match engine. Pure data: no behaviour lives here.
 
+import type { CourtSide, ShotZone } from './court';
+
 export type Position = 'PG' | 'SG' | 'SF' | 'PF' | 'C';
 export const POSITIONS: readonly Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
 
@@ -117,6 +119,8 @@ export interface TeamGameState {
   score: number;
   quarterPoints: number[];
   quarterFouls: number;
+  /** Team fouls in the last two minutes of this period (NBA: the second one there is a penalty). */
+  lateFouls: number;
   timeoutsLeft: number;
   /** Timeouts used in the last two minutes of Q4 (FIBA allows two). */
   lateTimeoutsUsed: number;
@@ -148,8 +152,16 @@ export type MatchEvent =
       side: Side;
       shooterId: string;
       shotType: ShotType;
+      /** Where on the floor it was taken: the zone decides the points. */
+      zone: ShotZone;
+      /** Which side of the floor, as the shooter attacks the basket: left is the y < MID_Y side. */
+      courtSide: CourtSide;
       points: 2 | 3;
       made: boolean;
+      /** Taken with the shot clock nearly out. */
+      lateClock?: boolean;
+      /** Taken as the quarter ran out. */
+      buzzer?: boolean;
       assistId?: string;
       blockerId?: string;
       andOne?: boolean;

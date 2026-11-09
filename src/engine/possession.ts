@@ -1,18 +1,27 @@
 // Resolves one possession: transition or half-court, press, turnovers, fouls,
 // shot selection, the shot itself, rebounds and free throws.
 
+import { zonePoints, type CourtSide, type ShotZone } from './court';
 import { usageDrain, tickFatigue } from './fatigue';
 import { chance, next, pick, range, weighted } from './rng';
 import { clamp, composite, fatigueFactor } from './ratings';
 import { addPoints } from './stats';
 import { bestOnCourt, eff, emit, other, playerOf, pstate, starOnCourt, teamAvg, teamTop, type RatingKey } from './state';
 import {
+  CORNER_SHARE,
   DOUBLE_TEAM,
   PNR_SPEED_EDGE,
   PNR_ZONE_DAMPING,
+  RIM_SHARE,
   SHOOTING_FOUL_RATE,
+  SHOT_TYPE_MOD,
+  SPACING_INSIDE_MOD,
+  SPACING_PIVOT,
+  SPACING_RIM_SHARE,
   TURNOVER_BASE,
+  ZONE_BASE,
   ZONE_PASSING_BONUS,
+  defenceProfile,
   fastBreakChance,
   focusShotMod,
   halfCourtSeconds,
@@ -22,7 +31,7 @@ import {
   playWeights,
   pressBreakChance,
   pressTurnoverChance,
-  schemeShotMod,
+  spacingScore,
   tempoShotMod,
   transitionAttackChance,
   turnoverPlanMod,
@@ -32,7 +41,22 @@ import type { MatchState, OffenceCall, PossessionCalls, ShotType, Side, Transiti
 
 const FOUL_LIMIT = 6;
 const BONUS_FOULS = 5;
+/** NBA: in the last two minutes of a period, the second team foul there puts the other side in the bonus. */
+const LATE_BONUS_FOULS = 2;
+const LATE_PERIOD_SECONDS = 120;
 const MAX_SEGMENTS = 6;
+/** The shot clock, and what it resets to after an offensive rebound. */
+export const SHOT_CLOCK = 24;
+const RESET_SHOT_CLOCK = 14;
+/** Under this on the shot clock, a shot is a late-clock shot: rushed, and harder. */
+const LATE_CLOCK_S = 4;
+const LATE_CLOCK_PENALTY = 0.05;
+/** The share of a half-court possession spent getting into the set, before any shot comes. */
+const SET_UP_SHARE = 0.7;
+/** How hard the clock presses as it runs out: the extra chance per second of a shot, at zero. */
+const URGENCY = 2.2;
+/** In the last minutes of a game this close, the leader burns clock and the trailer hurries. */
+const ENDGAME_SECONDS = 150;
 
 /** Extra turnover risk of each set play (more passes = more risk; running clock = careful). */
 const CALL_TURNOVER: Record<OffenceCall, number> = { isoStar: 0.005, pickAndRoll: 0.01, kickOut: 0.015, postUp: 0.005, runClock: -0.01 };
@@ -55,12 +79,22 @@ interface Ctx {
   /** Set plays called for this possession (clutch moments). Only the first half-court set uses the offence call. */
   calls: PossessionCalls;
   setUsed: boolean;
+  /** Seconds left on the shot clock. */
+  shotClock: number;
+  /** The coming shot is a late-clock shot, or one at the end of the quarter. */
+  lateClock: boolean;
+  buzzer: boolean;
+  /** Behind late in the game: quick shots, threes first. */
+  hurry: boolean;
 }
 
 /** Plays one possession for `s.possession`, mutating the state. Leaves `s.possession` set to whoever has the ball next. */
 export function playPossession(s: MatchState): void {
   const off = s.possession;
-  const c: Ctx = { s, off, def: other(off), secondChance: false, fastBreak: false, done: false, calls: s.calls ?? {}, setUsed: false };
+  const c: Ctx = {
+    s, off, def: other(off), secondChance: false, fastBreak: false, done: false, calls: s.calls ?? {}, setUsed: false,
+    shotClock: SHOT_CLOCK, lateClock: false, buzzer: false, hurry: false,
+  };
   s.calls = null;
   s.teams[off].extras.possessions++;
   s.momentum *= 0.95;
@@ -83,11 +117,54 @@ export function playPossession(s: MatchState): void {
 
   // Half-court sets. Later segments are resets after an offensive rebound or a side-out foul.
   for (let segment = 0; segment < MAX_SEGMENTS && !c.done; segment++) {
-    let base = segment === 0 && !opened ? halfCourtSeconds(s.teams[c.off].plan, s.teams[c.def].plan) : 7;
-    if (segment === 0 && c.calls.offence === 'runClock') base = 21.5;
-    if (!spend(c, base + range(s.rng, -1.5, 1.5))) break;
+    const base = segment === 0 && !opened ? halfCourtSeconds(s.teams[c.off].plan, s.teams[c.def].plan) : 7;
+    if (!spend(c, halfCourtTime(c, base))) break;
+    if (c.shotClock <= 0) {
+      // Nobody got a shot away in time.
+      turnover(c, weighted(s.rng, s.teams[c.off].lineup, (id) => eff(s, c.off, id, 'playmaking')), undefined, 'shotClock');
+      break;
+    }
     runHalfCourt(c);
+    c.lateClock = false;
   }
+}
+
+/**
+ * How long the offence works before the action comes, from the shot clock. First they get into
+ * the set; from then on a shot can come any moment, more likely the less there is on the clock,
+ * until it nearly runs out and somebody has to throw one up. The game shapes it too: at the end of
+ * a quarter they hold for the last shot; late in a close game the leader burns clock and the side
+ * behind hurries.
+ */
+function halfCourtTime(c: Ctx, base: number): number {
+  const s = c.s;
+  const clock = c.shotClock;
+  const lead = s.teams[c.off].score - s.teams[c.def].score;
+  const endgame = s.quarter >= 4 && s.clock <= ENDGAME_SECONDS;
+  c.hurry = endgame && lead <= -4;
+  // The last possession of the quarter: hold it and go at the buzzer.
+  if (s.clock <= clock && s.clock > 2) {
+    c.buzzer = true;
+    c.lateClock = true;
+    return Math.max(0.5, s.clock - range(s.rng, 0, 1.2));
+  }
+  let target = base;
+  if (c.calls.offence === 'runClock' || (endgame && lead > 0)) target = clock - 3;
+  else if (c.hurry) target = base * 0.6;
+  target = Math.min(target, clock - 1);
+  // Into the set first; then a shot can come any half second.
+  let t = target * SET_UP_SHARE;
+  // Half a second on top for the slices: the wait comes out right on average.
+  const rate = 1 / Math.max(1, target * (1 - SET_UP_SHARE) + 0.5);
+  for (;;) {
+    const left = clock - t;
+    if (left <= 0) return clock;
+    const urgency = left < 6 ? URGENCY * ((6 - left) / 6) ** 2 : 0;
+    if (chance(s.rng, 1 - Math.exp(-(rate + urgency) * 0.5))) break;
+    t += 0.5;
+  }
+  c.lateClock = clock - t < LATE_CLOCK_S;
+  return t;
 }
 
 /** Spends clock time. Returns false if the period had already ended. */
@@ -97,8 +174,9 @@ function spend(c: Ctx, seconds: number): boolean {
     c.done = true;
     return false;
   }
-  const secs = Math.min(Math.max(seconds, 2), s.clock);
+  const secs = Math.min(Math.max(seconds, c.buzzer ? 0.5 : 2), s.clock);
   s.clock -= secs;
+  c.shotClock -= secs;
   tickFatigue(s, secs);
   return true;
 }
@@ -154,14 +232,37 @@ function calledPlay(c: Ctx, doubled: string | null): { shotType: ShotType; shoot
   }
 }
 
-/** Shot-quality effect of this possession's calls. */
-function callShotMod(c: Ctx, type: ShotType): number {
-  let m = 0;
-  if (c.calls.offence === 'runClock') m -= 0.02; // late-clock shot
-  const inside = INSIDE_SHOTS.has(type);
-  if (c.calls.defence === 'packPaint') m += inside ? -0.07 : type === 'three' ? 0.035 : 0.01;
-  if (c.calls.defence === 'denyThree') m += type === 'three' ? -0.07 : inside ? 0.035 : 0.02;
-  return m;
+/** A shot thrown up as the shot clock (or the quarter) runs out is a harder one. */
+function clockShotMod(c: Ctx): number {
+  return c.lateClock ? -LATE_CLOCK_PENALTY : 0;
+}
+
+/** How many credible shooters the offence has on the floor (0-5). */
+function spacing(c: Ctx): number {
+  return spacingScore(c.s.teams[c.off].lineup.map((id) => eff(c.s, c.off, id, 'three')));
+}
+
+/** What the defence gives up and takes away this possession: its scheme, any call, and how stretched it is. */
+function defence(c: Ctx) {
+  return defenceProfile(c.s.teams[c.def].plan.defence, c.calls.defence, spacing(c));
+}
+
+/**
+ * Where the shot is taken. The shot type says how: a three from the corner or above the break, a
+ * finish at the rim or a floater in the paint, a jumper from mid-range. Spacing and the defence
+ * decide how often the offence gets the better spots.
+ */
+function chooseZone(c: Ctx, type: ShotType): { zone: ShotZone; courtSide: CourtSide } {
+  const s = c.s;
+  const profile = defence(c);
+  const room = spacing(c) - SPACING_PIVOT;
+  let zone: ShotZone;
+  if (type === 'three') zone = chance(s.rng, clamp(CORNER_SHARE + profile.cornerShare + room * 0.02, 0.05, 0.6)) ? 'corner3' : 'aboveBreak3';
+  else if (type === 'mid' || type === 'pnrPull') zone = 'mid';
+  else zone = chance(s.rng, clamp((RIM_SHARE[type] ?? 0.6) + profile.rimShare + room * SPACING_RIM_SHARE, 0.1, 0.95)) ? 'restricted' : 'paint';
+  const courtSide: CourtSide =
+    zone === 'corner3' ? (chance(s.rng, 0.5) ? 'left' : 'right') : zone === 'restricted' || zone === 'paint' ? 'centre' : pick(s.rng, ['left', 'left', 'centre', 'right', 'right'] as const);
+  return { zone, courtSide };
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +381,8 @@ function runHalfCourt(c: Ctx): void {
     if (bonus) {
       freeThrows(c, onId, 2);
     }
+    // A side-out: the shot clock goes back to 14 if it was lower.
+    c.shotClock = Math.max(c.shotClock, RESET_SHOT_CLOCK);
     return;
   }
 
@@ -304,8 +407,15 @@ function runHalfCourt(c: Ctx): void {
     return;
   }
 
-  // Choose a play and a shooter.
+  // Choose a play and a shooter. With the clock running out, or the game slipping away, it is
+  // the shot they can get off: pull-ups and threes.
   const weights = playWeights(offPlan);
+  if (c.lateClock || c.hurry) {
+    weights.three *= c.hurry ? 2 : 1.5;
+    weights.mid *= 1.3;
+    weights.post *= 0.6;
+    weights.pnr *= 0.8;
+  }
   const plays = Object.keys(weights) as HalfCourtPlay[];
   const play = weighted(s.rng, plays, (p) => weights[p]);
   const doubled =
@@ -441,28 +551,32 @@ function contest(c: Ctx, shooter: string, type: ShotType): { rating: number; def
 // ---------------------------------------------------------------------------
 // Shooting
 
-function makeChance(c: Ctx, type: ShotType, shooter: string, defRating: number, extra: number): number {
+function makeChance(c: Ctx, type: ShotType, zone: ShotZone, shooter: string, defRating: number, extra: number): number {
   const s = c.s;
   const o = (key: RatingKey) => (eff(s, c.off, shooter, key) - 70) / 100;
   const d = (defRating - 70) / 100;
-  let p: number;
+  // An average NBA shooter from that spot, then how the shot was taken, then this shooter and his defender.
+  let p = ZONE_BASE[zone] + SHOT_TYPE_MOD[type];
   switch (type) {
-    case 'post': p = 0.49 + 0.45 * o('insideScoring') - 0.35 * d; break;
-    case 'drive': p = 0.53 + 0.4 * o('driving') - 0.3 * d; break;
-    case 'pnrRoll': p = 0.58 + 0.4 * o('rollFinish') - 0.25 * d; break;
-    case 'pnrPull': p = 0.43 + 0.4 * o('midRange') - 0.25 * d; break;
-    case 'mid': p = 0.41 + 0.45 * o('midRange') - 0.25 * d; break;
-    case 'three': p = 0.35 + 0.45 * o('three') - 0.2 * d; break;
-    case 'fastBreak': p = 0.64 + 0.3 * o('driving') - 0.2 * d; break;
-    case 'pressBreak': p = 0.6 + 0.3 * o('rollFinish') - 0.2 * d; break;
-    case 'putback': p = 0.52 + 0.4 * o('insideScoring') - 0.3 * d; break;
+    case 'post': p += 0.45 * o('insideScoring') - 0.35 * d; break;
+    case 'drive': p += 0.4 * o('driving') - 0.3 * d; break;
+    case 'pnrRoll': p += 0.4 * o('rollFinish') - 0.25 * d; break;
+    case 'pnrPull': p += 0.4 * o('midRange') - 0.25 * d; break;
+    case 'mid': p += 0.45 * o('midRange') - 0.25 * d; break;
+    case 'three': p += 0.45 * o('three') - 0.2 * d; break;
+    case 'fastBreak': p += 0.3 * o('driving') - 0.2 * d; break;
+    case 'pressBreak': p += 0.3 * o('rollFinish') - 0.2 * d; break;
+    case 'putback': p += 0.4 * o('insideScoring') - 0.3 * d; break;
   }
 
   const offTeam = s.teams[c.off];
   const defTeam = s.teams[c.def];
-  // Tactical modifiers are scaled by how well the *benefiting* side executes.
-  const scheme = schemeShotMod(defTeam.plan.defence, type);
+  // How contested the zone is against this defence. Tactical modifiers are scaled by how well the
+  // *benefiting* side executes.
+  const scheme = defence(c).contest[zone] ?? 0;
   p += scheme > 0 ? scheme * offTeam.team.execution : scheme * defTeam.team.execution;
+  // Shooters on the floor keep the help away from the basket.
+  if (zone === 'restricted' || zone === 'paint') p += (spacing(c) - SPACING_PIVOT) * SPACING_INSIDE_MOD;
 
   const jumper = type === 'three' || type === 'mid';
   if (jumper) {
@@ -481,7 +595,7 @@ function makeChance(c: Ctx, type: ShotType, shooter: string, defRating: number, 
   const momentumForOffence = c.off === 0 ? s.momentum : -s.momentum;
   p += 0.02 * momentumForOffence;
   p += 0.02 * offTeam.morale;
-  p += callShotMod(c, type);
+  p += clockShotMod(c);
   p += extra;
   return clamp(p, 0.12, 0.85);
 }
@@ -497,9 +611,10 @@ function avgAttr(s: MatchState, side: Side, key: 'stamina' | 'tactics'): number 
 
 function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefined, extra: number): void {
   const s = c.s;
-  const points: 2 | 3 = type === 'three' ? 3 : 2;
+  const { zone, courtSide } = chooseZone(c, type);
+  const points = zonePoints(zone);
   const { rating, defenderId } = contest(c, shooter, type);
-  const p = makeChance(c, type, shooter, rating, extra);
+  const p = makeChance(c, type, zone, shooter, rating, extra);
   usageDrain(s, c.off, shooter);
 
   // Shooting foul?
@@ -532,10 +647,10 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
     if (assist) assistId = chance(s.rng, 0.85) ? assist : undefined;
     else if (chance(s.rng, ASSIST_RATE[type])) assistId = pickPasser(c, shooter);
     if (assistId) pstate(s, c.off, assistId).stats.ast++;
-    score(c, shooter, points, type);
+    score(c, shooter, points, zone, type);
     const dunkable = type === 'drive' || type === 'pnrRoll' || type === 'fastBreak' || type === 'pressBreak' || type === 'putback' ? 1 : type === 'post' ? 0.35 : 0;
-    const dunk = dunkable > 0 && chance(s.rng, dunkable * clamp((shooterP.attrs.dunk - 50) / 55, 0, 0.85)) ? true : undefined;
-    emit(s, { type: 'shot', side: c.off, shooterId: shooter, shotType: type, points, made: true, assistId, andOne: fouled || undefined, dunk });
+    const dunk = dunkable > 0 && zone === 'restricted' && chance(s.rng, dunkable * clamp((shooterP.attrs.dunk - 50) / 55, 0, 0.85)) ? true : undefined;
+    emit(s, { type: 'shot', side: c.off, shooterId: shooter, shotType: type, zone, courtSide, points, made: true, assistId, andOne: fouled || undefined, dunk, ...clockFlags(c) });
     if (fouled) freeThrows(c, shooter, 1);
     else c.done = true;
     return;
@@ -554,8 +669,12 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
     pstate(s, c.def, blockerId).stats.blk++;
     s.momentum = clamp(s.momentum + (c.def === 0 ? 0.03 : -0.03), -1, 1);
   }
-  emit(s, { type: 'shot', side: c.off, shooterId: shooter, shotType: type, points, made: false, blockerId });
+  emit(s, { type: 'shot', side: c.off, shooterId: shooter, shotType: type, zone, courtSide, points, made: false, blockerId, ...clockFlags(c) });
   rebound(c, false);
+}
+
+function clockFlags(c: Ctx): { lateClock?: true; buzzer?: true } {
+  return { lateClock: c.lateClock && !c.buzzer ? true : undefined, buzzer: c.buzzer ? true : undefined };
 }
 
 function pickPasser(c: Ctx, shooter: string): string {
@@ -564,11 +683,11 @@ function pickPasser(c: Ctx, shooter: string): string {
   return weighted(s.rng, pool, (id) => Math.exp((eff(s, c.off, id, 'playmaking') - 60) / 10));
 }
 
-function score(c: Ctx, shooter: string, pts: number, type: ShotType | 'ft'): void {
+function score(c: Ctx, shooter: string, pts: number, zone: ShotZone | 'ft', type?: ShotType): void {
   const s = c.s;
   addPoints(s, c.off, shooter, pts);
   const ex = s.teams[c.off].extras;
-  if (type !== 'ft' && INSIDE_SHOTS.has(type)) ex.paintPts += pts;
+  if (zone === 'restricted' || zone === 'paint') ex.paintPts += pts;
   if (c.fastBreak || type === 'pressBreak') ex.fastBreakPts += pts;
   if (c.secondChance) ex.secondChancePts += pts;
 }
@@ -584,7 +703,8 @@ function commitFoul(c: Ctx, fouler: string, onId: string, shooting: boolean): bo
   ps.fouls++;
   ps.stats.pf++;
   team.quarterFouls++;
-  const bonus = !shooting && team.quarterFouls >= BONUS_FOULS;
+  if (s.clock <= LATE_PERIOD_SECONDS) team.lateFouls++;
+  const bonus = !shooting && (team.quarterFouls >= BONUS_FOULS || team.lateFouls >= LATE_BONUS_FOULS);
   emit(s, { type: 'foul', side: c.def, playerId: fouler, onId, shooting, bonus });
   if (ps.fouls >= FOUL_LIMIT && !ps.fouledOut) {
     ps.fouledOut = true;
@@ -636,6 +756,8 @@ function rebound(c: Ctx, afterFreeThrow: boolean): void {
 
   c.secondChance = true;
   c.fastBreak = false;
+  c.shotClock = Math.max(c.shotClock, RESET_SHOT_CLOCK);
+  c.lateClock = false;
   // A big who grabs it under the rim goes straight back up.
   const putback = 0.25 + (eff(s, c.off, rebounder, 'insideScoring') - 60) * 0.008;
   if (chance(s.rng, clamp(putback, 0.1, 0.55)) && spend(c, range(s.rng, 1, 3))) {

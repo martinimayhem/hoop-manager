@@ -35,7 +35,7 @@ const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
 /** In highlights mode, how many plays of each quarter are shown; the rest are played out instantly. */
 export const HIGHLIGHTS_PER_QUARTER = 5;
 /** Game seconds per second of play while the ball is brought up, at Normal speed: about real time. */
-const BRING_UP_CLOCK_RATE = 1.1;
+const BRING_UP_CLOCK_RATE = 1;
 /** How long a result line stays up before a set-up line may replace it (real seconds). */
 const CAPTION_READ_S = 1.1;
 /** The last two minutes of a game this close is never routine. */
@@ -108,6 +108,8 @@ export interface TeamView {
   players: Record<string, PlayerView>;
   timeoutsLeft: number;
   quarterFouls: number;
+  /** Team fouls in the last two minutes of the period. */
+  lateFouls: number;
 }
 
 export class LiveMatch {
@@ -627,7 +629,7 @@ export class LiveMatch {
 
   /**
    * How much of the possession's running time has gone: the clock stands still while the ball is
-   * dead. Bringing the ball up it runs about as fast as the players move, so the eight seconds on
+   * dead. Bringing the ball up and setting up it runs as fast as the players move, so the eight seconds on
    * the scoreboard are eight seconds on the floor; whatever else the possession took goes by in the
    * half court.
    */
@@ -639,7 +641,7 @@ export class LiveMatch {
     let end = 0;
     sc.beats.forEach((b, i) => {
       const d = this.durations[i] ?? 0;
-      if (!b.dead && b.phase === 'bringUp') bringUp += d;
+      if (!b.dead && b.phase !== 'play') bringUp += d;
       else if (!b.dead) rest += d;
       end += d;
     });
@@ -654,7 +656,7 @@ export class LiveMatch {
     let start = 0;
     sc.beats.forEach((b, i) => {
       const d = this.durations[i] ?? 0;
-      if (!b.dead) run += Math.max(0, Math.min(d, this.t - start)) * (b.phase === 'bringUp' ? bringUpRate : restRate);
+      if (!b.dead) run += Math.max(0, Math.min(d, this.t - start)) * (b.phase !== 'play' ? bringUpRate : restRate);
       start += d;
     });
     return Math.min(1, run / game);
@@ -803,7 +805,7 @@ export class LiveMatch {
         rating: playerRating(p.stats),
       };
     }
-    return { lineup: [...t.lineup], players, timeoutsLeft: t.timeoutsLeft, quarterFouls: t.quarterFouls };
+    return { lineup: [...t.lineup], players, timeoutsLeft: t.timeoutsLeft, quarterFouls: t.quarterFouls, lateFouls: t.lateFouls };
   }
 
   private bump(): void {

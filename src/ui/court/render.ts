@@ -2,6 +2,16 @@
 // knows nothing about the screen; this module alone projects and paints the court, players, hoops and ball. Everything is vector,
 // drawn in CANVAS_W x CANVAS_H logical units and scaled to the canvas's real pixel size.
 
+import {
+  BOARD_X,
+  CIRCLE_RADIUS,
+  CORNER_THREE_FROM_SIDELINE,
+  CORNER_THREE_LENGTH,
+  FREE_THROW_LINE_X,
+  KEY_HALF_WIDTH,
+  RESTRICTED_M,
+  THREE_ARC_M,
+} from '../../engine/court';
 import type { Fx } from '../match/controller';
 import { COURT, HOOP_X, MID_Y, RIM_HEIGHT, type Frame } from './animation';
 
@@ -12,23 +22,24 @@ export const CANVAS_H = 500;
 const TILE_X = 21;
 const TILE_Y = 10;
 const LIFT_Y = 23;
-const FLOOR_Y = 264;
+const FLOOR_Y = 270;
 /** A circle of radius 1 m on the floor projects to an axis-aligned ellipse with these radii. */
 const FLOOR_RX = TILE_X * Math.SQRT2;
 const FLOOR_RY = TILE_Y * Math.SQRT2;
 
 const RIM_RADIUS = 0.49;
-const BOARD_INSET = 1.05;
+const BOARD_INSET = COURT.w - BOARD_X;
 const POST_INSET = -0.6;
-/** FIBA markings. */
-const KEY_DEPTH = 5.8;
-const KEY_NEAR = MID_Y - 2.45;
-const KEY_FAR = MID_Y + 2.45;
-const CIRCLE_RADIUS = 1.8;
-const THREE_RADIUS = 6.75;
-const THREE_CORNER_Y = 0.9;
-const THREE_CORNER_DEPTH = 2.99;
-const NO_CHARGE_RADIUS = 1.25;
+/** NBA markings, from engine/court.ts; depths are measured in from the baseline. */
+const KEY_DEPTH = COURT.w - FREE_THROW_LINE_X;
+const KEY_NEAR = MID_Y - KEY_HALF_WIDTH;
+const KEY_FAR = MID_Y + KEY_HALF_WIDTH;
+const THREE_RADIUS = THREE_ARC_M;
+const THREE_CORNER_Y = CORNER_THREE_FROM_SIDELINE;
+const THREE_CORNER_DEPTH = CORNER_THREE_LENGTH;
+const NO_CHARGE_RADIUS = RESTRICTED_M;
+/** Lane space marks: the block at 7 ft from the baseline, then 11, 14 and 17 ft. */
+const LANE_MARKS = [2.13, 3.35, 4.27, 5.18];
 
 /** Stands on the two far sides of the court; the camera looks over the near ones. */
 const STAND_ROWS = 9;
@@ -343,7 +354,7 @@ export class CourtRenderer {
       ctx.setLineDash([]);
       this.line(ctx, this.arcPts(hoopX, MID_Y, NO_CHARGE_RADIUS, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, 1.6);
       // Lane markers.
-      for (const f of [2.1, 3, 3.9, 4.8]) {
+      for (const f of LANE_MARKS) {
         this.line(ctx, [[fx(f), KEY_NEAR], [fx(f), KEY_NEAR - 0.25]], LINE, 2);
         this.line(ctx, [[fx(f), KEY_FAR], [fx(f), KEY_FAR + 0.25]], LINE, 2);
       }

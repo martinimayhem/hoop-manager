@@ -1,6 +1,7 @@
 import { buildBoxScore, playerRating } from '../../engine/stats';
 import type { LiveMatch } from '../match/controller';
 import { BoxScoreTables, LineScore } from '../components/BoxScoreTable';
+import { ShotChart } from '../components/ShotChart';
 
 export function ResultScreen({ match, onRematch, onMenu }: { match: LiveMatch; onRematch: () => void; onMenu: () => void }) {
   const box = buildBoxScore(match.s);
@@ -33,6 +34,11 @@ export function ResultScreen({ match, onRematch, onMenu }: { match: LiveMatch; o
       </div>
       <div className="panel">
         <BoxScoreTables box={box} />
+      </div>
+      <div className="panel row wrap" style={{ alignItems: 'flex-start', gap: 24 }}>
+        {([0, 1] as const).map((side) => (
+          <ShotChart key={side} events={match.s.events} side={side} name={box.teams[side].name} />
+        ))}
       </div>
     </div>
   );
