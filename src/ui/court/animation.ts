@@ -31,6 +31,9 @@ export interface Frame {
   facing?: Record<string, number>;
   /** Where each player's head is turned: towards the ball, as far as the neck allows. */
   look?: Record<string, number>;
+  /** Match seconds that pass per real second right now (speed setting, slow motion, fast-forward), so
+   * the drawing can tell a walk from a run whatever the playback speed. */
+  timeScale?: number;
   /** How far each defender is down in a stance, 0..1. */
   stance?: Record<string, number>;
   /** How far each player's hands are up, 0..1; anyone missing has them down. */

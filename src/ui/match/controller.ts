@@ -396,6 +396,7 @@ export class LiveMatch {
       stance: { ...this.motion.stance },
       reach: { ...this.motion.reach },
       lift: this.motion.jumps(beat, u),
+      timeScale: rate * speedScale,
       shooter: beat.ball.kind === 'fromPlayer' && beat.ball.style !== 'throw' && u < 0.85 ? beat.ball.from : null,
     };
     if (this.firedBeats >= sc.beats.length) this.endPossession();
