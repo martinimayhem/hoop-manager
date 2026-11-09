@@ -110,6 +110,8 @@ describe('FIBA timeouts', () => {
 describe('crowd and sound cues', () => {
   it('every cue says whose moment it is, and the crowd follows the game', () => {
     const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], 3, ['ai', 'ai'], 'fast');
+    // Every possession played, not only the highlights: the cues of the whole game.
+    m.highlights = false;
     const kinds = new Map<string, Set<number | undefined>>();
     const levels = { playing: new Set<number>(), breaks: new Set<number>() };
     let ticks = 0;

@@ -17,6 +17,27 @@ export function isClutch(s: MatchState): boolean {
   return s.quarter === 2 && s.clock <= 10 && margin <= 8;
 }
 
+/**
+ * How many calls a coach makes himself in a close finish (the end of Q4, and each overtime): up to
+ * three plays on his own possessions, and one defensive call for the last stop, when the other side
+ * has the ball in the last shot clock with a score that would tie or win it. The other clutch
+ * possessions play out with the team's game plan, so a finish brings three or four moments, not
+ * one every possession.
+ */
+export const CLUTCH_CALLS = { offence: 3, defence: 1 } as const;
+export const LAST_STOP_SECONDS = 24;
+export const LAST_STOP_MARGIN = 3;
+
+/** Whether a human coach in `role` is asked for a call on this clutch possession. `used` counts this period's calls so far. */
+export function asksForCall(s: MatchState, role: 'offence' | 'defence', used: number): boolean {
+  // The last shot of the first half: just the play.
+  if (s.quarter === 2) return role === 'offence' && used === 0;
+  if (used >= CLUTCH_CALLS[role]) return false;
+  if (role === 'offence') return true;
+  const margin = Math.abs(s.teams[0].score - s.teams[1].score);
+  return s.clock <= LAST_STOP_SECONDS && margin <= LAST_STOP_MARGIN;
+}
+
 export interface CallOption<C extends string> {
   call: C | null;
   icon: string;

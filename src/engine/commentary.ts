@@ -83,6 +83,7 @@ export function describe(ev: TimedEvent, names: Names): string | null {
       }
       if (ev.blockerId) {
         const b = names.player(ev.side === 0 ? 1 : 0, ev.blockerId);
+        if (ev.chaseDown) return variant(ev, [`CHASE-DOWN BLOCK! ${b} runs down ${p} from behind!`, `${b} comes out of nowhere and pins ${p}'s layup on the glass!`]);
         return variant(ev, [`REJECTED! ${b} swats ${p}.`, `${b} gets a piece of ${p}'s shot!`, `Get that outta here! ${b} blocks ${p}.`]);
       }
       return fmt(variant(ev, SHOT_MISSED[ev.shotType]), p);

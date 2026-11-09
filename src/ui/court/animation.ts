@@ -356,8 +356,12 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
    * the move anyway, keeps clear of him, at the nearest place far enough away that is on the floor.
    */
   const clearOfShooter = (k: string) => {
-    if (!soft || k === soft || !holding(soft) || !at[k] || dist(at[k], at[soft]) >= MIN_SPACING_M) return;
-    const s0 = at[soft];
+    if (!soft || k === soft || !holding(soft) || !at[k]) return;
+    clearOf(k, at[soft]);
+  };
+  /** Moves `k`, if he is too close to `s0`, to the nearest place on the floor far enough away. */
+  const clearOf = (k: string, s0: Pos) => {
+    if (dist(at[k], s0) >= MIN_SPACING_M) return;
     const p0 = at[k];
     let best: Pos | null = null;
     for (let turn = 0; turn < 24; turn++) {
@@ -1313,7 +1317,10 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           at[shooterKey] = { x: h.x + 0.75, y: h.y + (h.y < MID_Y ? 0.6 : -0.6) };
           contact = [assistKey, shooterKey];
           push(0.4, dribble(), [], `${passerName} calls for the screen from ${shooterName}…`, shooterKey, 0.7);
-          at[assistKey] = { x: h.x + 2.1, y: h.y + (h.y < MID_Y ? 1.5 : -1.5) };
+          // He comes off it, but away from where the roller is going: a pick set in the corner
+          // would otherwise send him down the baseline into the roll.
+          at[assistKey] = insideCourt({ x: h.x + 2.1, y: h.y + (h.y < MID_Y ? 1.5 : -1.5) });
+          clearOf(assistKey, spot);
           at[shooterKey] = { ...spot };
           paceFor[shooterKey] = 'run';
           mustArrive = [shooterKey];
@@ -1347,6 +1354,18 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           paceFor[shooterKey] = 'sprint';
           push(0.45, dribble(), [], `${shooterName} attacks the basket…`, shooterKey);
         } else if (ev.shotType === 'three' || ev.shotType === 'mid') {
+          // A shooter with far to go (across the floor) comes across first, while the man with the
+          // ball probes toward that side: otherwise the driver would stand and wait for him.
+          const across = dist(at[shooterKey], spot);
+          if (across > 7 && holder && holder !== shooterKey && at[holder]) {
+            const t = 1 - 4 / across;
+            at[shooterKey] = { x: at[shooterKey].x + (spot.x - at[shooterKey].x) * t, y: at[shooterKey].y + (spot.y - at[shooterKey].y) * t };
+            paceFor[shooterKey] = 'run';
+            const h = at[holder];
+            at[holder] = insideCourt({ x: h.x, y: h.y + Math.sign(spot.y - h.y) * Math.min(2, Math.abs(spot.y - h.y)) });
+            clearOf(holder, at[shooterKey]);
+            push(0.5, dribble(), [], undefined, holder);
+          }
           // Shooter relocates while the passer drives and kicks.
           at[shooterKey] = { ...spot };
           if (assistKey && assistKey !== shooterKey) {

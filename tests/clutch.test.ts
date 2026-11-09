@@ -3,7 +3,7 @@ import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams
 import { createMatch, stepPossession } from '../src/engine/match';
 import { playPossession } from '../src/engine/possession';
 import type { MatchState } from '../src/engine/types';
-import { aiCall, defenceOptions, estimate, isClutch, offenceOptions } from '../src/game/clutch';
+import { CLUTCH_CALLS, aiCall, asksForCall, defenceOptions, estimate, isClutch, offenceOptions } from '../src/game/clutch';
 import { aiTalk, giveTalk } from '../src/game/teamTalk';
 import { LiveMatch } from '../src/ui/match/controller';
 
@@ -62,11 +62,16 @@ describe('clutch moments', () => {
   });
 
   it('the live match pauses for a human call, then resumes', () => {
-    const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], 21, ['human', 'ai'], 'fast');
-    let guard = 0;
-    while (m.phase !== 'clutch' && m.phase !== 'final' && guard++ < 400000) {
-      m.tick(0.05);
-      if (m.phase === 'break' || m.phase === 'timeout') m.resume();
+    // The first seed whose finish is close enough.
+    let m!: LiveMatch;
+    for (let seed = 21; seed < 60; seed++) {
+      m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], seed, ['human', 'ai'], 'fast');
+      let guard = 0;
+      while (m.phase !== 'clutch' && m.phase !== 'final' && guard++ < 400000) {
+        m.tick(0.25);
+        if (m.phase === 'break' || m.phase === 'timeout') m.resume();
+      }
+      if (m.phase === 'clutch') break;
     }
     expect(m.phase).toBe('clutch');
     const role = m.clutch!.pending[0];
@@ -75,6 +80,43 @@ describe('clutch moments', () => {
     for (let i = 0; i < 20; i++) m.tick(0.05);
     expect(m.s.events.some((e) => e.type === 'playCall')).toBe(true);
   });
+
+  it('asks for three plays and one last stop per finish, not a call every possession', () => {
+    const s = clutchState();
+    expect(asksForCall(s, 'offence', 0)).toBe(true);
+    expect(asksForCall(s, 'offence', CLUTCH_CALLS.offence)).toBe(false);
+    // Defence only for the last stop: the last shot clock, one score from tying or winning.
+    s.clock = 60;
+    expect(asksForCall(s, 'defence', 0)).toBe(false);
+    s.clock = 20;
+    s.teams[0].score = s.teams[1].score + 2;
+    expect(asksForCall(s, 'defence', 0)).toBe(true);
+    expect(asksForCall(s, 'defence', 1)).toBe(false);
+    s.teams[0].score = s.teams[1].score + 5;
+    expect(asksForCall(s, 'defence', 0)).toBe(false);
+  });
+
+  it('a close finish brings a human coach at most four clutch moments', () => {
+    let finishes = 0;
+    for (const seed of [21, 22, 23, 24, 25, 26]) {
+      const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], seed, ['human', 'ai'], 'fast');
+      const moments: Record<number, number> = {};
+      let guard = 0;
+      while (m.phase !== 'final' && guard++ < 600000) {
+        m.tick(0.25);
+        if (m.phase === 'break' || m.phase === 'timeout') m.resume();
+        if (m.phase === 'clutch') {
+          moments[m.s.quarter] = (moments[m.s.quarter] ?? 0) + 1;
+          while (m.clutch) m.submitClutch(m.clutch.pending[0], null);
+        }
+      }
+      for (const [q, n] of Object.entries(moments)) {
+        if (Number(q) >= 4) finishes++;
+        expect(n).toBeLessThanOrEqual(Number(q) === 2 ? 1 : 4);
+      }
+    }
+    expect(finishes).toBeGreaterThan(0);
+  }, 60000);
 });
 
 describe('halftime team talk', () => {

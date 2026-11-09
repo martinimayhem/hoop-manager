@@ -164,6 +164,8 @@ export type MatchEvent =
       buzzer?: boolean;
       assistId?: string;
       blockerId?: string;
+      /** The block came from behind, on a break with nobody back. */
+      chaseDown?: boolean;
       andOne?: boolean;
       dunk?: boolean;
     }

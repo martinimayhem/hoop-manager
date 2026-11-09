@@ -55,6 +55,43 @@ export const SHOT_TYPE_MOD: Record<ShotType, number> = {
   three: 0,
 };
 
+/**
+ * The shooter against his defender, per shot type: which rating the shooter uses, and how much a
+ * rating point above the centre is worth to each of them (per 100 points).
+ *
+ * The defence weighs as much as the offence, measured in what a better team actually brings: going
+ * from the default rosters to the best players in the pool lifts the shooters' ratings by about as
+ * much as the defenders', so the two weights are set to cancel over that step. Stars against stars
+ * then play about like ordinary players against ordinary players, and only the gap between the two
+ * sides counts. (With the defence weighed lightly, two strong teams shot like a record offence
+ * against each other.)
+ */
+export const SHOT_SKILL: Record<ShotType, { rating: 'insideScoring' | 'driving' | 'rollFinish' | 'midRange' | 'three'; off: number; def: number }> = {
+  post: { rating: 'insideScoring', off: 0.45, def: 0.5 },
+  drive: { rating: 'driving', off: 0.4, def: 0.5 },
+  pnrRoll: { rating: 'rollFinish', off: 0.4, def: 0.5 },
+  pnrPull: { rating: 'midRange', off: 0.4, def: 0.55 },
+  mid: { rating: 'midRange', off: 0.45, def: 0.6 },
+  three: { rating: 'three', off: 0.45, def: 0.3 },
+  fastBreak: { rating: 'driving', off: 0.3, def: 0.42 },
+  pressBreak: { rating: 'rollFinish', off: 0.3, def: 0.38 },
+  putback: { rating: 'insideScoring', off: 0.4, def: 0.45 },
+};
+/** A shooter rated 70 is an average NBA shooter from that spot. */
+export const SHOOTER_CENTRE = 70;
+/**
+ * The defender who takes nothing away. Below 70, so that the default rosters, whose defenders are
+ * rated mid-sixties, shoot about as they always did now that defence weighs more.
+ */
+export const DEFENDER_CENTRE = 67;
+
+/**
+ * Ball movement against the rotation behind it: good passers find open jumpers, a quick, smart
+ * defence closes them out. Per point of the offence's best playmaker above the defence's average
+ * perimeter defender (centred on the default rosters, where it is about +9).
+ */
+export const BALL_MOVEMENT = { pivot: 9, perPoint: 0.0015 };
+
 /** How often a finish at the basket gets all the way to the rim, rather than a floater in the paint. */
 export const RIM_SHARE: Partial<Record<ShotType, number>> = {
   drive: 0.7,
@@ -210,6 +247,27 @@ export function laneClosesChance(speedEdge: number): number {
   return Math.max(0.05, Math.min(0.3, 0.15 - speedEdge * 0.004));
 }
 
+/**
+ * A fast-break finish with nobody between him and the rim (an open lane, or the open man after the
+ * last defender commits). About nine in ten go in: a little more for a good finisher or a dunker.
+ * Per rating point. The quickest defender may still run him down from behind: a chase-down block,
+ * more likely the quicker he is than the shooter and the better he blocks shots.
+ */
+export const OPEN_FINISH = {
+  base: 0.89,
+  perFinishing: 0.0015,
+  perDunk: 0.0006,
+  min: 0.8,
+  max: 0.96,
+  /** A chaser hacking him from behind. */
+  foul: 0.03,
+  chaseDown: 0.02,
+  chaseDownPerSpeed: 0.0015,
+  chaseDownPerBlock: 0.0004,
+  chaseDownMin: 0.005,
+  chaseDownMax: 0.06,
+};
+
 /** Offensive rebound modifiers. */
 export function offRebPlanMod(off: GamePlan, def: GamePlan): number {
   let m = 0;
@@ -222,12 +280,17 @@ export function offRebPlanMod(off: GamePlan, def: GamePlan): number {
   return m;
 }
 
-/** Seconds a half-court possession takes (before jitter). */
+/**
+ * Seconds a half-court possession takes (before jitter). Tempo moves it a little, as in the NBA:
+ * the fastest teams there play about 5% more possessions than average and the slowest about 5%
+ * fewer, so two running teams get some 108 possessions each, two slow ones some 90.
+ */
 export function halfCourtSeconds(off: GamePlan, def: GamePlan): number {
-  let secs = off.tempo === 'slow' ? 18.5 : off.tempo === 'fast' ? 12 : 15;
-  if (def.tempo === 'slow') secs += 1.5;
-  if (def.tempo === 'fast') secs -= 1.5;
-  if (def.defence === 'press') secs -= 1;
+  let secs = off.tempo === 'slow' ? 16 : off.tempo === 'fast' ? 14.1 : 15;
+  if (def.tempo === 'slow') secs += 0.45;
+  if (def.tempo === 'fast') secs -= 0.45;
+  // Beating a press that neither forced a turnover nor broke open eats a few seconds of the clock.
+  if (def.defence === 'press') secs += 2;
   return secs;
 }
 

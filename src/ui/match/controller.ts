@@ -8,7 +8,7 @@ import { composite } from '../../engine/ratings';
 import { emit, other } from '../../engine/state';
 import type { DefenceCall, GamePlan, MatchState, OffenceCall, PlayerGameState, PossessionCalls, Side, Team, TimedEvent } from '../../engine/types';
 import { playerRating } from '../../engine/stats';
-import { aiCall, isClutch } from '../../game/clutch';
+import { aiCall, asksForCall, isClutch } from '../../game/clutch';
 import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
 import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
@@ -149,6 +149,8 @@ export class LiveMatch {
   talks: [{ talk: Talk; reaction: string } | null, { talk: Talk; reaction: string } | null] = [null, null];
   private fx: Fx[] = [];
   private clutchCalls: PossessionCalls | null = null;
+  /** Calls each human has been asked for, per period and role (`side:quarter:role`). */
+  private clutchAsked: Record<string, number> = {};
   private slowMo = false;
   private routine = false;
   private captionBorn = 0;
@@ -445,17 +447,26 @@ export class LiveMatch {
       const off = s.possession;
       const def = other(off);
       const pending: ClutchState['pending'] = [];
-      if (this.controllers[def] === 'human') pending.push('defence');
-      if (this.controllers[off] === 'human') pending.push('offence');
+      const calls: PossessionCalls = {};
+      // Each coach, human or AI, calls only the plays that count most (see asksForCall); the rest
+      // of the finish is played with the game plan.
+      const call = (side: Side, role: 'offence' | 'defence') => {
+        const key = `${side}:${s.quarter}:${role}`;
+        if (!asksForCall(s, role, this.clutchAsked[key] ?? 0)) return;
+        this.clutchAsked[key] = (this.clutchAsked[key] ?? 0) + 1;
+        if (this.controllers[side] === 'human') pending.push(role);
+        else if (role === 'offence') calls.offence = (aiCall(s, side, 'offence') as OffenceCall | null) ?? undefined;
+        else calls.defence = (aiCall(s, side, 'defence') as DefenceCall | null) ?? undefined;
+      };
+      call(def, 'defence');
+      call(off, 'offence');
       if (pending.length > 0) {
-        const calls: PossessionCalls = {};
-        if (this.controllers[off] === 'ai') calls.offence = (aiCall(s, off, 'offence') as OffenceCall | null) ?? undefined;
-        if (this.controllers[def] === 'ai') calls.defence = (aiCall(s, def, 'defence') as DefenceCall | null) ?? undefined;
         this.clutch = { offence: off, pending, calls };
         this.phase = 'clutch';
         this.bump();
         return;
       }
+      if (calls.offence || calls.defence) this.clutchCalls = calls;
     }
 
     if (s.clock <= 0) {

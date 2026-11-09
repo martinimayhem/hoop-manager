@@ -26,6 +26,11 @@ import {
   focusShotMod,
   halfCourtSeconds,
   laneClosesChance,
+  OPEN_FINISH,
+  SHOT_SKILL,
+  SHOOTER_CENTRE,
+  DEFENDER_CENTRE,
+  BALL_MOVEMENT,
   nonShootingFoulRate,
   offRebPlanMod,
   playWeights,
@@ -74,6 +79,8 @@ interface Ctx {
   /** True once an offensive rebound happened, for second-chance points. */
   secondChance: boolean;
   fastBreak: boolean;
+  /** The coming fast-break finish has nobody between him and the rim: an open lane, or the open man. */
+  open: boolean;
   /** Possession over (score, turnover, defensive rebound, end of clock). */
   done: boolean;
   /** Set plays called for this possession (clutch moments). Only the first half-court set uses the offence call. */
@@ -92,7 +99,7 @@ interface Ctx {
 export function playPossession(s: MatchState): void {
   const off = s.possession;
   const c: Ctx = {
-    s, off, def: other(off), secondChance: false, fastBreak: false, done: false, calls: s.calls ?? {}, setUsed: false,
+    s, off, def: other(off), secondChance: false, fastBreak: false, open: false, done: false, calls: s.calls ?? {}, setUsed: false,
     shotClock: SHOT_CLOCK, lateClock: false, buzzer: false, hurry: false,
   };
   s.calls = null;
@@ -332,7 +339,8 @@ function runTransition(c: Ctx, trigger: 'rebound' | 'steal', planned: Transition
     c.fastBreak = true;
     spend(c, range(s.rng, 3, 6));
     emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
-    shoot(c, 'fastBreak', handler, undefined, 0.05);
+    c.open = true;
+    shoot(c, 'fastBreak', handler, undefined, 0);
     return true;
   }
   // The numbers: the last defender has to pick one of them.
@@ -342,7 +350,8 @@ function runTransition(c: Ctx, trigger: 'rebound' | 'steal', planned: Transition
     const mate = weighted(s.rng, others, (id) => Math.exp((eff(s, c.off, id, 'rollFinish') - 60) / 10));
     emit(s, { type: 'transitionRead', side: c.off, handlerId: handler, read: 'defenderCommits', then: 'dish' });
     emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
-    shoot(c, 'fastBreak', mate, handler, 0.06);
+    c.open = true;
+    shoot(c, 'fastBreak', mate, handler, 0);
   } else if (situation === 'threeOnTwo' && chance(s.rng, 0.35)) {
     // The trailer spots up for an open transition three.
     emit(s, { type: 'fastBreak', side: c.off, leaderId: handler });
@@ -571,21 +580,10 @@ function contest(c: Ctx, shooter: string, type: ShotType): { rating: number; def
 
 function makeChance(c: Ctx, type: ShotType, zone: ShotZone, shooter: string, defRating: number, extra: number): number {
   const s = c.s;
-  const o = (key: RatingKey) => (eff(s, c.off, shooter, key) - 70) / 100;
-  const d = (defRating - 70) / 100;
   // An average NBA shooter from that spot, then how the shot was taken, then this shooter and his defender.
+  const skill = SHOT_SKILL[type];
   let p = ZONE_BASE[zone] + SHOT_TYPE_MOD[type];
-  switch (type) {
-    case 'post': p += 0.45 * o('insideScoring') - 0.35 * d; break;
-    case 'drive': p += 0.4 * o('driving') - 0.3 * d; break;
-    case 'pnrRoll': p += 0.4 * o('rollFinish') - 0.25 * d; break;
-    case 'pnrPull': p += 0.4 * o('midRange') - 0.25 * d; break;
-    case 'mid': p += 0.45 * o('midRange') - 0.25 * d; break;
-    case 'three': p += 0.45 * o('three') - 0.2 * d; break;
-    case 'fastBreak': p += 0.3 * o('driving') - 0.2 * d; break;
-    case 'pressBreak': p += 0.3 * o('rollFinish') - 0.2 * d; break;
-    case 'putback': p += 0.4 * o('insideScoring') - 0.3 * d; break;
-  }
+  p += (skill.off * (eff(s, c.off, shooter, skill.rating) - SHOOTER_CENTRE) - skill.def * (defRating - DEFENDER_CENTRE)) / 100;
 
   const offTeam = s.teams[c.off];
   const defTeam = s.teams[c.def];
@@ -598,9 +596,10 @@ function makeChance(c: Ctx, type: ShotType, zone: ShotZone, shooter: string, def
 
   const jumper = type === 'three' || type === 'mid';
   if (jumper) {
-    // Ball movement creates open looks; a great shooter with no passers suffers.
+    // Ball movement creates open looks, unless the rotation behind it closes them out; a great
+    // shooter with no passers suffers.
     const passing = teamTop(s, c.off, 'playmaking');
-    p += (passing - 65) * 0.0015;
+    p += (passing - teamAvg(s, c.def, 'perimeterD') - BALL_MOVEMENT.pivot) * BALL_MOVEMENT.perPoint;
     if (defTeam.plan.defence === 'zone') p += (passing - 65) * ZONE_PASSING_BONUS;
   }
 
@@ -627,18 +626,58 @@ function avgAttr(s: MatchState, side: Side, key: 'stamina' | 'tactics'): number 
   return lineup.reduce((sum, id) => sum + playerOf(s, side, id).attrs[key], 0) / lineup.length;
 }
 
+/**
+ * A finish with nobody between him and the rim: always at the rim, and no half-court defence to
+ * speak of. Most go in; the better finisher and the better dunker miss fewer.
+ */
+function openFinishChance(c: Ctx, shooter: string): number {
+  const s = c.s;
+  const finishing = Math.max(eff(s, c.off, shooter, 'driving'), eff(s, c.off, shooter, 'rollFinish'));
+  const dunk = playerOf(s, c.off, shooter).attrs.dunk;
+  const momentumForOffence = c.off === 0 ? s.momentum : -s.momentum;
+  const p =
+    OPEN_FINISH.base +
+    OPEN_FINISH.perFinishing * (finishing - 70) +
+    OPEN_FINISH.perDunk * Math.max(0, dunk - 60) +
+    0.01 * momentumForOffence +
+    0.01 * s.teams[c.off].morale;
+  return clamp(p, OPEN_FINISH.min, OPEN_FINISH.max);
+}
+
+/** Nobody back, but the quickest of them may still run him down from behind. */
+function chaseDown(c: Ctx, shooter: string): { chance: number; chaserId: string } {
+  const s = c.s;
+  const chaserId = bestOnCourt(s, c.def, 'speed');
+  const edge = eff(s, c.def, chaserId, 'speed') - eff(s, c.off, shooter, 'speed');
+  const chance = OPEN_FINISH.chaseDown + OPEN_FINISH.chaseDownPerSpeed * edge + OPEN_FINISH.chaseDownPerBlock * (eff(s, c.def, chaserId, 'rimProtection') - 60);
+  return { chance: clamp(chance, OPEN_FINISH.chaseDownMin, OPEN_FINISH.chaseDownMax), chaserId };
+}
+
 function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefined, extra: number): void {
   const s = c.s;
-  const { zone, courtSide } = chooseZone(c, type);
+  const open = c.open && type === 'fastBreak';
+  c.open = false;
+  const { zone, courtSide } = open ? { zone: 'restricted' as const, courtSide: 'centre' as const } : chooseZone(c, type);
   const points = zonePoints(zone);
-  const { rating, defenderId } = contest(c, shooter, type);
-  const p = makeChance(c, type, zone, shooter, rating, extra);
+  const chaser = open ? chaseDown(c, shooter) : null;
+  const { rating, defenderId } = chaser ? { rating: 0, defenderId: chaser.chaserId } : contest(c, shooter, type);
+  const p = open ? openFinishChance(c, shooter) : makeChance(c, type, zone, shooter, rating, extra);
   usageDrain(s, c.off, shooter);
-
-  // Shooting foul?
   const shooterP = playerOf(s, c.off, shooter);
+
+  if (chaser && chance(s.rng, chaser.chance)) {
+    // Run down from behind and pinned on the glass.
+    pstate(s, c.off, shooter).stats.fga++;
+    pstate(s, c.def, chaser.chaserId).stats.blk++;
+    s.momentum = clamp(s.momentum + (c.def === 0 ? 0.05 : -0.05), -1, 1);
+    emit(s, { type: 'shot', side: c.off, shooterId: shooter, shotType: type, zone, courtSide, points, made: false, blockerId: chaser.chaserId, chaseDown: true, ...clockFlags(c) });
+    rebound(c, false);
+    return;
+  }
+
+  // Shooting foul? On an open finish only a chaser hacking from behind.
   const defP = playerOf(s, c.def, defenderId);
-  const foulChance = clamp(
+  const foulChance = open ? OPEN_FINISH.foul : clamp(
     SHOOTING_FOUL_RATE[type] +
       (1 - fatigueFactor(pstate(s, c.def, defenderId).energy)) * 0.3 -
       (defP.attrs.tactics - 70) * 0.001 +
@@ -681,8 +720,9 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
 
   // Missed: maybe blocked, then a rebound.
   let blockerId: string | undefined;
+  // (An open finish has nobody there to block it: only a chaser, decided above.)
   const blockChance = INSIDE_SHOTS.has(type) ? 0.15 + 0.4 * ((teamTop(s, c.def, 'rimProtection') - 70) / 100) : 0.02;
-  if (chance(s.rng, clamp(blockChance, 0.01, 0.3))) {
+  if (!open && chance(s.rng, clamp(blockChance, 0.01, 0.3))) {
     blockerId = weighted(s.rng, s.teams[c.def].lineup, (id) => Math.exp((eff(s, c.def, id, 'rimProtection') - 60) / 8));
     pstate(s, c.def, blockerId).stats.blk++;
     s.momentum = clamp(s.momentum + (c.def === 0 ? 0.03 : -0.03), -1, 1);

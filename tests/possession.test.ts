@@ -6,6 +6,7 @@ import { HARBOR_HAMMERS, SKYLINE_SPARKS, mirrorTeam } from '../src/data/teams';
 import { createMatch, makePlan, simulateMatch, type MatchResult } from '../src/engine/match';
 import { playPossession } from '../src/engine/possession';
 import { composite } from '../src/engine/ratings';
+import { pressTurnoverChance } from '../src/engine/tactics';
 import type { GamePlan, Team } from '../src/engine/types';
 
 const GAMES = 120;
@@ -56,7 +57,11 @@ describe('counters', () => {
     const skyVsMan = total(SKYLINE_SPARKS, {}, { defence: 'man' }, tov);
     const skyVsPress = total(SKYLINE_SPARKS, {}, { defence: 'press' }, tov);
     expect(hamVsPress).toBeGreaterThan(hamVsMan * 1.1);
-    expect(hamVsPress - hamVsMan).toBeGreaterThan(skyVsPress - skyVsMan);
+    expect(skyVsPress).toBeGreaterThan(skyVsMan * 1.1);
+    // The two rosters handle the ball only about five points apart: under a turnover a game, less
+    // than the noise in 120 games, so the effect of ball handling is checked on the press itself.
+    expect(pressTurnoverChance(55, 1)).toBeGreaterThan(pressTurnoverChance(65, 1) + 0.01);
+    expect(pressTurnoverChance(65, 1)).toBeGreaterThan(pressTurnoverChance(80, 1) + 0.02);
   });
 
   it('pressing tires the pressing team out', () => {
@@ -94,5 +99,45 @@ describe('counters', () => {
     const normal = total(SKYLINE_SPARKS, {}, {}, starPts);
     const doubled = total(SKYLINE_SPARKS, {}, { keyMatchup: { kind: 'double', targetId: star.id } }, starPts);
     expect(doubled).toBeLessThan(normal * 0.95);
+  });
+});
+
+describe('fast breaks', () => {
+  it('an open finish, with nobody back or after the last defender commits, goes in about nine times in ten', () => {
+    let open = 0;
+    let made = 0;
+    let paint = 0;
+    let chaseDowns = 0;
+    let otherBlocks = 0;
+    for (let seed = 0; seed < GAMES; seed++) {
+      const r = simulateMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, makePlan(HARBOR_HAMMERS), makePlan(SKYLINE_SPARKS), seed);
+      let openNext = false;
+      let situation = '';
+      for (const e of r.state.events) {
+        if (e.type === 'transition') {
+          situation = e.attack ? e.situation : '';
+          openNext = situation === 'lane';
+        } else if (e.type === 'transitionRead') openNext = e.read === 'defenderCommits';
+        else if (e.type === 'shot') {
+          if (situation && openNext && e.shotType === 'fastBreak') {
+            open++;
+            if (e.made) made++;
+            if (e.zone !== 'restricted') paint++;
+            if (e.chaseDown) chaseDowns++;
+            else if (e.blockerId) otherBlocks++;
+          }
+          situation = '';
+          openNext = false;
+        }
+      }
+    }
+    expect(open).toBeGreaterThan(500);
+    expect(made / open).toBeGreaterThan(0.84);
+    expect(made / open).toBeLessThan(0.93);
+    // Always at the rim, and only ever blocked from behind, now and then.
+    expect(paint).toBe(0);
+    expect(otherBlocks).toBe(0);
+    expect(chaseDowns).toBeGreaterThan(0);
+    expect(chaseDowns / open).toBeLessThan(0.04);
   });
 });
