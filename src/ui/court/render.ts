@@ -13,7 +13,24 @@ import {
   THREE_ARC_M,
 } from '../../engine/court';
 import type { Fx } from '../match/controller';
-import { COURT, HOOP_X, MID_Y, RIM_HEIGHT, type Frame } from './animation';
+import { COURT, HOOP_X, MID_Y, PACE_M_S, RIM_HEIGHT, type Frame } from './animation';
+
+// Walk or run. Below WALK_TOP_M_S a player walks; from RUN_FROM_M_S (a run) he runs in full; a jog
+// is in between. Speeds are match metres a second, smoothed over GAIT_SMOOTH_S of match time.
+const WALK_TOP_M_S = 2.2;
+const RUN_FROM_M_S = PACE_M_S.run;
+const GAIT_SMOOTH_S = 0.25;
+/** Faster than anybody runs: a jump of position (a new possession) does not count as running. */
+const GAIT_TOP_M_S = 9;
+/** Sprite pixels from the floor to the hips, and from the hips to the top of the head. */
+const HIP_UP = 23;
+const HIP_TO_HEAD = 23;
+
+/** 0 at or below `from`, 1 at or past `to`, easing in between. */
+function smooth(from: number, to: number, v: number): number {
+  const t = Math.max(0, Math.min(1, (v - from) / (to - from)));
+  return t * t * (3 - 2 * t);
+}
 
 export const CANVAS_W = 1000;
 export const CANVAS_H = 500;
@@ -172,8 +189,13 @@ export function spriteScale(heightM: number): number {
 export class CourtRenderer {
   private last: Record<string, { x: number; y: number }> = {};
   private stride: Record<string, number> = {};
+  /** Each player's speed in match metres a second, smoothed, so a nudge does not flip walk and run. */
+  private gaitSpeed: Record<string, number> = {};
   private lastNow = 0;
   private frameSeconds = 1 / 60;
+  private timeScale = 1;
+  private frozen = false;
+  private lastFrame: Frame | null = null;
   /** The floor never changes, so it is painted once per canvas size. */
   private floor: HTMLCanvasElement | null = null;
   private nets: [NetKick | null, NetKick | null] = [null, null];
@@ -207,6 +229,10 @@ export class CourtRenderer {
       items.push({ depth: MID_Y - hoopX + 0.18, draw: () => this.drawRim(ctx, end, 0, Math.PI, now) });
     }
 
+    // A paused match hands over the same frame again: the gait holds still with it.
+    this.frozen = frame === this.lastFrame;
+    this.lastFrame = frame;
+    this.timeScale = Math.max(0.05, frame?.timeScale ?? 1);
     if (frame) {
       const ball = frame.ball;
       for (const [key, p] of Object.entries(frame.players)) {
@@ -731,18 +757,39 @@ export class CourtRenderer {
     /** Half the width of a body part that is wider than it is deep, seen from this angle. */
     const wide = (half: number) => Math.hypot(half * toward, half * 0.72 * side);
 
-    // Two steps per leg cycle, and a stride lengthens with speed: from 1.8 m a cycle walking to 3.6 m sprinting.
-    const metresPerSecond = speed / this.frameSeconds;
-    const cycleM = 1.8 + Math.min(1.8, (metresPerSecond / 7.9) * 1.8);
+    // Speed in match time, not on the screen: at double speed or fast-forward a walk is still a walk.
+    // Smoothed over a quarter of a second of match time, and held still while the match is paused.
+    const matchDt = this.frameSeconds * this.timeScale;
+    if (!this.frozen) {
+      const now = Math.min(GAIT_TOP_M_S, speed / matchDt);
+      const before = this.gaitSpeed[key] ?? now;
+      this.gaitSpeed[key] = before + (now - before) * (1 - Math.exp(-matchDt / GAIT_SMOOTH_S));
+    }
+    const mps = this.gaitSpeed[key] ?? 0;
+    // Two steps per leg cycle, and a stride lengthens with speed: 2 m a cycle walking, 4 m sprinting.
+    const cycleM = 1.4 + Math.min(GAIT_TOP_M_S, mps) * 0.33;
     this.stride[key] = (this.stride[key] ?? 0) + (speed / cycleM) * Math.PI * 2;
+    const phase = this.stride[key];
     const airborne = lift > 0.015;
-    const pace = Math.min(1, metresPerSecond / 4.3);
-    const swing = airborne ? 0.35 : Math.sin(this.stride[key]) * pace;
     // Which way the legs carry them, relative to the body: forwards, backpedalling or sliding.
     const fx = Math.cos(facing);
     const fy = Math.sin(facing);
     const along = airborne || speed === 0 ? 1 : (moveX * fx + moveY * fy) / speed;
     const sideways = airborne || speed === 0 ? 0 : Math.abs((moveX * -fy + moveY * fx) / speed);
+    // Walk or run: a blend, so a jog sits in between. Only going forwards and upright; a slide, a
+    // backpedal, a stance or a jump keep their own look. `sprint` is how far past a jog they are.
+    const run = airborne || shooting ? 0 : smooth(WALK_TOP_M_S, RUN_FROM_M_S, mps) * smooth(0.2, 0.7, along) * (1 - sideways) * (1 - stance) * (1 - handsUp);
+    const sprint = Math.max(0, Math.min(1, (mps - PACE_M_S.jog) / (PACE_M_S.sprint - PACE_M_S.jog)));
+    // A walk swings the legs as soon as they move; a run swings them all the way.
+    const pace = Math.min(1, mps / 1.2) * (0.75 + 0.25 * run);
+    const swing = airborne ? 0.35 : Math.sin(phase) * pace;
+    // The leg coming through on a run: highest as it passes under the hips.
+    const recovering = (leg: number) => Math.max(0, Math.cos(phase) * leg) * run;
+    // A run has a flight between steps, the body highest with the legs apart; a walk is highest
+    // over the standing leg, and only just.
+    const bob = airborne ? 0 : run * Math.abs(Math.sin(phase)) * 2.4 + (1 - run) * pace * (1 - Math.abs(Math.sin(phase))) * 0.7;
+    // Leaning into it: a little on a jog, more flat out.
+    const lean = run * (1.5 + 3.5 * sprint);
 
     const ref = !!info.ref;
     const team = ref ? { fill: REF_SHIRT, text: REF_BLACK } : this.colours[info.side];
@@ -757,6 +804,7 @@ export class CourtRenderer {
     ctx.save();
     ctx.translate(foot.x, foot.y);
     ctx.scale(k, k);
+    ctx.translate(0, -bob);
 
     // Legs: skin to the shin, then sock and shoe. The airborne pose tucks one knee; a slide opens
     // and closes the feet instead of crossing them.
@@ -765,10 +813,12 @@ export class CourtRenderer {
     for (const leg of farFirst) {
       const s = swing * leg;
       const tuck = airborne && leg === 1 ? 5 : 0;
-      const stepF = along * s * 6;
-      const stepR = leg * (3.6 + stance * 2 + Math.abs(Math.sin(this.stride[key])) * pace * sideways * 3);
-      const stepU = Math.max(0, s) * 3 * (1 - sideways) + tuck;
-      const knee = at(1 + stepF * 0.5 + stance * 2, leg * (3.8 + stance * 1.5), 12 + tuck * 0.5 - crouch * 0.3);
+      // The coming-through leg on a run drives its knee up in front and tucks the heel under it.
+      const drive = recovering(leg);
+      const stepF = along * s * (4.5 + run * (2 + sprint));
+      const stepR = leg * (3.6 + stance * 2 + Math.abs(Math.sin(phase)) * pace * sideways * 3);
+      const stepU = Math.max(0, s) * (1.2 + run * 1.8) * (1 - sideways) + drive * 6 + tuck;
+      const knee = at(1 + stepF * 0.5 + stance * 2 + drive * 4, leg * (3.8 + stance * 1.5), 12 + tuck * 0.5 - crouch * 0.3 + drive * 6);
       const ankle = at(stepF, stepR, stepU + 3);
       limb(ctx, [at(0, leg * 3.4, 23 - crouch), knee, ankle], 4.4, shin);
       limb(ctx, [[(knee[0] + ankle[0]) / 2, (knee[1] + ankle[1]) / 2], ankle], 4.2, ref ? REF_BLACK : '#f4f4ee');
@@ -790,6 +840,9 @@ export class CourtRenderer {
 
     // Everything above the legs sits lower in a stance.
     ctx.translate(0, crouch);
+    // A runner leans forward from the hips: everything above them tips the way he faces, the head most.
+    const [leanX, leanY] = at(lean / HIP_TO_HEAD, 0, 0);
+    ctx.transform(1, 0, -leanX, 1 - leanY, -leanX * HIP_UP, -leanY * HIP_UP);
 
     // Shorts (an official's trousers).
     ctx.fillStyle = ref ? REF_BLACK : darken(team.fill, 0.72);
@@ -811,8 +864,10 @@ export class CourtRenderer {
     // Which hand goes where: the ball handler's nearest arm reaches for the actual ball.
     const shoulderUp = 36.5;
     const b = project(ball.x, ball.y, ball.z);
-    const rx = (b.x - foot.x) / k;
-    const ry = (b.y - foot.y) / k;
+    // The ball in the upper body's own frame: undo the bounce, the stance and the lean.
+    const ballY = (b.y - foot.y) / k + bob - crouch;
+    const ry = (ballY + leanY * HIP_UP) / (1 - leanY);
+    const rx = (b.x - foot.x) / k + leanX * ry + leanX * HIP_UP;
     const shoulderOf = (arm: 1 | -1) => at(0, arm * 8.2, shoulderUp);
     const toBall = (arm: 1 | -1) => Math.hypot(rx - shoulderOf(arm)[0], ry - shoulderOf(arm)[1]);
     const ballArm: 1 | -1 = toBall(1) < toBall(-1) ? 1 : -1;
@@ -831,8 +886,15 @@ export class CourtRenderer {
         elbow = [(start[0] + hand[0]) / 2 + (start[0] >= 0 ? 2 : -2), (start[1] + hand[1]) / 2];
       } else {
         const s = -swing * arm * along;
-        hand = at(s * 5, arm * 10.5, 20 + Math.abs(s) * 2);
-        elbow = at(s * 2, arm * 10.8, 28);
+        // Walking, the arms hang and swing loose; running, they bend at the elbow and pump, the
+        // hand always ahead of the elbow and coming up to the chest on the way forward.
+        const walkHand = at(s * 5, arm * 10.5, 20 + Math.abs(s) * 2);
+        const walkElbow = at(s * 2, arm * 10.8, 28);
+        const pump = s * (1 + sprint * 0.4);
+        const runHand = at(pump * 4.5 + 4, arm * 9.5, 29 + pump * 4);
+        const runElbow = at(pump * 4 - 1, arm * 10.6, 29.5 + Math.abs(pump) * 1.5);
+        hand = [walkHand[0] + (runHand[0] - walkHand[0]) * run, walkHand[1] + (runHand[1] - walkHand[1]) * run];
+        elbow = [walkElbow[0] + (runElbow[0] - walkElbow[0]) * run, walkElbow[1] + (runElbow[1] - walkElbow[1]) * run];
         if (stance > 0) {
           // Active hands: out wide at waist height, ready to deflect.
           const activeHand = at(4, arm * 14, 28);
