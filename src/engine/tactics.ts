@@ -268,6 +268,41 @@ export const OPEN_FINISH = {
   chaseDownMax: 0.06,
 };
 
+/**
+ * Technical fouls. A player called for a foul may say a word too many: rare, more so for a hothead,
+ * in a close finish, during a run against his team, or in foul trouble (each adds to the base). About
+ * one every two or three matches all told. A coach who argues a call fires his team up, or gets one.
+ * Two technicals and he is gone, player or coach.
+ */
+export const TECHNICAL = {
+  player: 0.055,
+  closeGame: 0.5,
+  runAgainst: 0.5,
+  foulTrouble: 0.5,
+  argue: 0.3,
+  /** A coach left to himself goes after the official on this share of reach-ins against his team. */
+  aiArgue: 0.08,
+  argueMorale: 0.12,
+  argueMomentum: 0.05,
+  /** What a technical costs the side called for it. */
+  momentum: 0.05,
+  morale: 0.05,
+  ejectAt: 2,
+};
+
+/**
+ * How short a player's fuse is, from 0.3 (never says a word) to 2.5 (a hothead): a trait of his own,
+ * fixed for his career, that the scouts do not show. Most players are calm; a few are not.
+ */
+export function temperOf(p: { id: string; attrs: { tactics: number } }): number {
+  let h = 2166136261;
+  for (let i = 0; i < p.id.length; i++) h = Math.imul(h ^ p.id.charCodeAt(i), 16777619);
+  const t = ((h >>> 0) % 1000) / 1000;
+  // A smart player knows when to keep quiet.
+  const calm = Math.max(0.6, Math.min(1.2, 1.4 - p.attrs.tactics / 100));
+  return (0.3 + 2.2 * t * t) * calm;
+}
+
 /** Offensive rebound modifiers. */
 export function offRebPlanMod(off: GamePlan, def: GamePlan): number {
   let m = 0;
@@ -294,12 +329,45 @@ export function halfCourtSeconds(off: GamePlan, def: GamePlan): number {
   return secs;
 }
 
-/** Double team: the target's own shot gets harder, but a pass out finds an open shooter. */
+/**
+ * Double team. When the play goes to the doubled player the trap may take the ball off him (a poor
+ * ball handler against a quick, smart defence); otherwise he passes out of it (more often the better
+ * a passer he is) or forces a shot through two. The pass goes to whoever was left open, for his own
+ * best shot, open: better after a sharp pass, worse against a defence that rotates well. Everywhere
+ * else the defence is shading towards him, so his teammates get slightly better looks, and a man
+ * short on the glass. Doubling a star who cannot pass works; doubling a playmaker among shooters,
+ * or someone who is no threat, does not.
+ */
 export const DOUBLE_TEAM = {
-  passOutChance: 0.5,
-  targetShotMod: -0.07,
-  openShotMod: 0.055,
+  /** How much less the ball goes to him: the offence plays away from the trap. */
   targetUsage: 0.7,
+  /** Trap turnovers: base, per point of ball security below 70, and per point of the trapping pair's (perimeter D + IQ)/2 above 70. */
+  trapBase: 0.06,
+  trapPerHandling: 0.005,
+  trapPerDefence: 0.002,
+  trapMin: 0.01,
+  trapMax: 0.2,
+  /** Passing out of it: base chance, per point of playmaking above 60. */
+  passOutBase: 0.3,
+  passOutPerPassing: 0.012,
+  /** A man who is no scorer gives it up at once: per point his best scoring rating is below 80. */
+  passOutPerNoThreat: 0.015,
+  passOutMin: 0.12,
+  passOutMax: 0.85,
+  /** His shot through two defenders. */
+  forcedShotMod: -0.1,
+  /** The open man's shot: base, per point of the passer's playmaking above 70, per point of the rotation (defence IQ and perimeter D) above 70. */
+  openShotMod: 0.07,
+  openPerPassing: 0.002,
+  openPerRotation: -0.0015,
+  /**
+   * Everyone else, while the defence leans towards the doubled man: a base, more for each shooter on
+   * the floor above two and a half (the floor is wider), and more for each point the best scorer
+   * left alone is more dangerous than the man doubled (they are guarding the wrong man).
+   */
+  stretched: 0.006,
+  stretchedPerSpacing: 0.008,
+  stretchedPerThreatGap: 0.0035,
   offRebMod: 0.02,
 };
 

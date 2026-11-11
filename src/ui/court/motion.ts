@@ -67,6 +67,8 @@ const RUN_TO_SPOT_FROM = 2;
 const RUN_TO_SPOT_TO = 4;
 /** The head follows the ball this far either side of the body. */
 const HEAD_TURN = (70 * Math.PI) / 180;
+/** Slower than this (m/s of game time), a player is standing. */
+const STANDING_M_S = 0.4;
 /** Off the ball, bodies follow the ball's flight this lazily (seconds); heads follow it exactly. */
 const BALL_READ_S = 0.5;
 /** Nobody runs faster than this. Feet are slower sideways, and slower still backwards. */
@@ -96,6 +98,10 @@ const HEADING_S = 0.3;
 /** Nobody turns further than this one way within SPIN_WINDOW_S: a full spin cannot happen. */
 const SPIN_LIMIT = (200 * Math.PI) / 180;
 const SPIN_WINDOW_S = 1.5;
+/** Within this of where he wants to face, a player finishes the turn whatever he has turned lately. */
+const FINISH_TURN = (60 * Math.PI) / 180;
+/** A ball this close is in his hands, or nearly: he stops turning to follow it. */
+const BALL_IN_HANDS_M = 1.2;
 /** A ball handler turning to face where he runs may come this far round, still short of a spin. */
 const RUN_TURN_LIMIT = (280 * Math.PI) / 180;
 /** Below this speed a player's running direction is just noise: he faces where he is heading instead. */
@@ -414,6 +420,8 @@ export class Motion {
       this.pos[k] = { ...p };
       this.vel[k] = { x: 0, y: 0 };
     }
+    // Spots come from the script, which does not keep bodies apart: nobody starts inside someone.
+    keepApart(this.pos);
   }
 
   reset(): void {
@@ -788,11 +796,10 @@ export class Motion {
         // The ball handler turning to face where he is running may come further round, though never all the way.
         const holding = scene.action.kind === 'held' && scene.action.holder === key;
         const running = holding && Math.hypot(v.x, v.y) / speedScale > 1 && Math.abs(angleDiff(want, Math.atan2(hd.y, hd.x))) < Math.PI / 6;
-        if (turn !== 0 && turned(Math.sign(turn)) + Math.abs(turn) > (running ? RUN_TURN_LIMIT : SPIN_LIMIT)) {
-          // Holding a dead ball (at the line, say) he squares up anyway, back round the way he came.
-          const back = -Math.sign(turn) * Math.min(most, Math.PI * 2 - Math.abs(angleDiff(now, want)));
-          turn = holding && scene.dead && turned(Math.sign(back)) + Math.abs(back) <= SPIN_LIMIT ? back : 0;
-        }
+        // The last bit of a turn is always allowed: squaring up is not spinning, and the other way
+        // round would be the long way.
+        const left = Math.abs(angleDiff(now, want));
+        if (turn !== 0 && (!scene.dead || left > FINISH_TURN) && turned(Math.sign(turn)) + Math.abs(turn) > (running ? RUN_TURN_LIMIT : SPIN_LIMIT)) turn = 0;
         if (turn !== 0) log.push({ at: this.clock, turn });
         // Kept within one turn either way, so the angle never winds up.
         facing[key] = angleDiff(0, now + turn);
@@ -831,7 +838,23 @@ export class Motion {
       if (!a) continue;
       if (a.kind === 'fromPlayer' && a.from === key) return quick(a.style === 'throw' ? toward(a.to) : a.style === 'hook' ? sideOn : hoop);
       if (a.kind === 'pass' && a.from === key) return quick(toPlayer(a.to));
-      if ((a.kind === 'pass' || a.kind === 'toPlayer') && a.to === key) return quick(toward(scene.ball));
+      if ((a.kind === 'pass' || a.kind === 'toPlayer') && a.to === key) {
+        // He turns to the ball coming to him; in the last stride it is at his hands, and following
+        // it round his body would spin him.
+        const near = !!scene.dead && Math.hypot(scene.ball.x - me.x, scene.ball.y - me.y) < BALL_IN_HANDS_M;
+        return quick(near ? (this.facing[key] ?? hoop) : toward(scene.ball));
+      }
+    }
+
+    // Standing at a dead ball (in the lane at a free throw, say): the head follows the ball; the
+    // body only turns when the ball goes past where the neck reaches, and then just far enough.
+    const still = Math.hypot(this.vel[key]?.x ?? 0, this.vel[key]?.y ?? 0) / speedScale < STANDING_M_S;
+    const facingNow = this.facing[key];
+    if (scene.dead && still && facingNow !== undefined && !isRef(key) && !(scene.action.kind === 'held' && scene.action.holder === key)) {
+      const d = angleDiff(facingNow, toward(this.seen ?? scene.ball));
+      const reach = HEAD_TURN - (10 * Math.PI) / 180;
+      if (Math.abs(d) <= reach) return { angle: facingNow, quick: false };
+      return { angle: facingNow + d - Math.sign(d) * reach, quick: false };
     }
 
     // A shot, a rebound or a loose ball: everyone turns to it.

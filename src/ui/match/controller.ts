@@ -19,7 +19,7 @@ import { clockString } from '../labels';
 import { excitement } from './highlights';
 
 export type Speed = 'normal' | 'fast';
-export type Phase = 'playing' | 'timeout' | 'break' | 'clutch' | 'final';
+export type Phase = 'playing' | 'timeout' | 'break' | 'clutch' | 'argue' | 'final';
 
 /**
  * Game seconds per real second, and per-possession clamps. Normal plays at running speeds a real
@@ -31,6 +31,21 @@ const SPEEDS: Record<Speed, { div: number; min: number; max: number }> = {
 };
 
 /** How much faster bring-up and set-up play on a routine possession. */
+/** How long the "Argue the call" button stays up (real seconds) before play goes on. */
+export const ARGUE_SECONDS = 5;
+/** At most this many chances to argue a call per side per quarter, this many possessions apart. */
+const ARGUE_PER_QUARTER = 2;
+const ARGUE_GAP_POSSESSIONS = 10;
+/** Of the fouls against a team that could be argued, the share that are close enough to argue. */
+const ARGUE_SHARE = 0.45;
+
+/** A number in 0..1 from a string: the same every time, and no draw from the game's dice. */
+function unit(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 10000) / 10000;
+}
+
 /** Two players at full speed straight at each other (m/s of game time). */
 const CLOSING_M_S = 16;
 /** The most two players may close on each other in one movement step: half a body width. */
@@ -45,6 +60,19 @@ interface PossessionStart {
   how: Transition;
   /** Index of its first event. */
   start: number;
+}
+
+/**
+ * A trip to the line worth showing in highlights mode on top of the best plays: an and-one, or free
+ * throws in the last two minutes of a quarter, or in the last five minutes of a close fourth quarter
+ * or overtime.
+ */
+function freeThrowsThatMatter(s: MatchState, events: TimedEvent[]): boolean {
+  const fts = events.filter((e) => e.type === 'freeThrow' && !e.technical);
+  if (fts.length === 0) return false;
+  const andOne = events.some((e) => e.type === 'shot' && e.made);
+  const margin = Math.abs(s.teams[0].score - s.teams[1].score);
+  return andOne || s.clock <= 120 || (s.quarter >= 4 && s.clock <= 300 && margin <= 6);
 }
 
 /** Where the ball is at the end of a beat. */
@@ -98,7 +126,7 @@ export interface FeedItem {
 }
 
 /** Per-player numbers as of the last completed possession (so panels don't spoil the animation). */
-export type PlayerView = Pick<PlayerGameState, 'energy' | 'fouls' | 'fouledOut'> & { pts: number; reb: number; ast: number; seconds: number; rating: number | null };
+export type PlayerView = Pick<PlayerGameState, 'energy' | 'fouls' | 'fouledOut' | 'ejected' | 'technicals'> & { pts: number; reb: number; ast: number; seconds: number; rating: number | null };
 
 /** Visual/audio cue for the court renderer and sound engine. */
 export type FxKind = 'swish' | 'three' | 'clank' | 'dunk' | 'block' | 'steal' | 'foul' | 'violation' | 'timeout' | 'quarterEnd' | 'gameEnd';
@@ -142,6 +170,9 @@ export interface TeamView {
   quarterFouls: number;
   /** Team fouls in the last two minutes of the period. */
   lateFouls: number;
+  /** The coach was ejected: his assistant runs the bench. */
+  coachEjected: boolean;
+  coachTechnicals: number;
 }
 
 export class LiveMatch {
@@ -181,6 +212,27 @@ export class LiveMatch {
   talks: [{ talk: Talk; reaction: string } | null, { talk: Talk; reaction: string } | null] = [null, null];
   private fx: Fx[] = [];
   private clutchCalls: PossessionCalls | null = null;
+  /**
+   * Momentum as the picture has it: -1 (away) to 1 (home). It moves as each event appears on screen,
+   * not when the engine has already played the possession (that would give away what is coming).
+   */
+  momentum = 0;
+  /** The "Argue the call" button: whose, and until when (real seconds). Null when not up. */
+  argue: { side: Side; until: number } | null = null;
+  /**
+   * A possession whose foul a human coach may argue: the match as it was before it was played, so
+   * that it can be played again with the coach arguing (the engine is deterministic: up to the foul
+   * it comes out the same), and which event the foul is.
+   */
+  private argueChance: { snapshot: MatchState; before: PossessionStart; prev: Frame | null; foulAt: number; side: Side } | null = null;
+  /** Arguments offered per side and quarter (`side:quarter`), and the possession count at the last one. */
+  private argueOffers: Record<string, number> = {};
+  private lastArgueOffer: [number, number] = [-99, -99];
+  private possessionCount = 0;
+  /** Just back from a quarter break: an ejected coach's assistant passes on his orders now. */
+  private atBreak = false;
+  /** The assistant (not the ejected coach) is asking for this timeout. */
+  private assistantAsks = false;
   /** Calls each human has been asked for, per period and role (`side:quarter:role`). */
   private clutchAsked: Record<string, number> = {};
   private slowMo = false;
@@ -221,6 +273,7 @@ export class LiveMatch {
 
   constructor(home: Team, away: Team, plans: [GamePlan, GamePlan], seed: number, controllers: [Controller, Controller], speed: Speed) {
     this.s = createMatch(home, away, plans[0], plans[1], seed);
+    this.s.humanCoach = [controllers[0] === 'human', controllers[1] === 'human'];
     this.names = namesFor(this.s);
     this.controllers = controllers;
     this.speed = speed;
@@ -236,6 +289,10 @@ export class LiveMatch {
 
   requestTimeout(side: Side): void {
     if (this.phase === 'final' || !canCallTimeout(this.s, side) || this.pending[side]) return;
+    if (this.controllers[side] === 'human' && this.s.teams[side].coachEjected && !this.assistantAsks) {
+      this.info('The coach has been ejected: the assistant decides on timeouts.', side);
+      return;
+    }
     this.pending[side] = true;
     this.info(`${this.s.teams[side].team.name} want a timeout: it comes at the next dead ball.`, side);
   }
@@ -364,9 +421,45 @@ export class LiveMatch {
     this.bump();
   }
 
+  /**
+   * The coach argues the call: the possession is played again from the start with him arguing. Up to
+   * the foul everything comes out exactly as it did (the engine is deterministic); from there on it
+   * may not, and the picture carries on from the whistle.
+   */
+  argueCall(): void {
+    const chance = this.argueChance;
+    if (this.phase !== 'argue' || !chance) return;
+    this.argueChance = null;
+    this.argue = null;
+    const s = this.s;
+    Object.assign(s, chance.snapshot);
+    s.calls = { ...(s.calls ?? {}), argue: chance.side };
+    stepPossession(s);
+    this.scriptEvents = s.events.slice(chance.before.start);
+    this.script = this.buildFrom(chance.before, this.scriptEvents, chance.prev);
+    this.retime();
+    const at = this.script.beats.findIndex((b) => b.fire.includes(chance.foulAt));
+    this.t = at >= 0 ? this.beatEnds[at] : 0;
+    this.firedBeats = at + 1;
+    this.startedBeat = at;
+    this.publishedThrough = s.events.length;
+    this.phase = 'playing';
+    this.bump();
+  }
+
+  /** No argument (or the moment passed): play goes on as it was. */
+  letItGo(): void {
+    if (this.phase !== 'argue') return;
+    this.argueChance = null;
+    this.argue = null;
+    this.phase = 'playing';
+    this.bump();
+  }
+
   /** Ends a timeout or a quarter break. */
   resume(): void {
     if (this.phase !== 'timeout' && this.phase !== 'break') return;
+    if (this.phase === 'break') this.atBreak = true;
     this.phase = 'playing';
     this.timeoutSide = null;
     this.bump();
@@ -377,6 +470,8 @@ export class LiveMatch {
   /** Advances by `dt` real seconds. */
   tick(dt: number): void {
     this.time += dt;
+    // Nobody went after the official in time: play on.
+    if (this.phase === 'argue' && this.argue && this.time >= this.argue.until) this.letItGo();
     if (this.phase !== 'playing' || this.paused) return;
     if (!this.script) {
       this.nextPossession();
@@ -401,6 +496,17 @@ export class LiveMatch {
       const beat = sc.beats[this.firedBeats];
       for (const i of beat.fire) this.publish(this.scriptEvents[i]);
       this.firedBeats++;
+      const chance = this.argueChance;
+      if (chance && beat.fire.includes(chance.foulAt)) {
+        // The whistle has gone against him: the coach has a moment to go after the official.
+        const key = `${chance.side}:${this.s.quarter}`;
+        this.argueOffers[key] = (this.argueOffers[key] ?? 0) + 1;
+        this.lastArgueOffer[chance.side] = this.possessionCount;
+        this.argue = { side: chance.side, until: this.time + ARGUE_SECONDS };
+        this.phase = 'argue';
+        this.bump();
+        return;
+      }
     }
     if (this.firedBeats < sc.beats.length && this.startedBeat !== this.firedBeats) {
       this.startedBeat = this.firedBeats;
@@ -470,6 +576,7 @@ export class LiveMatch {
     }
 
     this.applyQueued();
+    this.atBreak = false;
 
     for (const side of [0, 1] as const) {
       if (!this.pending[side]) continue;
@@ -498,7 +605,7 @@ export class LiveMatch {
         const key = `${side}:${s.quarter}:${role}`;
         if (!asksForCall(s, role, this.clutchAsked[key] ?? 0)) return;
         this.clutchAsked[key] = (this.clutchAsked[key] ?? 0) + 1;
-        if (this.controllers[side] === 'human') pending.push(role);
+        if (!this.runsItself(side)) pending.push(role);
         else if (role === 'offence') calls.offence = (aiCall(s, side, 'offence') as OffenceCall | null) ?? undefined;
         else calls.defence = (aiCall(s, side, 'defence') as DefenceCall | null) ?? undefined;
       };
@@ -540,11 +647,13 @@ export class LiveMatch {
 
     if (this.highlights && !this.clutchCalls) {
       if (this.shown.quarter !== s.quarter) this.shown = { quarter: s.quarter, count: 0 };
-      if (!this.isHighlight(s)) {
+      const shown = this.isHighlight(s);
+      if (!shown) {
         this.skipPossession();
         return;
       }
-      this.shown.count++;
+      // A trip to the line that matters is shown on top of the quarter's best plays.
+      if (shown === 'play') this.shown.count++;
     }
     this.skipping = false;
 
@@ -563,14 +672,33 @@ export class LiveMatch {
       if (calls.defence) emit(s, { type: 'playCall', side: other(offence), role: 'defence', call: calls.defence });
       if (calls.offence) emit(s, { type: 'playCall', side: offence, role: 'offence', call: calls.offence });
     }
+    this.possessionCount++;
+    const def = other(offence);
+    const prev = this.lastFrame ?? this.carry;
+    // A human coach gets the chance to argue when he sees the call, so the match is kept as it was,
+    // to play it again if he does. (An AI coach argues now and then by himself, in the engine.)
+    const team = s.teams[def];
+    const mayArgue =
+      this.controllers[def] === 'human' &&
+      !team.coachEjected &&
+      !s.calls &&
+      (this.argueOffers[`${def}:${s.quarter}`] ?? 0) < ARGUE_PER_QUARTER &&
+      this.possessionCount - this.lastArgueOffer[def] >= ARGUE_GAP_POSSESSIONS &&
+      unit(`${s.seed}:${start}:offer`) < ARGUE_SHARE;
+    const snapshot = mayArgue ? structuredClone(s) : null;
     stepPossession(s);
     this.scriptEvents = s.events.slice(start);
     this.quarter = s.quarter;
     const energy: Record<string, number> = {};
     for (const side of [0, 1] as const) for (const id of before.lineups[side]) energy[playerKey(side, id)] = s.teams[side].players[id].energy;
     this.motion.setEnergy(energy);
-    const prev = this.lastFrame ?? this.carry;
     this.script = this.buildFrom(before, this.scriptEvents, prev);
+    this.argueChance = null;
+    if (snapshot) {
+      // A reach-in or a hold called on his team, with nothing in the air: that can be argued.
+      const foulAt = this.scriptEvents.findIndex((e) => e.type === 'foul' && !e.shooting && e.side === def);
+      if (foulAt >= 0) this.argueChance = { snapshot, before, prev, foulAt, side: def };
+    }
     this.retime();
     this.t = 0;
     this.firedBeats = 0;
@@ -609,22 +737,27 @@ export class LiveMatch {
    * the real game will) and every possession scored; this one is shown if it ranks among the ones
    * left to show. Decided afresh each time, so a timeout or a substitution is taken into account.
    */
-  private isHighlight(s: MatchState): boolean {
-    if (isClutch(s)) return true;
+  private isHighlight(s: MatchState): 'play' | 'extra' | false {
+    if (isClutch(s)) return 'play';
     const left = HIGHLIGHTS_PER_QUARTER - this.shown.count;
-    if (left <= 0) return false;
     const copy = structuredClone(s);
     const quarter = copy.quarter;
     const scores: number[] = [];
+    let first: TimedEvent[] | null = null;
     while (!copy.finished && copy.quarter === quarter && copy.clock > 0) {
       const before: [number, number] = [copy.teams[0].score, copy.teams[1].score];
       const start = copy.events.length;
       stepPossession(copy);
-      scores.push(excitement(copy.events.slice(start), before, copy));
+      const events = copy.events.slice(start);
+      first ??= events;
+      scores.push(excitement(events, before, copy));
+      // With the five already shown only this possession matters: no need to look further.
+      if (left <= 0) break;
     }
-    if (scores.length <= left) return true;
     // Ties go to the earlier play.
-    return scores.slice(1).filter((x) => x > scores[0]).length < left;
+    if (left > 0 && (scores.length <= left || scores.slice(1).filter((x) => x > scores[0]).length < left)) return 'play';
+    // Not among the best: still shown if it is a trip to the line that matters.
+    return first && freeThrowsThatMatter(s, first) ? 'extra' : false;
   }
 
   /** Plays a possession out instantly: the score, the feed and the stats move on; nothing is shown or heard. */
@@ -773,16 +906,25 @@ export class LiveMatch {
     for (const tip of assistantTips(s, this.tipMemory)) this.tips = [tip, ...this.tips].slice(0, 30);
     for (const side of [0, 1] as const) {
       this.sinceTimeout[side]++;
-      if (this.controllers[side] === 'ai' && !this.pending[side] && aiShouldTimeout(s, side, this.sinceTimeout[side])) {
+      if (this.runsItself(side) && !this.pending[side] && aiShouldTimeout(s, side, this.sinceTimeout[side])) {
+        this.assistantAsks = true;
         this.requestTimeout(side);
+        this.assistantAsks = false;
       }
     }
     this.bump();
   }
 
   /** Dead ball: put through the subs and tactic shouts ordered from the bench. */
+  /** An AI coach, or a human coach's assistant after he was ejected: the side decides for itself. */
+  runsItself(side: Side): boolean {
+    return this.controllers[side] === 'ai' || this.s.teams[side].coachEjected;
+  }
+
   private applyQueued(): void {
     for (const side of [0, 1] as const) {
+      // With the coach ejected, his orders reach the floor through the assistant at the quarter break.
+      if (this.s.teams[side].coachEjected && this.controllers[side] === 'human' && !this.atBreak) continue;
       const subs = this.queuedSubs[side];
       const tactics = this.queuedTactics[side];
       if (subs.length === 0 && !tactics) continue;
@@ -823,6 +965,7 @@ export class LiveMatch {
   /** `quiet`: into the feed and the score only, without sound or caption (a skipped possession). */
   private publish(ev: TimedEvent, quiet = false): void {
     this.score = ev.score;
+    if (ev.momentum !== undefined) this.momentum = ev.momentum;
     this.quarter = ev.quarter;
     const text = commentate(ev, this.names);
     if (!text) return;
@@ -849,6 +992,7 @@ export class LiveMatch {
         fx.push({ kind: ev.made ? 'swish' : 'clank', side: ev.side, small: true });
         break;
       case 'foul':
+      case 'technical':
         fx.push({ kind: 'foul', side: ev.side });
         break;
       case 'timeout':
@@ -884,6 +1028,8 @@ export class LiveMatch {
         energy: p.energy,
         fouls: p.fouls,
         fouledOut: p.fouledOut,
+        ejected: p.ejected,
+        technicals: p.technicals,
         pts: p.stats.pts,
         reb: p.stats.oreb + p.stats.dreb,
         ast: p.stats.ast,
@@ -891,7 +1037,7 @@ export class LiveMatch {
         rating: playerRating(p.stats),
       };
     }
-    return { lineup: [...t.lineup], players, timeoutsLeft: t.timeoutsLeft, quarterFouls: t.quarterFouls, lateFouls: t.lateFouls };
+    return { lineup: [...t.lineup], players, timeoutsLeft: t.timeoutsLeft, quarterFouls: t.quarterFouls, lateFouls: t.lateFouls, coachEjected: t.coachEjected, coachTechnicals: t.coachTechnicals };
   }
 
   private bump(): void {

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { buildBoxScore } from '../../engine/stats';
 import { defenceOptions, estimate, offenceOptions } from '../../game/clutch';
-import { TALKS } from '../../game/teamTalk';
 import { Sound } from '../sound';
 import { timeoutAllowance } from '../../engine/match';
 import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type PossessionCalls, type Side, type Team } from '../../engine/types';
@@ -10,12 +9,12 @@ import type { Setup } from '../App';
 import { BoxScoreTables } from '../components/BoxScoreTable';
 import { Portrait, ShirtNumber } from '../components/Portrait';
 import { featuresUrl, lookOf } from '../looks';
-import { EnergyBar } from '../components/common';
-import { PlanEditor } from '../components/PlanEditor';
+import { EnergyBar, RatingBadge } from '../components/common';
+import { BreakScreen } from '../components/BreakScreen';
 import { REFS, playerKey } from '../court/animation';
 import { CANVAS_H, CANVAS_W, CourtRenderer, type DotInfo } from '../court/render';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
-import { HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
+import { ARGUE_SECONDS, HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
 
 const TIMEOUT_KEYS = ['q', 'p'] as const;
 
@@ -166,6 +165,7 @@ export function MatchScreen({
       const k = e.key.toLowerCase();
       for (const side of [0, 1] as const) {
         if (k === TIMEOUT_KEYS[side] && controllers[side] === 'human') m.requestTimeout(side);
+        if (k === 'a' && m.phase === 'argue' && m.argue?.side === side && controllers[side] === 'human') m.argueCall();
       }
       if (k === ' ') {
         e.preventDefault();
@@ -177,7 +177,9 @@ export function MatchScreen({
   });
 
   const humanSides = ([0, 1] as const).filter((s) => controllers[s] === 'human');
-  const momentumPct = 50 - m.s.momentum * 45;
+  // Twice as sensitive as the effect itself, so that a run shows: an 8-0 run is about a quarter of the
+  // way to the end. The engine's momentum is unchanged; this is only the needle.
+  const momentumPct = 50 - Math.max(-1, Math.min(1, m.momentum * MOMENTUM_DISPLAY)) * 46;
   const humanTips = m.tips.filter((t) => controllers[t.side] === 'human');
   const unreadTips = showFeed ? 0 : humanTips.filter((t) => t.id > seenTip).length;
 
@@ -245,7 +247,8 @@ export function MatchScreen({
           {humanSides.map((side) => (
             <button
               key={side}
-              disabled={m.view[side].timeoutsLeft <= 0 || m.pending[side] || m.phase !== 'playing'}
+              disabled={m.view[side].timeoutsLeft <= 0 || m.pending[side] || m.phase !== 'playing' || m.view[side].coachEjected}
+              title={m.view[side].coachEjected ? 'Coach ejected: the assistant decides on timeouts' : undefined}
               onClick={() => m.requestTimeout(side)}
               style={{ borderColor: side === 0 ? 'var(--home)' : 'var(--away)' }}
             >
@@ -303,8 +306,9 @@ export function MatchScreen({
       </div>
       <TeamPanel m={m} side={1} view={m.view[1]} human={controllers[1] === 'human'} />
 
-      {(m.phase === 'timeout' || m.phase === 'break') && <PauseModal m={m} controllers={controllers} onDone={() => m.resume()} />}
+      {(m.phase === 'timeout' || m.phase === 'break') && <BreakScreen m={m} controllers={controllers} onDone={() => m.resume()} />}
       {m.phase === 'clutch' && m.clutch && <ClutchModal key={`${m.clutch.pending.length}-${m.clock}`} m={m} />}
+      {m.phase === 'argue' && m.argue && <ArgueBar key={m.argue.until} m={m} />}
 
       {m.phase === 'final' && (
         <div className="overlay">
@@ -362,6 +366,19 @@ function Scoreboard({ m, controllers }: { m: LiveMatch; controllers: [Controller
             </span>
             <span className="muted"> Fouls {v.quarterFouls}</span>
             {bonus && <span className="bad"> BONUS</span>}
+            {v.coachEjected ? (
+              <span className="bad" title="Two technicals: the coach is gone. The assistant calls timeouts and clutch plays; your changes reach the bench at the quarter break.">
+                {' '}
+                COACH EJECTED: assistant in charge
+              </span>
+            ) : (
+              v.coachTechnicals > 0 && (
+                <span style={{ color: 'var(--warn)' }} title="A technical on the coach: one more and he is ejected">
+                  {' '}
+                  Coach T
+                </span>
+              )
+            )}
           </div>
         </div>
         {side === 0 && <div className="sb-score home">{m.score[0]}</div>}
@@ -375,7 +392,7 @@ function Scoreboard({ m, controllers }: { m: LiveMatch; controllers: [Controller
         <div className="sb-clock">
           {periodLabel(m.quarter)} {clockString(m.clock)}
         </div>
-        <div className="small muted">{m.paused ? 'PAUSED' : m.phase === 'timeout' ? 'TIMEOUT' : m.phase === 'break' ? 'BREAK' : ''}</div>
+        <div className="small muted">{m.paused ? 'PAUSED' : m.phase === 'timeout' ? 'TIMEOUT' : m.phase === 'break' ? 'BREAK' : m.phase === 'argue' ? 'WHISTLE' : ''}</div>
       </div>
       {team(1)}
     </div>
@@ -438,8 +455,9 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
             {Math.floor(v.seconds / 60)}′
           </span>
         </span>
-        <span className="fouls" title="Personal fouls">
-          {v.fouledOut ? 'OUT' : '●'.repeat(v.fouls)}
+        <span className="fouls" title={v.technicals > 0 ? 'Personal fouls, and a technical (two and he is ejected)' : 'Personal fouls'}>
+          {v.ejected ? 'EJECTED' : v.fouledOut ? 'OUT' : '●'.repeat(v.fouls)}
+          {!v.fouledOut && v.technicals > 0 && <span className="bad"> T</span>}
         </span>
       </div>
     );
@@ -506,123 +524,34 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
   );
 }
 
-function PauseModal({ m, controllers, onDone }: { m: LiveMatch; controllers: [Controller, Controller]; onDone: () => void }) {
-  const humans = ([0, 1] as const).filter((s) => controllers[s] === 'human');
-  // The side that called the timeout goes first.
-  const ordered = m.timeoutSide !== null && humans.includes(m.timeoutSide) ? [m.timeoutSide, ...humans.filter((s) => s !== m.timeoutSide)] : humans;
-  const livePlan = (side: Side): GamePlan => {
-    const t = m.s.teams[side];
-    const lineup = [...t.lineup];
-    const rest = [...t.plan.starters, ...t.plan.bench, ...t.team.players.map((p) => p.id)].filter((id, i, arr) => !lineup.includes(id) && arr.indexOf(id) === i);
-    return { ...t.plan, starters: lineup, bench: rest };
-  };
-  const [drafts, setDrafts] = useState<Record<number, GamePlan>>(() => Object.fromEntries(ordered.map((s) => [s, livePlan(s)])));
-  const [tab, setTab] = useState<Side>(ordered[0] ?? 0);
+/** How much further the momentum needle moves than the momentum itself. */
+const MOMENTUM_DISPLAY = 2;
 
-  const title =
-    m.phase === 'timeout'
-      ? `Timeout: ${m.s.teams[m.timeoutSide ?? 0].team.name}`
-      : m.breakQuarter === 2
-        ? 'Halftime'
-        : m.breakQuarter >= 4
-          ? 'End of regulation: overtime!'
-          : `End of Q${m.breakQuarter}`;
-
-  const valid = ordered.every((s) => drafts[s].starters.length === 5);
-  const apply = () => {
-    for (const s of ordered) {
-      const before = livePlan(s);
-      const after = drafts[s];
-      if (JSON.stringify(before) !== JSON.stringify(after)) m.applyPlan(s, after);
-    }
-    onDone();
-  };
-
+/**
+ * The whistle went against a human team on a reach-in or a hold: for a moment the coach can go after
+ * the official. It fires the team up, or earns a technical (two and he is ejected). Gone after a
+ * few seconds, so the game never waits on it for long.
+ */
+function ArgueBar({ m }: { m: LiveMatch }) {
+  const side = m.argue!.side;
+  const techs = m.view[side].coachTechnicals;
   return (
-    <div className="overlay">
-      <div className="panel modal">
-        <div className="row">
-          <h1 style={{ margin: 0 }}>{title}</h1>
-          <span className="muted">
-            {m.s.teams[0].team.abbr} {m.score[0]}, {m.score[1]} {m.s.teams[1].team.abbr}
-          </span>
-          <div className="spacer" />
-          <button className="primary" disabled={!valid} onClick={apply}>
-            Back to the game ▶
-          </button>
-        </div>
-        {humans.length > 1 && (
-          <div className="tabs">
-            {ordered.map((s) => (
-              <button key={s} className={tab === s ? 'active' : ''} onClick={() => setTab(s)} style={{ borderColor: s === 0 ? 'var(--home)' : 'var(--away)' }}>
-                {m.s.teams[s].team.name}
-                {m.phase === 'timeout' && s !== m.timeoutSide ? ' (may adjust too)' : ''}
-              </button>
-            ))}
-          </div>
-        )}
-        {m.phase === 'break' && m.breakQuarter === 2 && <TeamTalkPanel m={m} side={tab} />}
-        {m.tips.filter((t) => t.side === tab).slice(0, 3).map((t) => (
-          <div key={t.id} className="tip small">
-            {t.text}
-          </div>
-        ))}
-        {drafts[tab] && (
-          <PlanEditor
-            key={tab}
-            team={m.s.teams[tab].team}
-            side={tab}
-            opponent={m.s.teams[tab === 0 ? 1 : 0].team}
-            plan={drafts[tab]}
-            live={m.view[tab]}
-            onChange={(p) => setDrafts((d) => ({ ...d, [tab]: p }))}
-          />
-        )}
-        {humans.length === 0 && <div className="muted">The coaches are talking it over…</div>}
+    <div className="argue-bar panel" style={{ borderColor: side === 0 ? 'var(--home)' : 'var(--away)' }}>
+      <div className="row">
+        <b>Whistle on {m.s.teams[side].team.name}.</b>
+        <span className="muted small">{techs > 0 ? 'You already have a technical: another one and you are ejected.' : 'Go after the official? It can fire your team up, or cost a technical.'}</span>
+        <div className="spacer" />
+        <button className="primary" onClick={() => m.argueCall()}>
+          Argue the call <kbd>A</kbd>
+        </button>
+        <button onClick={() => m.letItGo()}>Let it go</button>
       </div>
+      <div className="argue-timer" style={{ animationDuration: `${ARGUE_SECONDS}s` }} />
     </div>
   );
 }
 
-function RatingBadge({ r }: { r: number | null }) {
-  if (r === null) return <span className="rating muted">–</span>;
-  const colour = r >= 7.5 ? 'var(--good)' : r >= 6 ? '#b8d86b' : r >= 5 ? 'var(--warn)' : 'var(--bad)';
-  return (
-    <span className="rating" style={{ background: colour }}>
-      {r.toFixed(1)}
-    </span>
-  );
-}
 
-function TeamTalkPanel({ m, side }: { m: LiveMatch; side: Side }) {
-  const given = m.talks[side];
-  const margin = m.s.teams[side].score - m.s.teams[side === 0 ? 1 : 0].score;
-  return (
-    <div className="talk">
-      <h3>Halftime team talk {margin > 0 ? `(up ${margin})` : margin < 0 ? `(down ${-margin})` : '(tied)'}</h3>
-      {given ? (
-        <div>
-          <b>
-            {TALKS.find((t) => t.talk === given.talk)?.icon} {TALKS.find((t) => t.talk === given.talk)?.label}:
-          </b>{' '}
-          {given.reaction}
-        </div>
-      ) : (
-        <>
-          <div className="muted small">What do you tell your players? Read the room: the right words depend on the score.</div>
-          <div className="cards" style={{ marginTop: 6 }}>
-            {TALKS.map((t) => (
-              <button key={t.talk} className="card" title={t.line} onClick={() => m.teamTalk(side, t.talk)}>
-                <span className="icon">{t.icon}</span>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 /** A clutch moment: the human(s) call the play. The defence chooses first so the offence can't react to it. */
 function ClutchModal({ m }: { m: LiveMatch }) {

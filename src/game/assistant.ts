@@ -4,7 +4,7 @@
 import { composite } from '../engine/ratings';
 import { other, playerOf } from '../engine/state';
 import type { MatchState, Side } from '../engine/types';
-import { recentBreakdown, unansweredRun } from './ai';
+import { DOUBLE_WORTH, doubleTeamWorth, recentBreakdown, unansweredRun } from './ai';
 
 export interface Tip {
   id: number;
@@ -98,8 +98,21 @@ export function assistantTips(s: MatchState, memory: TipMemory): Tip[] {
     const star = [...them.lineup].sort((a, b) => them.players[b].stats.pts - them.players[a].stats.pts)[0];
     const starPts = them.players[star].stats.pts;
     const threshold = s.quarter <= 2 ? 16 : 26;
+    // Whether a double on him would pay: only on a scorer who cannot pass, without shooters round him.
+    const five = them.lineup.map((id) => playerOf(s, opp, id));
+    const worth = doubleTeamWorth(playerOf(s, opp, star), five);
     if (team.plan.keyMatchup.kind !== 'double' && starPts >= threshold) {
-      candidates.push([`star-${star}-${Math.floor(starPts / 8)}`, `${name(opp, star)} already has ${starPts} points. A double team could slow that down.`]);
+      candidates.push([
+        `star-${star}-${Math.floor(starPts / 8)}`,
+        worth > DOUBLE_WORTH
+          ? `${name(opp, star)} already has ${starPts} points, and he can't pass out of a trap. A double team would slow him down.`
+          : `${name(opp, star)} already has ${starPts} points, but doubling him would only free their shooters: he finds the open man.`,
+      ]);
+    }
+    const km = team.plan.keyMatchup;
+    if (km.kind === 'double' && them.lineup.includes(km.targetId)) {
+      const doubledWorth = doubleTeamWorth(playerOf(s, opp, km.targetId), five);
+      if (doubledWorth < 0) candidates.push([`bad-double-${km.targetId}`, `Our double on ${name(opp, km.targetId)} is costing us: he passes out of it and they get open looks. Guard him straight up.`]);
     }
 
     // Glass.

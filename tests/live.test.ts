@@ -1,6 +1,8 @@
 // Headless run of the live-match controller and animation scripts (no canvas involved).
 
 import { describe, expect, it } from 'vitest';
+import { describe as commentate } from '../src/engine/commentary';
+import type { TimedEvent } from '../src/engine/types';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams';
 import { callTimeout, createMatch, stepPossession } from '../src/engine/match';
 import { CLUTCH_MARGIN, CLUTCH_WINDOW } from '../src/game/clutch';
@@ -153,8 +155,11 @@ describe('highlights', () => {
   function watch(highlights: boolean, seed: number) {
     const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], seed, ['ai', 'ai'], 'fast');
     m.highlights = highlights;
-    const inner = m as unknown as { script: { quarter: number; clockStart: number } | null };
+    const inner = m as unknown as { script: { quarter: number; clockStart: number } | null; scriptEvents: TimedEvent[]; shown: { quarter: number; count: number } };
     const shown: Record<number, number> = {};
+    /** Of the clips shown, the quarter's best plays (as the controller counts them), and trips to the line on top. */
+    const plays: Record<number, number> = {};
+    const extraNotFreeThrows: number[] = [];
     let clutchShown = 0;
     let last: unknown = null;
     let sounds = 0;
@@ -170,11 +175,19 @@ describe('highlights', () => {
         const q = sc.quarter;
         // Clutch moments (the end of a close half or game) are always shown, on top of the five.
         const margin = Math.abs(m.s.teams[0].score - m.s.teams[1].score);
+        // The controller counts a clip as one of the quarter's five as it starts; one it did not count is extra.
+        const count = inner.shown.quarter === q ? inner.shown.count : 0;
+        const extra = count === (plays[q] ?? 0);
+        plays[q] = count;
         if ((q >= 4 && sc.clockStart <= CLUTCH_WINDOW && margin <= CLUTCH_MARGIN + 3) || (q === 2 && sc.clockStart <= 10 && margin <= 11)) clutchShown++;
-        else shown[q] = (shown[q] ?? 0) + 1;
+        else {
+          shown[q] = (shown[q] ?? 0) + 1;
+          // An extra clip is a trip to the line.
+          if (highlights && extra && !inner.scriptEvents.some((e) => e.type === 'freeThrow')) extraNotFreeThrows.push(q);
+        }
       }
     }
-    return { shown, clutchShown, sounds, events: m.s.events, score: [m.s.teams[0].score, m.s.teams[1].score] };
+    return { shown, plays, extraNotFreeThrows, clutchShown, sounds, events: m.s.events, score: [m.s.teams[0].score, m.s.teams[1].score] };
   }
 
   it('shows five plays a quarter (plus clutch moments), and never changes the result', () => {
@@ -183,8 +196,14 @@ describe('highlights', () => {
     // The same game either way: highlights only decide what is animated.
     expect(best.score).toEqual(full.score);
     expect(best.events).toEqual(full.events);
-    for (const q of [1, 2, 3]) expect(best.shown[q]).toBe(5);
-    expect(best.shown[4] ?? 0).toBeLessThanOrEqual(5);
+    // Five best plays a quarter; on top of them only trips to the line that matter (late in a
+    // quarter, a close finish, an and-one).
+    for (const q of [1, 2, 3]) {
+      expect(best.plays[q]).toBe(5);
+      expect(best.shown[q]).toBeGreaterThanOrEqual(5);
+    }
+    expect(best.plays[4] ?? 0).toBeLessThanOrEqual(5);
+    expect(best.extraNotFreeThrows).toEqual([]);
     expect(Object.values(full.shown).reduce((a, b) => a + b, 0)).toBeGreaterThan(100);
     // Skipped possessions make no sound; the shown ones and the buzzers do.
     expect(best.sounds).toBeLessThan(full.sounds / 3);
@@ -217,4 +236,48 @@ describe('highlights', () => {
     // Threes, dunks, blocks and steals are far more common among the highlights than in the game as a whole.
     expect(shownRate).toBeGreaterThan(baseRate * 1.8);
   }, 120000);
+});
+
+describe('momentum', () => {
+  it('the needle moves as the plays appear on screen, never ahead of them', () => {
+    const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], 2, ['ai', 'ai'], 'normal');
+    m.highlights = false;
+    const inner = m as unknown as { script: unknown; scriptEvents: TimedEvent[] };
+    let seen: unknown = null;
+    let before = 0;
+    let scoringClips = 0;
+    let movedAhead = 0;
+    let movedWithIt = 0;
+    let stoppedRuns = 0;
+    let watching: { side: number; from: number } | null = null;
+    while (m.phase !== 'final') {
+      m.tick(1 / 30);
+      if (m.phase === 'timeout' || m.phase === 'break') m.resume();
+      if (!inner.script) {
+        if (watching && (watching.side === 0 ? m.momentum - watching.from : watching.from - m.momentum) > 0.03) movedWithIt++;
+        watching = null;
+        before = m.momentum;
+        continue;
+      }
+      if (inner.script !== seen) {
+        seen = inner.script;
+        const basket = inner.scriptEvents.find((e) => (e.type === 'shot' || e.type === 'freeThrow') && e.made);
+        if (basket && basket.type !== 'timeout') {
+          scoringClips++;
+          // As the clip starts, the needle has not yet heard about the basket at its end.
+          const side = 'side' in basket ? basket.side : 0;
+          if ((side === 0 ? m.momentum - before : before - m.momentum) > 0.03) movedAhead++;
+          watching = { side, from: m.momentum };
+        }
+      }
+    }
+    for (const e of m.s.events) if (e.type === 'timeout' && e.stoppedRun) stoppedRuns++;
+    expect(scoringClips).toBeGreaterThan(50);
+    // Before: in 99% of scoring clips the needle had already moved towards the scorer as the clip began.
+    expect(movedAhead).toBe(0);
+    expect(movedWithIt).toBeGreaterThan(scoringClips * 0.5);
+    // A timeout after a run against the side calling it says so in the feed.
+    expect(stoppedRuns).toBeGreaterThan(0);
+    for (const e of m.s.events) if (e.type === 'timeout' && e.stoppedRun) expect(commentate(e, m.names)).toContain('that stops the');
+  }, 600000);
 });

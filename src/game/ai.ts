@@ -6,6 +6,7 @@ import { composite, fatigueFactor, positionGroup } from '../engine/ratings';
 import { chance, next, weighted } from '../engine/rng';
 import { inFoulTrouble } from '../engine/rotation';
 import { other } from '../engine/state';
+import { SPACING_PIVOT, spacingScore } from '../engine/tactics';
 import {
   DEFENCE_SCHEMES,
   OFFENSIVE_FOCI,
@@ -175,15 +176,44 @@ function sample<K extends string>(dist: Record<K, number>, rng: RngState): K {
   return weighted(rng, keys, (k) => dist[k]);
 }
 
+/** A scorer's most dangerous way of scoring. */
+function threatOf(p: Player): number {
+  const c = composite(p);
+  return Math.max(c.three, c.midRange, c.driving, c.insideScoring);
+}
+
+/**
+ * How much a double team on `target` should pay off, with `five` on the floor around him (him
+ * included): positive is worth doing, above DOUBLE_WORTH clearly so. It pays against the one big
+ * threat who cannot pass or handle a trap, with few shooters round him; it costs against a
+ * playmaker among shooters, or against anyone who is not their biggest threat.
+ */
+export function doubleTeamWorth(target: Player, five: Player[]): number {
+  const c = composite(target);
+  const others = five.filter((p) => p.id !== target.id);
+  const gap = threatOf(target) - Math.max(...others.map(threatOf));
+  const spacing = spacingScore(five.map((p) => composite(p).three));
+  return 0.25 * gap - 0.12 * (c.playmaking - 60) - 0.08 * (c.ballSecurity - 60) - (spacing - SPACING_PIVOT);
+}
+
+/** Worth above this: double him. */
+export const DOUBLE_WORTH = 6;
+
+/** The opponent's player most worth doubling, and how much, from their likely five. */
+export function bestDoubleTarget(opponent: Team): { target: Player; worth: number } {
+  const five = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall).slice(0, 5);
+  return five.map((p) => ({ target: p, worth: doubleTeamWorth(p, five) })).reduce((a, b) => (b.worth > a.worth ? b : a));
+}
+
 export function aiGamePlan(team: Team, opponent: Team, rng: RngState): GamePlan {
   const t = planTendencies(team, opponent);
-  const oppStars = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall);
-  const gap = composite(oppStars[0]).overall - composite(oppStars[1]).overall;
+  // Double their star only when it pays: a scorer who cannot pass, without shooters round him.
+  const dbl = bestDoubleTarget(opponent);
   return makePlan(team, {
     offence: sample(t.offence, rng),
     defence: sample(t.defence, rng),
     tempo: sample(t.tempo, rng),
-    keyMatchup: gap >= 5 && chance(rng, 0.6) ? { kind: 'double', targetId: oppStars[0].id } : { kind: 'none' },
+    keyMatchup: dbl.worth > DOUBLE_WORTH && chance(rng, 0.8) ? { kind: 'double', targetId: dbl.target.id } : { kind: 'none' },
   });
 }
 

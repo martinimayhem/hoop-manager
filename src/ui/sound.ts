@@ -39,7 +39,14 @@ interface Cut {
   end?: number;
   fadeIn?: number;
   fadeOut?: number;
+  /** Bass boost in dB, below about 150 Hz: more weight under a hit. */
+  bass?: number;
+  /** Another stretch of the same recording mixed in from the start of the cut, at `gain`. */
+  under?: { start: number; end: number; gain: number };
 }
+
+/** Where the bass boost starts to roll off (Hz). */
+const BASS_SHELF_HZ = 150;
 
 /**
  * Which recording plays as which sound. Several cuts for one sound are variations, picked at
@@ -51,6 +58,10 @@ const RECIPES: Partial<Record<SampleName, Cut[]>> = {
   // Softer, for the hush of a free throw; the 2.5 s of silence after it dropped.
   'soft-swish': [{ file: 'ElevenLabs_Swoosh_of_a_basketball_net,_satisfying_and_crisp.mp3', end: 0.65, fadeOut: 0.15 }],
   rim: [{ file: 'basketball_rim_hit.wav', fadeOut: 0.1 }],
+  // The recording has a deep sub-bass whoomp at 0.25 s and the slam itself (the crash on the rim and
+  // its rattle) at 0.85 s, with silence around both. Cut to the slam, with the whoomp laid under its
+  // first instant and the low end lifted, so the hit lands with a boom; the rattle fades by 1.75 s.
+  dunk: [{ file: 'dunk.mp3', start: 0.85, end: 2.6, fadeIn: 0.004, fadeOut: 0.5, bass: 4, under: { start: 0.25, end: 0.45, gain: 0.7 } }],
   // Short bursts for a home basket.
   cheer: [
     { file: 'loud-crowd-cheering.mp3', fadeOut: 0.5 },
@@ -240,11 +251,22 @@ export class Sound {
     const out = ctx.createBuffer(source.numberOfChannels, length, rate);
     let peak = 0;
     let energy = 0;
+    const underFrom = cut.under ? Math.floor(cut.under.start * rate) : 0;
+    const underLength = cut.under ? Math.floor((cut.under.end - cut.under.start) * rate) : 0;
+    // One-pole low-pass for the bass boost: whatever passes it is added back on top.
+    const shelf = Math.exp((-2 * Math.PI * BASS_SHELF_HZ) / rate);
+    const boost = cut.bass ? 10 ** (cut.bass / 20) - 1 : 0;
     for (let ch = 0; ch < source.numberOfChannels; ch++) {
       const src = source.getChannelData(ch);
       const dst = out.getChannelData(ch);
+      let low = 0;
       for (let i = 0; i < length; i++) {
         let v = src[from + i];
+        if (cut.under && i < underLength) v += src[underFrom + i] * cut.under.gain;
+        if (boost) {
+          low = (1 - shelf) * v + shelf * low;
+          v += low * boost;
+        }
         // Equal-power blend: the start fades in while the recording's own end fades out over it.
         if (i < blend) v = v * Math.sqrt(i / blend) + src[from + length + i] * Math.sqrt(1 - i / blend);
         const t = i / rate;
@@ -325,9 +347,10 @@ export class Sound {
           else this.cheer(t, 0.7, 1.8);
           break;
         case 'foul':
-          // \`side\` is the team called for it: against the home team the place erupts.
-          this.whistle(t, [0.6]);
-          this.boo(t + 0.35, home ? 1 : 0.4, home ? 3 : 1.8, home);
+          // `side` is the team called for it. The whistle first, a hard blast that cuts through the
+          // noise; the crowd reacts once it has heard it: against the home team the place erupts.
+          this.whistle(t, [0.55], 1);
+          this.boo(t + 0.6, home ? 1 : 0.4, home ? 3 : 1.8, home);
           break;
         case 'violation':
           this.whistle(t, [0.14, 0.32]);
@@ -742,10 +765,10 @@ export class Sound {
    * The referee's pea whistle: a shrill tone with the pea's rapid warble in both pitch and
    * volume, plus breath. One blast per entry in \`blasts\` (seconds each).
    */
-  private whistle(t: number, blasts: number[]): void {
+  private whistle(t: number, blasts: number[], loud = 0.6): void {
     let at = t;
     for (const length of blasts) {
-      if (this.sample('whistle', at, 0.9, length)) {
+      if (this.sample('whistle', at, 0.9 * (0.5 + loud / 2), length)) {
         at += length + 0.09;
         continue;
       }
@@ -759,8 +782,10 @@ export class Sound {
 
       const g = this.ctx!.createGain();
       g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(0.16, at + 0.012);
-      g.gain.setValueAtTime(0.16, at + length - 0.04);
+      // Loud enough for a foul to stand out over the crowd; a violation or a timeout a little softer.
+      const peak = 0.42 * loud;
+      g.gain.exponentialRampToValueAtTime(peak, at + 0.012);
+      g.gain.setValueAtTime(peak, at + length - 0.04);
       g.gain.exponentialRampToValueAtTime(0.0001, at + length);
       const volumeWobble = this.ctx!.createGain();
       volumeWobble.gain.value = 0.06;
@@ -773,7 +798,7 @@ export class Sound {
 
       const breath = this.ctx!.createGain();
       breath.gain.setValueAtTime(0.0001, at);
-      breath.gain.exponentialRampToValueAtTime(0.05, at + 0.01);
+      breath.gain.exponentialRampToValueAtTime(0.13 * loud, at + 0.01);
       breath.gain.exponentialRampToValueAtTime(0.0001, at + length);
       this.noiseSource(at, length).connect(this.filter('bandpass', 3000, 3)).connect(breath).connect(this.out(1));
       at += length + 0.09;

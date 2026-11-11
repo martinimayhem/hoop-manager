@@ -623,6 +623,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   openBreak = !!transEv?.attack && transEv.situation === 'lane' && !readEv;
   /** Transition events already played out on the way up, so they do not fire twice. */
   const early = new Set<number>();
+  /** A throw-in held back until a technical's free throw has been taken. */
+  let afterTechnical: (() => void) | null = null;
   /**
    * The defence as the engine has it in transition, built from where the defenders really are. Only
    * so many got back: the ones nearest the basket take the rim and the gap (with an open lane, nobody
@@ -657,10 +659,11 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         place(k, j === 0 ? fromHoop(2.03, 0) : fromHoop(4.29, (from.y < MID_Y ? 2.22 : -2.22)));
         paceFor[k] = 'sprint';
       } else if (s > 0.5) {
-        // In front of the ball but beaten: he turns and runs for the basket, wide of the lane on his
-        // side, and gets there after the handler.
-        const reach = Math.min(len - 1.2, s + 3);
-        place(k, insideCourt(onLine(reach, side * Math.max(2.8, Math.abs(lat) + 0.6))));
+        // In front of the ball but beaten: he turns and runs back towards his basket, to about the
+        // free-throw line extended, wide on his side (never across the handler's line), at a run
+        // rather than a sprint: back in the play, but too late to stop it. Not a few steps and a stop.
+        const reach = Math.max(s, len - 6.5);
+        place(k, insideCourt(onLine(reach, side * Math.min(5, Math.max(3.5, Math.abs(lat))))));
         paceFor[k] = 'run';
       } else {
         // Level with the ball or behind it: he chases, trailing it a couple of metres wide on his side.
@@ -1223,6 +1226,20 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     return out;
   };
 
+  /**
+   * Places for a technical free throw: the shooter at the line, everyone else back above it, spread
+   * across the floor; nobody on the lane.
+   */
+  const technicalPlaces = (shooter: string): Record<string, Pos> => {
+    const out: Record<string, Pos> = { [shooter]: { ...FT_SPOT } };
+    const rest = [...offKeys.filter((k) => k !== shooter), ...defIds.map(kDef)].sort((a, b) => at[a].y - at[b].y);
+    rest.forEach((k, j) => {
+      const across = -5.6 + (11.2 * j) / Math.max(1, rest.length - 1);
+      out[k] = fromHoop(j % 2 ? 9.2 : 8.2, across);
+    });
+    return out;
+  };
+
   /** As the last free throw leaves the shooter's hands, the lane steps in to box out. */
   const stepIn = () => {
     for (const k of [...offKeys, ...defIds.map(kDef)]) {
@@ -1368,7 +1385,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           const h = at[shooterKey];
           const others = offKeys.filter((k) => k !== shooterKey);
           const screener = others[others.length - 1];
-          at[screener] = { x: h.x + 0.75, y: h.y + 0.6 };
+          // The screen comes from the middle of the floor, as on the roll.
+          at[screener] = { x: h.x + 0.75, y: h.y + (h.y < MID_Y ? 0.6 : -0.6) };
           contact = [shooterKey, screener];
           push(0.35, dribble(), [], `${shooterName} uses the screen…`, shooterKey, 0.7);
           at[shooterKey] = { ...spot };
@@ -1651,7 +1669,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         break;
       }
       case 'foul': {
-        const next = events.slice(i + 1).find((e) => e.type === 'shot' || e.type === 'freeThrow');
+        // What follows the foul itself (a technical's single shot is something else).
+        const next = events.slice(i + 1).find((e) => e.type === 'shot' || (e.type === 'freeThrow' && !e.technical));
         if (ev.shooting && next?.type === 'shot') {
           // The basket counts: the whistle comes with it.
           andOne = ev;
@@ -1667,19 +1686,65 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           // Side out: thrown in from the sideline level with the foul, and the offence sets up again.
           const where = at[holder] ?? ballSpot;
           const spot: Pos = { x: Math.max(COURT.w / 2 + 1, Math.min(COURT.w - 2.5, where.x)), y: where.y < MID_Y ? -OUT_M : COURT.h + OUT_M };
-          const thrower = offKeys.filter((k) => k !== holder && k !== pg).sort((a, b) => dist(at[a], spot) - dist(at[b], spot))[0];
-          throwIn(spot, thrower, pg, () => setForThrowIn(spot));
-          refSpot = {};
-          spacing = true;
-          autoDefence = true;
+          const sideOut = () => {
+            const thrower = offKeys.filter((k) => k !== holder && k !== pg).sort((a, b) => dist(at[a], spot) - dist(at[b], spot))[0];
+            throwIn(spot, thrower, pg, () => setForThrowIn(spot));
+            refSpot = {};
+            spacing = true;
+            autoDefence = true;
+          };
+          // A technical first, if one is coming: the throw-in waits for its free throw.
+          const tech = events.slice(i + 1).findIndex((e) => e.type === 'technical' || e.type === 'argue');
+          const nextPlay = events.slice(i + 1).findIndex((e) => e.type !== 'technical' && e.type !== 'argue' && !(e.type === 'freeThrow' && e.technical) && e.type !== 'sub');
+          if (tech >= 0 && (nextPlay < 0 || tech < nextPlay)) afterTechnical = sideOut;
+          else sideOut();
         }
         break;
       }
+      case 'technical':
+        // The whistle, and the T with the hands.
+        whistle(i);
+        break;
       case 'freeThrow': {
         const k = sideOf(ev.side)(ev.shooterId);
         spacing = false;
         autoDefence = false;
         rimHit = null;
+        if (ev.technical) {
+          // A technical: one shot, the lane empty, everyone back above the line watching. The ball
+          // is dead whatever happens, and play goes on as it would have.
+          Object.assign(at, technicalPlaces(k));
+          refSpot = { [trail]: { x: FT_SPOT.x - 2, y: TRAIL_Y }, [centre]: { x: FT_SPOT.x - 2, y: CENTRE_Y } };
+          const walk = walkTo();
+          const mark = beats.length;
+          getBall(lead);
+          const over = dist(at[lead], FT_LEAD) / PACE_M_S.walk + 0.5;
+          refSpot[lead] = { ...FT_LEAD };
+          deadBeat = true;
+          push(0, hold(), [], `${n(ev.side, ev.shooterId)} steps to the line for the technical.`, k, Math.max(0.8, walk - since(mark), over));
+          holder = k;
+          deadBeat = true;
+          push(0, { kind: 'pass', from: lead, to: k, arc: 0, style: 'bounce' }, [], undefined, undefined, dist(FT_LEAD, FT_SPOT) / PASS_SPEED.bounce + 0.3);
+          deadBeat = true;
+          push(0, dribble(), [], undefined, undefined, 1.1);
+          deadBeat = true;
+          push(0, hold(), [], undefined, undefined, 0.5);
+          const to = ev.made ? RIM : rimContact(FT_SPOT, seed + i);
+          deadBeat = true;
+          push(0, { kind: 'fromPlayer', from: k, to: ballAbs(to), arc: shotArc(FT_SPOT, 'set'), style: 'set' }, [i], undefined, undefined, 0.9);
+          if (ev.made) {
+            deadBeat = true;
+            push(0, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, 0.25);
+          }
+          // It drops under the basket; the lead official picks it up for whatever comes next.
+          ballSpot = { ...(ev.made ? NET : to) };
+          holder = '';
+          getBall(lead);
+          const then = afterTechnical;
+          afterTechnical = null;
+          if (then) then();
+          break;
+        }
         const last = ev.attempt === ev.of;
         if (ev.attempt === 1) {
           // Everyone walks to his place while the lead official gets the ball under the basket.

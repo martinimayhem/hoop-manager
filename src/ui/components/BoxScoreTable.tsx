@@ -26,6 +26,7 @@ function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side
             <th>BLK</th>
             <th>TO</th>
             <th>PF</th>
+            <th title="Technical fouls">T</th>
             <th>+/-</th>
           </tr>
         </thead>
@@ -40,7 +41,7 @@ function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side
                 </span>
               </td>
               {s.seconds === 0 ? (
-                <td colSpan={13} className="muted">
+                <td colSpan={14} className="muted">
                   DNP
                 </td>
               ) : (
@@ -59,6 +60,7 @@ function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side
                   <td>{s.blk}</td>
                   <td>{s.tov}</td>
                   <td>{s.pf}</td>
+                  <td className={s.tf > 0 ? 'bad' : 'muted'}>{s.tf}</td>
                   <td className={s.plusMinus > 0 ? 'good' : s.plusMinus < 0 ? 'bad' : ''}>{s.plusMinus > 0 ? `+${s.plusMinus}` : s.plusMinus}</td>
                 </>
               )}

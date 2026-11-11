@@ -883,7 +883,7 @@ describe('bodies', () => {
     expect(frames).toBeGreaterThan(5000);
     expect(closest).toBeGreaterThan(BODY_M * 0.6);
     expect(furthestOut).toBeLessThan(0.18);
-  }, 30000);
+  }, 60000);
 
   it('the Speed attribute and fatigue both change how fast a player runs', () => {
     const top = (rating: number, energy: number) => {

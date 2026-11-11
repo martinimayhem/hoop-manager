@@ -8,7 +8,7 @@ export function other(side: Side): Side {
 }
 
 export function emit(s: MatchState, ev: MatchEvent): void {
-  s.events.push({ ...ev, quarter: s.quarter, clock: s.clock, score: [s.teams[0].score, s.teams[1].score] });
+  s.events.push({ ...ev, quarter: s.quarter, clock: s.clock, score: [s.teams[0].score, s.teams[1].score], momentum: s.momentum });
 }
 
 const rosterCache = new WeakMap<Team, Map<string, Player>>();

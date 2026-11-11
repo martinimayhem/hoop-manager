@@ -1,6 +1,7 @@
 // Fuzzy information. Ratings of players you don't own are shown as ranges; famous players are
 // well documented (narrow ranges), unknowns are a guess. The true value always lies inside the range.
 
+import { composite, type Composite } from '../engine/ratings';
 import type { Attributes, Player } from '../engine/types';
 import { hashUnit } from './pricing';
 
@@ -71,3 +72,21 @@ export function potentialStars(player: Player, accuracy: number): number {
 export function formatRange(r: Range): string {
   return r.lo === r.hi ? String(r.lo) : `${r.lo}–${r.hi}`;
 }
+
+/**
+ * A game rating (3-point shooting, guarding, overall…) as the scouts see it: worked out from every
+ * attribute at the low end of its range and again at the high end. Height and weight are known.
+ */
+export function scoutRating(player: Player, key: Exclude<keyof Composite, 'height'>, hype: number, accuracy: number): Range {
+  const at = (end: 'lo' | 'hi'): Player => {
+    const attrs = { ...player.attrs };
+    for (const k of SCOUTED) attrs[k] = scoutAttr(player, k, hype, accuracy)[end];
+    // A new object: the composite cache keeps the real player's numbers apart.
+    return { ...player, attrs };
+  };
+  const lo = Math.round(composite(at('lo'))[key]);
+  const hi = Math.round(composite(at('hi'))[key]);
+  return { lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
+}
+
+const SCOUTED: AttrKey[] = ['speed', 'stamina', 'shooting', 'three', 'freeThrow', 'layup', 'dunk', 'passing', 'dribbling', 'rebounding', 'tactics'];

@@ -121,8 +121,18 @@ export function describe(ev: TimedEvent, names: Names): string | null {
     }
     case 'freeThrow': {
       const p = names.player(ev.side, ev.shooterId);
+      if (ev.technical) return `${p} ${ev.made ? 'makes' : 'misses'} the technical free throw.`;
       return `${p} ${ev.made ? 'makes' : 'misses'} free throw ${ev.attempt} of ${ev.of}.`;
     }
+    case 'technical': {
+      const who = ev.playerId ? names.player(ev.side, ev.playerId) : `the ${names.team(ev.side)} coach`;
+      if (ev.ejected) return ev.playerId ? `Second technical on ${who}: he is ejected!` : `Second technical on ${who}: he is ejected! The assistant takes over.`;
+      return variant(ev, [`Technical foul on ${who}!`, `That is a technical on ${who}: one word too many.`]);
+    }
+    case 'argue':
+      return ev.technical
+        ? `The ${names.team(ev.side)} coach lets the official have it…`
+        : variant(ev, [`The ${names.team(ev.side)} coach is all over the official, and the bench is fired up!`, `The ${names.team(ev.side)} coach argues the call: the crowd is behind him.`]);
     case 'fastBreak':
       return '';
     case 'transition': {
@@ -145,12 +155,13 @@ export function describe(ev: TimedEvent, names: Names): string | null {
       return ev.passedToId ? `Double team on ${t}, who kicks it out to ${names.player(ev.side, ev.passedToId)}.` : `${t} is double-teamed and forced into a tough shot.`;
     }
     case 'sub': {
-      const why = ev.reason === 'fatigue' ? ' (tired)' : ev.reason === 'fouls' ? ' (foul trouble)' : ev.reason === 'foulOut' ? ' (fouled out)' : '';
+      const why = ev.reason === 'fatigue' ? ' (tired)' : ev.reason === 'fouls' ? ' (foul trouble)' : ev.reason === 'foulOut' ? ' (fouled out)' : ev.reason === 'ejected' ? ' (ejected)' : '';
       return `Sub ${names.team(ev.side)}: ${names.player(ev.side, ev.inId)} in for ${names.player(ev.side, ev.outId)}${why}.`;
     }
     case 'foulOut':
       return `${names.player(ev.side, ev.playerId)} has fouled out!`;
     case 'timeout':
+      if (ev.stoppedRun) return `Timeout ${names.team(ev.side)} (${ev.remaining} left): that stops the ${names.team(ev.side === 0 ? 1 : 0)} run.`;
       return `Timeout ${names.team(ev.side)} (${ev.remaining} left).`;
     case 'playCall':
       return `${names.team(ev.side)} call: ${CALL_NAMES[ev.call]}.`;

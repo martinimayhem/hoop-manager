@@ -365,3 +365,50 @@ describe('bodies', () => {
     }, 600000);
   }
 });
+
+describe('getting back', () => {
+  it('on a break with nobody back, every defender still runs back: none stays at the other end', () => {
+    let breaks = 0;
+    const stayed: string[] = [];
+    for (const [seed, highlights] of [[1, true], [2, true], [1, false]] as const) {
+      const plans = [makePlan(HARBOR_HAMMERS, { offence: 'fastBreak', tempo: 'fast' }), makePlan(SKYLINE_SPARKS, { offence: 'balanced', defence: 'zone', tempo: 'fast' })] as const;
+      const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [plans[0], plans[1]], seed, ['ai', 'ai'], 'normal');
+      m.highlights = highlights;
+      const inner = m as unknown as { script: Script | null; scriptEvents: TimedEvent[]; durations: number[]; t: number; motion: Motion };
+      let seen: Script | null = null;
+      let watch: { rim: P; start: Record<string, P>; end: Record<string, P> | null } | null = null;
+      const done = () => {
+        if (!watch?.end) return;
+        breaks++;
+        for (const [k, p] of Object.entries(watch.start)) {
+          const q = watch.end[k];
+          if (q && dist(p, watch.rim) > 12 && dist(p, watch.rim) - dist(q, watch.rim) < 4) stayed.push(`seed ${seed}: ${k}`);
+        }
+      };
+      for (let i = 0; i < 2_000_000 && m.phase !== 'final'; i++) {
+        m.tick(DT);
+        if (m.phase === 'timeout' || m.phase === 'break') m.resume();
+        const sc = inner.script;
+        if (sc !== seen) {
+          done();
+          watch = null;
+          seen = sc;
+          const tr = sc && inner.scriptEvents.find((e) => e.type === 'transition');
+          if (sc && tr?.type === 'transition' && tr.attack && tr.situation === 'lane' && inner.scriptEvents.some((e) => e.type === 'fastBreak')) {
+            const def = sc.offence === 0 ? '1:' : '0:';
+            const start = Object.fromEntries(Object.entries(inner.motion.pos).filter(([k]) => k.startsWith(def)).map(([k, p]) => [k, { ...p }]));
+            watch = { rim: sc.dir === 1 ? { x: HOOP_X, y: MID_Y } : { x: COURT.w - HOOP_X, y: MID_Y }, start, end: null };
+          }
+        }
+        // Where they are as the shot goes up.
+        if (watch && sc && !watch.end && sc.beats[beatAt(sc, inner.durations, inner.t).index].ball.kind === 'fromPlayer') {
+          watch.end = Object.fromEntries(Object.entries(inner.motion.pos).map(([k, p]) => [k, { ...p }]));
+        }
+      }
+      done();
+    }
+    expect(breaks).toBeGreaterThan(10);
+    // Before: about two defenders a break took a few steps and stopped, 20 m from the play.
+    expect(stayed).toEqual([]);
+  }, 600000);
+});

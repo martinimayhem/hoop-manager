@@ -69,7 +69,7 @@ function teamState(team: Team, plan: GamePlan): TeamGameState {
   return {
     team,
     plan,
-    players: Object.fromEntries(team.players.map((p) => [p.id, { id: p.id, energy: 100, fouls: 0, fouledOut: false, stats: emptyStats() }])),
+    players: Object.fromEntries(team.players.map((p) => [p.id, { id: p.id, energy: 100, fouls: 0, fouledOut: false, technicals: 0, ejected: false, stats: emptyStats() }])),
     lineup: [...plan.starters],
     score: 0,
     quarterPoints: [0, 0, 0, 0],
@@ -79,6 +79,8 @@ function teamState(team: Team, plan: GamePlan): TeamGameState {
     lateTimeoutsUsed: 0,
     extras: emptyExtras(),
     morale: 0,
+    coachTechnicals: 0,
+    coachEjected: false,
   };
 }
 
@@ -172,6 +174,8 @@ export function setGamePlan(s: MatchState, side: Side, plan: GamePlan): void {
 }
 
 export const TIMEOUT_ENERGY = 8;
+/** Momentum this far the other way (about a 5-0 run) is a run worth stopping. */
+export const RUN_MOMENTUM = 0.15;
 
 /**
  * A team calls a timeout at a dead ball: kills the opponent's momentum and gives everyone on court a breather.
@@ -182,9 +186,12 @@ export function callTimeout(s: MatchState, side: Side): boolean {
   if (!canCallTimeout(s, side)) return false;
   team.timeoutsLeft--;
   if (inLateWindow(s)) team.lateTimeoutsUsed++;
+  // The other side was on a run: the timeout is there to stop it.
+  const against = side === 0 ? -s.momentum : s.momentum;
+  const stoppedRun = against >= RUN_MOMENTUM;
   s.momentum *= 0.3;
   for (const t of s.teams) for (const id of t.lineup) t.players[id].energy = Math.min(100, t.players[id].energy + TIMEOUT_ENERGY);
-  emit(s, { type: 'timeout', side, remaining: team.timeoutsLeft });
+  emit(s, { type: 'timeout', side, remaining: team.timeoutsLeft, stoppedRun: stoppedRun || undefined });
   return true;
 }
 

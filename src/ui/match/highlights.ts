@@ -40,6 +40,12 @@ export function excitement(events: TimedEvent[], scoreBefore: [number, number], 
       case 'doubleTeam':
         points += 0.5;
         break;
+      case 'technical':
+        points += ev.ejected ? 3 : 1.5;
+        break;
+      case 'argue':
+        points += 0.5;
+        break;
     }
   }
 

@@ -27,6 +27,8 @@ import {
   halfCourtSeconds,
   laneClosesChance,
   OPEN_FINISH,
+  TECHNICAL,
+  temperOf,
   SHOT_SKILL,
   SHOOTER_CENTRE,
   DEFENDER_CENTRE,
@@ -93,6 +95,8 @@ interface Ctx {
   buzzer: boolean;
   /** Behind late in the game: quick shots, threes first. */
   hurry: boolean;
+  /** The coach's argue call (if any) has been used on a foul this possession. */
+  argued: boolean;
 }
 
 /** Plays one possession for `s.possession`, mutating the state. Leaves `s.possession` set to whoever has the ball next. */
@@ -100,7 +104,7 @@ export function playPossession(s: MatchState): void {
   const off = s.possession;
   const c: Ctx = {
     s, off, def: other(off), secondChance: false, fastBreak: false, open: false, done: false, calls: s.calls ?? {}, setUsed: false,
-    shotClock: SHOT_CLOCK, lateClock: false, buzzer: false, hurry: false,
+    shotClock: SHOT_CLOCK, lateClock: false, buzzer: false, hurry: false, argued: false,
   };
   s.calls = null;
   s.teams[off].extras.possessions++;
@@ -405,6 +409,7 @@ function runHalfCourt(c: Ctx): void {
     const onId = weighted(s.rng, lineup, (id) => eff(s, c.off, id, 'ballSecurity'));
     const fouler = weighted(s.rng, s.teams[c.def].lineup, (id) => 110 - eff(s, c.def, id, 'perimeterD'));
     const bonus = commitFoul(c, fouler, onId, false);
+    afterCall(c, fouler);
     if (bonus) {
       freeThrows(c, onId, 2);
     }
@@ -491,18 +496,49 @@ function runHalfCourt(c: Ctx): void {
     shooter = pickShooter(c, (id) => eff(s, c.off, id, key) + (play === 'post' ? postBias(playerOf(s, c.off, id).position) : 0), doubled);
   }
 
+  const threat = (id: string) => Math.max(eff(s, c.off, id, 'three'), eff(s, c.off, id, 'midRange'), eff(s, c.off, id, 'driving'), eff(s, c.off, id, 'insideScoring'));
   if (doubled && shooter === doubled) {
-    if (chance(s.rng, DOUBLE_TEAM.passOutChance)) {
-      const outlet = pickShooter(c, (id) => Math.max(eff(s, c.off, id, 'three'), eff(s, c.off, id, 'midRange')), null, doubled);
+    // The trap: two on the ball. A poor ball handler against a quick, smart pair loses it.
+    const handling = eff(s, c.off, doubled, 'ballSecurity');
+    const trappers = (teamAvg(s, c.def, 'perimeterD') + avgAttr(s, c.def, 'tactics')) / 2;
+    const trap = clamp(DOUBLE_TEAM.trapBase + (70 - handling) * DOUBLE_TEAM.trapPerHandling + (trappers - 70) * DOUBLE_TEAM.trapPerDefence, DOUBLE_TEAM.trapMin, DOUBLE_TEAM.trapMax);
+    if (chance(s.rng, trap)) {
+      emit(s, { type: 'doubleTeam', side: c.off, targetId: doubled });
+      const stealer = weighted(s.rng, s.teams[c.def].lineup, (id) => Math.exp((eff(s, c.def, id, 'perimeterD') - 60) / 10));
+      turnover(c, doubled, chance(s.rng, 0.6) ? stealer : undefined, 'pressTrap');
+      return;
+    }
+    const passing = eff(s, c.off, doubled, 'playmaking');
+    const passOut = clamp(
+      DOUBLE_TEAM.passOutBase + (passing - 60) * DOUBLE_TEAM.passOutPerPassing + Math.max(0, 80 - threat(doubled)) * DOUBLE_TEAM.passOutPerNoThreat,
+      DOUBLE_TEAM.passOutMin,
+      DOUBLE_TEAM.passOutMax,
+    );
+    if (chance(s.rng, passOut)) {
+      // Whoever was left open: any of the four, the one his defender left to help, not the best shooter by right.
+      const outlet = pickShooter(c, () => 60, null, doubled);
+      const three = eff(s, c.off, outlet, 'three');
+      const mid = eff(s, c.off, outlet, 'midRange');
+      const inside = eff(s, c.off, outlet, 'rollFinish');
+      // He takes what he is good at: the open three, a step-in jumper, or a cut to the rim.
+      shotType = inside > Math.max(three, mid) + 5 ? 'pnrRoll' : three >= mid - 8 ? 'three' : 'mid';
       emit(s, { type: 'doubleTeam', side: c.off, targetId: doubled, passedToId: outlet });
-      shotType = eff(s, c.off, outlet, 'three') >= eff(s, c.off, outlet, 'midRange') - 8 ? 'three' : 'mid';
       shooter = outlet;
       assist = doubled;
-      extra += DOUBLE_TEAM.openShotMod;
+      const rotation = (avgAttr(s, c.def, 'tactics') + teamAvg(s, c.def, 'perimeterD')) / 2;
+      extra += DOUBLE_TEAM.openShotMod + (passing - 70) * DOUBLE_TEAM.openPerPassing + (rotation - 70) * DOUBLE_TEAM.openPerRotation;
     } else {
       emit(s, { type: 'doubleTeam', side: c.off, targetId: doubled });
-      extra += DOUBLE_TEAM.targetShotMod;
+      extra += DOUBLE_TEAM.forcedShotMod;
     }
+  } else if (doubled) {
+    // The defence leans towards the doubled man all the time: everyone else has a little more room,
+    // the more so with shooters spread round him, or with a bigger threat than him left alone.
+    const bestOther = Math.max(...lineup.filter((id) => id !== doubled).map(threat));
+    extra +=
+      DOUBLE_TEAM.stretched +
+      Math.max(0, spacing(c) - SPACING_PIVOT) * DOUBLE_TEAM.stretchedPerSpacing +
+      Math.max(0, bestOther - threat(doubled)) * DOUBLE_TEAM.stretchedPerThreatGap;
   }
 
   shoot(c, shotType, shooter, assist, extra);
@@ -769,6 +805,94 @@ function commitFoul(c: Ctx, fouler: string, onId: string, shooting: boolean): bo
     emit(s, { type: 'foulOut', side: c.def, playerId: fouler });
   }
   return bonus;
+}
+
+// ---------------------------------------------------------------------------
+// Technical fouls
+
+/**
+ * The moment after a non-shooting foul is called on the defence (a reach-in, a hold: the ball is
+ * dead, nothing is in the air): the coach argues it (if he said he would), or the player called for
+ * it may complain one word too many. A technical is one free throw for the
+ * other side, then play goes on as it would have.
+ */
+function afterCall(c: Ctx, fouler: string): void {
+  const s = c.s;
+  const team = s.teams[c.def];
+  // A coach argues when he said he would; one left to himself (not a person playing) now and then,
+  // but never once he has a technical.
+  const argues = c.calls.argue === c.def || (!s.humanCoach?.[c.def] && team.coachTechnicals === 0 && chance(s.rng, TECHNICAL.aiArgue));
+  if (argues && !c.argued && !team.coachEjected) {
+    c.argued = true;
+    coachArgues(c);
+    return;
+  }
+  const ps = pstate(s, c.def, fouler);
+  if (ps.ejected) return;
+  if (chance(s.rng, TECHNICAL.player * heat(s, c.def, fouler) * temperOf(playerOf(s, c.def, fouler)))) technical(c, fouler);
+}
+
+/** How heated it is for `side`: late in a close game, a run against them, a player in foul trouble. */
+function heat(s: MatchState, side: Side, playerId: string): number {
+  let h = 1;
+  const margin = Math.abs(s.teams[0].score - s.teams[1].score);
+  if (s.quarter >= 4 && s.clock <= 300 && margin <= 6) h += TECHNICAL.closeGame;
+  const against = side === 0 ? -s.momentum : s.momentum;
+  if (against > 0.3) h += TECHNICAL.runAgainst;
+  if (pstate(s, side, playerId).fouls >= 4) h += TECHNICAL.foulTrouble;
+  return h;
+}
+
+function coachArgues(c: Ctx): void {
+  const s = c.s;
+  const team = s.teams[c.def];
+  const t = chance(s.rng, TECHNICAL.argue);
+  emit(s, { type: 'argue', side: c.def, technical: t });
+  if (t) {
+    technical(c, undefined);
+    return;
+  }
+  // The bench is up and so is the crowd behind them.
+  team.morale = clamp(team.morale + TECHNICAL.argueMorale, -1, 1);
+  s.momentum = clamp(s.momentum + (c.def === 0 ? TECHNICAL.argueMomentum : -TECHNICAL.argueMomentum), -1, 1);
+}
+
+/** A technical on the defence: on `playerId`, or on the coach. One free throw for the offence. */
+function technical(c: Ctx, playerId: string | undefined): void {
+  const s = c.s;
+  const team = s.teams[c.def];
+  let ejected = false;
+  if (playerId) {
+    const ps = team.players[playerId];
+    ps.technicals++;
+    ps.stats.tf++;
+    if (ps.technicals >= TECHNICAL.ejectAt) {
+      ejected = true;
+      ps.ejected = true;
+      // Off the floor like a player who fouled out: the next dead ball he is replaced.
+      ps.fouledOut = true;
+    }
+  } else {
+    team.coachTechnicals++;
+    if (team.coachTechnicals >= TECHNICAL.ejectAt) {
+      ejected = true;
+      team.coachEjected = true;
+    }
+  }
+  emit(s, { type: 'technical', side: c.def, playerId, ejected: ejected || undefined });
+  s.momentum = clamp(s.momentum + (c.off === 0 ? TECHNICAL.momentum : -TECHNICAL.momentum), -1, 1);
+  team.morale = clamp(team.morale - TECHNICAL.morale, -1, 1);
+  // Their best free-throw shooter on the floor takes it.
+  const shooter = bestOnCourt(s, c.off, 'freeThrow');
+  const ft = eff(s, c.off, shooter, 'freeThrow');
+  const made = chance(s.rng, clamp(0.35 + 0.55 * (ft / 100), 0.4, 0.95));
+  const stats = pstate(s, c.off, shooter).stats;
+  stats.fta++;
+  if (made) {
+    stats.ftm++;
+    score(c, shooter, 1, 'ft');
+  }
+  emit(s, { type: 'freeThrow', side: c.off, shooterId: shooter, made, attempt: 1, of: 1, technical: true });
 }
 
 function freeThrows(c: Ctx, shooter: string, count: number): void {

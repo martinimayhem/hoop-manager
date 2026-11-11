@@ -7,6 +7,8 @@ import { createMatch, makePlan, simulateMatch, type MatchResult } from '../src/e
 import { playPossession } from '../src/engine/possession';
 import { composite } from '../src/engine/ratings';
 import { pressTurnoverChance } from '../src/engine/tactics';
+import { createRng } from '../src/engine/rng';
+import { DOUBLE_WORTH, aiGamePlan, bestDoubleTarget, doubleTeamWorth } from '../src/game/ai';
 import type { GamePlan, Team } from '../src/engine/types';
 
 const GAMES = 120;
@@ -139,5 +141,57 @@ describe('fast breaks', () => {
     expect(otherBlocks).toBe(0);
     expect(chaseDowns).toBeGreaterThan(0);
     expect(chaseDowns / open).toBeLessThan(0.04);
+  });
+});
+
+describe('double team', () => {
+  const best = (t: Team) => [...t.players].sort((a, b) => composite(b).overall - composite(a).overall)[0];
+  const weakStarter = (t: Team) => [...t.players].slice(0, 5).sort((a, b) => composite(a).overall - composite(b).overall)[0];
+  const withAttrs = (t: Team, id: string, patch: Partial<Team['players'][number]['attrs']>): Team => ({
+    ...mirrorTeam(t, 'MOD'),
+    players: t.players.map((p) => (p.id === id ? { ...p, attrs: { ...p.attrs, ...patch } } : p)),
+  });
+  /** Points per 100 possessions `off` scores against `def`, with `def` doubling `target` or not. */
+  const ortg = (off: Team, def: Team, target: string | null, games = 300) => {
+    let pts = 0;
+    let poss = 0;
+    for (let seed = 1; seed <= games; seed++) {
+      const r = simulateMatch(def, off, makePlan(def, { keyMatchup: target ? { kind: 'double', targetId: target } : { kind: 'none' } }), makePlan(off), seed);
+      pts += r.state.teams[1].score;
+      poss += r.state.teams[1].extras.possessions;
+    }
+    return (100 * pts) / poss;
+  };
+  const change = (off: Team, def: Team, target: string) => ortg(off, def, target) - ortg(off, def, null);
+
+  it('pays against a scorer who cannot pass, among poor shooters', () => {
+    const star = best(HARBOR_HAMMERS);
+    const scorer = withAttrs(HARBOR_HAMMERS, star.id, { layup: 95, dunk: 95, shooting: 85, speed: 80, passing: 35, dribbling: 45, tactics: 45 });
+    // Measured about -4.6 per 100 possessions.
+    expect(change(scorer, mirrorTeam(SKYLINE_SPARKS, 'D'), star.id)).toBeLessThan(-2.5);
+  }, 120000);
+
+  it('costs against a playmaker among shooters, and against a player who is no threat', () => {
+    const star = best(SKYLINE_SPARKS);
+    const playmaker = withAttrs(SKYLINE_SPARKS, star.id, { passing: 95, dribbling: 92, tactics: 92, three: 90, shooting: 88 });
+    // Measured about +2.9 and +3.4 per 100 possessions.
+    expect(change(playmaker, mirrorTeam(HARBOR_HAMMERS, 'D'), star.id)).toBeGreaterThan(1.2);
+    expect(change(HARBOR_HAMMERS, mirrorTeam(SKYLINE_SPARKS, 'D'), weakStarter(HARBOR_HAMMERS).id)).toBeGreaterThan(1.5);
+  }, 120000);
+
+  it('the AI and the assistant only double when it pays', () => {
+    const star = best(HARBOR_HAMMERS);
+    const scorer = withAttrs(HARBOR_HAMMERS, star.id, { layup: 95, dunk: 95, shooting: 85, speed: 80, passing: 35, dribbling: 45, tactics: 45 });
+    const five = (t: Team) => [...t.players].sort((a, b) => composite(b).overall - composite(a).overall).slice(0, 5);
+    expect(doubleTeamWorth(scorer.players.find((p) => p.id === star.id)!, five(scorer))).toBeGreaterThan(DOUBLE_WORTH);
+    // Their playmaker among shooters, and anyone who is not their biggest threat: not worth it.
+    expect(bestDoubleTarget(SKYLINE_SPARKS).worth).toBeLessThan(DOUBLE_WORTH);
+    expect(doubleTeamWorth(weakStarter(HARBOR_HAMMERS), five(HARBOR_HAMMERS))).toBeLessThan(0);
+    // The AI's plan against them follows.
+    let doubles = 0;
+    for (let i = 0; i < 20; i++) if (aiGamePlan(mirrorTeam(SKYLINE_SPARKS, 'D'), SKYLINE_SPARKS, createRng(i)).keyMatchup.kind === 'double') doubles++;
+    expect(doubles).toBe(0);
+    for (let i = 0; i < 20; i++) if (aiGamePlan(mirrorTeam(SKYLINE_SPARKS, 'D'), scorer, createRng(i)).keyMatchup.kind === 'double') doubles++;
+    expect(doubles).toBeGreaterThan(10);
   });
 });

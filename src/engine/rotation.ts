@@ -72,11 +72,11 @@ export function updateRotation(s: MatchState, side: Side): void {
   for (const id of [...team.lineup]) {
     const ps = team.players[id];
     let reason: SubReason | null = null;
-    if (ps.fouledOut) reason = 'foulOut';
+    if (ps.fouledOut) reason = ps.ejected ? 'ejected' : 'foulOut';
     else if (inFoulTrouble(s, side, id)) reason = 'fouls';
     else if (ps.energy < (closing ? CLOSING_SUB_OUT_ENERGY : SUB_OUT_ENERGY)) reason = 'fatigue';
     if (!reason) continue;
-    const replacement = findReplacement(s, side, id, reason === 'foulOut');
+    const replacement = findReplacement(s, side, id, reason === 'foulOut' || reason === 'ejected');
     if (replacement) substitute(s, side, id, replacement, reason);
   }
 

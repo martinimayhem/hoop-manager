@@ -6,7 +6,7 @@ import type { MatchState, Player, PlayerStats, Side, TeamExtras } from './types'
 export function emptyStats(): PlayerStats {
   return {
     seconds: 0, pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0,
-    oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, plusMinus: 0,
+    oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, tf: 0, plusMinus: 0,
   };
 }
 

@@ -58,3 +58,14 @@ export function ProbBars<K extends string>({ dist, labels }: { dist: Record<K, n
     </div>
   );
 }
+
+/** A match rating (0-10), coloured from poor to excellent; a dash before he has played. */
+export function RatingBadge({ r }: { r: number | null }) {
+  if (r === null) return <span className="rating muted">–</span>;
+  const colour = r >= 7.5 ? 'var(--good)' : r >= 6 ? '#b8d86b' : r >= 5 ? 'var(--warn)' : 'var(--bad)';
+  return (
+    <span className="rating" style={{ background: colour }}>
+      {r.toFixed(1)}
+    </span>
+  );
+}
