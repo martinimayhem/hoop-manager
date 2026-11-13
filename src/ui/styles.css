@@ -376,6 +376,10 @@ tr.taken {
    play-by-play above and the stats below line up with it. */
 .match {
   --court-w: min(100%, calc((100vh - 315px) * 2));
+  /* The middle column is never wider than the court: the team panels take what is left over, so
+     there is no empty strip beside the court. Anything beyond that goes to the outer edges. */
+  grid-template-columns: minmax(250px, 460px) min(calc(100% - 520px), calc((100vh - 315px) * 2)) minmax(250px, 460px);
+  justify-content: center;
 }
 .court-box {
   background: #05090b;
@@ -2218,4 +2222,204 @@ select:focus {
 }
 .scout-table .stars {
   white-space: nowrap;
+}
+
+/* ---- Team panels: minutes and fouls in fixed columns, so every row lines up ---- */
+.pl {
+  grid-template-columns: auto minmax(0, 1fr) 30px;
+}
+.pl .pl-sub .mins {
+  width: 20px;
+  text-align: right;
+}
+.pl .fouls {
+  width: 30px;
+  text-align: right;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: -1px;
+}
+.pl.compact {
+  grid-template-columns: auto minmax(0, 1fr) 54px 18px;
+  gap: 2px 4px;
+}
+.pl.compact .pl-sub {
+  gap: 4px;
+}
+.pl.compact .fouls {
+  width: 18px;
+  font-size: 7px;
+}
+.pl.compact .pl-sub {
+  justify-content: flex-end;
+}
+
+/* With the game stats open over the court, they have the floor: the player of the game is in the table. */
+.court-box:has(> .feeds) .ov-star {
+  display: none;
+}
+
+/* ---- A player's card, beside the team panel while the mouse is over him ---- */
+.pcard {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  background: linear-gradient(180deg, #172338, #0c1420);
+  border: 1px solid #2a3a52;
+  border-top: 3px solid var(--team);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px #000c;
+  padding: 10px 12px 12px;
+  font-size: 12px;
+  color: #d6deec;
+}
+.pcard-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.pcard-head .portrait {
+  margin: 0;
+}
+.pcard-who {
+  min-width: 0;
+}
+.pcard-name {
+  font-family: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  font-stretch: condensed;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.1;
+}
+.pcard-no {
+  color: var(--team);
+}
+.pcard-meta {
+  color: #8d9ab5;
+  font-size: 11.5px;
+}
+.pcard-status {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 4px 6px;
+  background: #ffffff0a;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #b9c4d8;
+}
+.pcard-section {
+  margin: 9px 0 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8d9ab5;
+}
+.pcard-tiles {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.pcard-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 0;
+  background: #ffffff0a;
+  border-radius: 4px;
+}
+.pcard-tile b {
+  font-size: 15px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.pcard-tile span {
+  font-size: 9.5px;
+  color: #8d9ab5;
+}
+.pcard-tile .rating {
+  font-size: 12px;
+  padding: 0 3px;
+  color: #000;
+}
+.pcard-shooting {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 11px;
+  color: #8d9ab5;
+}
+.pcard-shooting b {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.pcard-shooting i {
+  font-style: normal;
+  color: #b9c4d8;
+}
+.pcard-ratings {
+  display: grid;
+  gap: 3px;
+}
+.pcard-rating {
+  display: grid;
+  grid-template-columns: 92px 1fr 24px;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.pcard-rating b {
+  text-align: right;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.pcard-bar {
+  height: 6px;
+  background: #22344a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.pcard-bar span {
+  display: block;
+  height: 100%;
+}
+.pcard-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #8d9ab5;
+  font-style: italic;
+}
+
+/* The name and position on one line: the name is shortened, the position always shows. */
+.pl .pl-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pl .pl-name .shirt-no {
+  margin-right: 0;
+  flex-shrink: 0;
+}
+.pl .pl-n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl .pl-pos,
+.pl .pl-name .pending {
+  flex-shrink: 0;
+}
+
+/* The buttons under the court line up with it, edge to edge. */
+.match .controls {
+  width: var(--court-w);
+  margin: 0 auto;
+}
+.pl.compact .bar {
+  min-width: 0;
+  flex-shrink: 0;
 }

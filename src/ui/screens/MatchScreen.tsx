@@ -10,6 +10,7 @@ import { BoxScoreTables } from '../components/BoxScoreTable';
 import { Portrait, ShirtNumber } from '../components/Portrait';
 import { featuresUrl, lookOf } from '../looks';
 import { EnergyBar } from '../components/common';
+import { PlayerCard, type CardAnchor } from '../components/PlayerCard';
 import { BreakScreen } from '../components/BreakScreen';
 import { CourtOverlays, Gamecast, PlayByPlay } from '../components/Gamecast';
 import { REFS, playerKey } from '../court/animation';
@@ -400,6 +401,8 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
   const colour = side === 0 ? 'var(--home)' : 'var(--away)';
   const [picked, setPicked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The player the mouse is over: his card shows beside the panel. */
+  const [hover, setHover] = useState<{ id: string; at: CardAnchor } | null>(null);
   const upcoming = m.lineupAfterQueue(side);
   const canAct = human && m.phase === 'playing';
   const nameOf = (id: string) => team.players.find((p) => p.id === id)?.name ?? id;
@@ -432,22 +435,26 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
         key={id}
         className={`pl ${compact ? 'compact' : ''} ${v.fouledOut ? 'out' : ''} ${canAct ? 'clickable' : ''} ${picked === id ? 'picked' : ''}`}
         onClick={() => click(id)}
-        title={canAct ? 'Click a player on court and one on the bench to substitute' : undefined}
+        onMouseEnter={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setHover({ id, at: { top: r.top, left: r.left, right: r.right } });
+        }}
+        onMouseLeave={() => setHover((h) => (h?.id === id ? null : h))}
       >
         <Portrait player={p} side={side} size={compact ? 30 : 40} />
         <span className="pl-name">
           <ShirtNumber player={p} side={side} />
-          {p.name}&nbsp;<span className="muted">{p.position}</span>
-          {goingOut && <span className="pending"> ⬇ out</span>}
-          {comingIn && <span className="pending"> ⬆ in</span>}
+          {/* The name gives way before the position does. */}
+          <span className="pl-n" title={p.name}>{p.name}</span>
+          <span className="pl-pos muted">{p.position}</span>
+          {goingOut && <span className="pending">⬇ out</span>}
+          {comingIn && <span className="pending">⬆ in</span>}
         </span>
         <span className="pl-sub">
-          <EnergyBar energy={v.energy} width={compact ? 54 : 88} />
-          <span className="mins muted" title="Minutes played">
-            {Math.floor(v.seconds / 60)}′
-          </span>
+          <EnergyBar energy={v.energy} width={compact ? 30 : 88} />
+          <span className="mins muted">{Math.floor(v.seconds / 60)}′</span>
         </span>
-        <span className="fouls" title={v.technicals > 0 ? 'Personal fouls, and a technical (two and he is ejected)' : 'Personal fouls'}>
+        <span className="fouls">
           {v.ejected ? 'EJECTED' : v.fouledOut ? 'OUT' : '●'.repeat(v.fouls)}
           {!v.fouledOut && v.technicals > 0 && <span className="bad"> T</span>}
         </span>
@@ -508,6 +515,16 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
       {view.lineup.map((id) => row(id))}
       <h3 style={{ marginTop: 6 }}>Bench</h3>
       {bench.map((id) => row(id, true))}
+      {hover && view.players[hover.id] && (
+        <PlayerCard
+          player={team.players.find((p) => p.id === hover.id)!}
+          state={view.players[hover.id]}
+          side={side}
+          own={human}
+          onCourt={view.lineup.includes(hover.id)}
+          anchor={hover.at}
+        />
+      )}
 
     </div>
   );
