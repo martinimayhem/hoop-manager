@@ -282,23 +282,21 @@ describe('floor spacing and positions', () => {
     let checked = 0;
     let onBall = 0;
     let offBall = 0;
-    eachScript(planWith({ defence: 'man' }), 2, (script, _e, _s, lineups) => {
+    eachScript(planWith({ defence: 'man' }), 2, (script) => {
       const hoop = hoopOf(script);
-      const off = script.offence;
       for (const beat of script.beats) {
-        if (beat.phase !== 'setUp') continue;
+        if (beat.phase !== 'setUp' || !beat.marking) continue;
         const holder = beat.ball.kind === 'held' ? beat.ball.holder : null;
-        const guards = lineups[other(off)];
-        lineups[off].forEach((id, i) => {
-          const manKey = playerKey(off, id);
-          const defKey = playerKey(other(off), guards[i]);
+        // Who guards whom as of this beat: it changes on a switch.
+        Object.entries(beat.marking).forEach(([defKey, manKey]) => {
           const man = beat.players[manKey];
           const d = beat.players[defKey];
           if (!man || !d) return;
           checked++;
           expect(apart(d, hoop)).toBeLessThan(apart(man, hoop));
-          // On the line: going via the defender is barely longer than going straight.
-          expect(apart(man, d) + apart(d, hoop)).toBeLessThan(apart(man, hoop) + 0.15);
+          // On the ball, on the line: going via the defender is barely longer than going straight.
+          // (Off it, one pass away he steps into the passing lane, two away he sinks to help.)
+          if (manKey === holder) expect(apart(man, d) + apart(d, hoop)).toBeLessThan(apart(man, hoop) + 0.15);
           if (manKey === holder) {
             onBall += apart(man, d);
           } else offBall += apart(man, d) / 4;
@@ -524,7 +522,8 @@ describe('the ball', () => {
       });
     });
     expect(passes).toBeGreaterThan(300);
-    expect(styles.chest / passes).toBeGreaterThan(0.6);
+    // Denial one pass away puts a hand in more lanes: more passes go bounce or lob than before (60%+).
+    expect(styles.chest / passes).toBeGreaterThan(0.5);
     expect(styles.bounce ?? 0).toBeGreaterThan(0);
     expect(styles.lob ?? 0).toBeGreaterThan(0);
     // Long ones are cross-court skip passes over the top (12-15 m on a 15 m wide floor): rare, about
@@ -532,7 +531,9 @@ describe('the ball', () => {
     expect(long / passes).toBeLessThan(0.03);
     // Past two defenders (always over the top or off the floor, checked above): about 1.8% of
     // passes over ten matches, more or less in two, so the bar sits above that, not on it.
-    expect(crowded / passes).toBeLessThan(0.03);
+    // Help-side defenders sink into the paint and deny one pass away: more lanes are crowded than
+    // before (3%), and those passes go over the top or off the floor, as checked above.
+    expect(crowded / passes).toBeLessThan(0.08);
   });
 
   it('a pass flies in a straight line at the speed of its type, then sits in the receiver\'s hands', () => {
@@ -706,7 +707,8 @@ describe('facing', () => {
       for (const beat of script.beats) {
         if (beat.phase !== 'setUp' || beat.ball.kind !== 'held') continue;
         const holder = beat.ball.holder;
-        const guard = Object.keys(script.guards).find((d) => script.guards[d] === holder);
+        // Who guards him as of this beat: it changes on a switch.
+        const guard = Object.keys(beat.marking ?? {}).find((d) => beat.marking![d] === holder);
         if (!guard) continue;
         checked++;
         expect(apart(beat.players[guard], beat.players[holder])).toBeCloseTo(1, 1);
@@ -849,7 +851,11 @@ describe('contesting and rebounding', () => {
         const nearShot = !!shooter && team(k) !== team(shooter) && Math.hypot(m.pos[k].x - m.pos[shooter].x, m.pos[k].y - m.pos[shooter].y) < 4.8;
         const caught = a.kind === 'held' ? a.holder : a.kind === 'pass' ? a.to : null;
         const closeOut = !!caught && !isRef(caught) && team(k) !== team(caught) && !!m.pos[caught] && Math.hypot(m.pos[k].x - m.pos[caught].x, m.pos[k].y - m.pos[caught].y) < 2.7;
-        expect(beat.contest === k || !!beat.reach?.includes(k) || nearShot || closeOut || v < 1).toBe(true);
+        // Denying one pass away (a hand in the lane), or stopping a drive as the help.
+        const mine = beat.marking?.[k];
+        const denying = !!mine && !!caught && mine !== caught && !!m.pos[mine] && !!m.pos[caught] && Math.hypot(m.pos[mine].x - m.pos[caught].x, m.pos[mine].y - m.pos[caught].y) < 6.6;
+        const helping = m.help?.helper === k;
+        expect(beat.contest === k || !!beat.reach?.includes(k) || nearShot || closeOut || denying || helping || v < 1).toBe(true);
       }
       last = { ...m.reach };
     });

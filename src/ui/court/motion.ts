@@ -5,8 +5,8 @@
 
 import { fatigueFactor } from '../../engine/ratings';
 import type { Side } from '../../engine/types';
-import { PACE_M_S, PASS_SPEED, PROBE_FROM_RIM_M, isRef, type Ball, type BallAction, type Beat, type Pace, type Pos, type Script, type ShotStyle } from './animation';
-import { BODY_M, COURT, HOOP, MID_Y, guardSpot, insideCourt } from './formations';
+import { PACE_M_S, PASS_SPEED, PROBE_FROM_RIM_M, isRef, type Ball, type BallAction, type Beat, type Pace, type PlayerInfo, type Pos, type Script, type ShotStyle } from './animation';
+import { BODY_M, COURT, DENY_M, ELITE_THREE, HOOP, MID_Y, guardSpot, insideCourt } from './formations';
 
 /**
  * Shot mechanics per style: when in the beat the ball leaves the hands (0..1), how high the
@@ -62,12 +62,25 @@ const CLOSE_OUT_M = 2.5;
 const CHASE_BEHIND_M = 1.2;
 const CHASE_SIDE_M = 1.3;
 const CHASE_LEAD_S = 0.3;
+/** A driver this close to the rim and coming at it this fast, past his man, draws help. */
+const HELP_DRIVE_M = 7.5;
+const HELP_COMING_M_S = 2.5;
+/** The helper stops the ball this far in front of the driver; only a defender within reach of that spot helps. */
+const HELP_STOP_M = 1.4;
+const HELP_REACH_M = 6;
+/** Help stays committed this long (game seconds) unless the ball moves on first. */
+const HELP_HOLD_S = 1.2;
+/** Denying one pass away, a defender this close to his man has a hand in the lane. */
+const DENY_HAND_M = 2.2;
 /** A defender further than this from his spot, ball live, runs to it: he never jogs to catch up. */
 const LONG_WAY_M = 2;
 /** Running alongside the man (level with him or in front), this far off his line at the least: never in his path. */
 const CHASE_ALONGSIDE_M = 1.6;
 /** Further than this in front of the man, a chaser drops to the rim and waits for him there. */
 const CHASE_WELL_AHEAD_M = 2.5;
+/** The ball passed on to a man standing this far or more from the rim: the chaser closes out on him, to this far off him. */
+const CLOSE_OUT_FROM_M = 6;
+const CHASE_CLOSE_M = 1.3;
 /** Hands go up or down in about an eighth of a second. */
 const ARM_RATE = 8;
 /** Bodies turn at a steady 180 degrees a second; only someone with the ball, or reacting to it, turns twice as fast. */
@@ -348,12 +361,15 @@ const SIDE_CLEAR_M = 1.6;
  * is on the other side of the handler's line, the target is moved back to his own side, at least
  * SIDE_CLEAR_M off the line. Behind the handler, or with the handler not running, the target itself.
  */
-export function keepToSide(p: Pos, target: Pos, h: Pos | undefined, v: Pos | undefined, speedScale: number): Pos {
+export function keepToSide(p: Pos, target: Pos, h: Pos | undefined, v: Pos | undefined, speedScale: number, rim?: Pos): Pos {
   if (!h || !v) return target;
   const speed = Math.hypot(v.x, v.y) / speedScale;
-  if (speed < RUNNING_M_S) return target;
-  const ux = v.x / (speed * speedScale);
-  const uy = v.y / (speed * speedScale);
+  // A handler not yet running (a rebounder chinning it, an outlet just caught) is about to go at
+  // the rim he attacks: that is his line.
+  const toRim = rim ? Math.hypot(rim.x - h.x, rim.y - h.y) : 0;
+  if (speed < RUNNING_M_S && toRim < 1) return target;
+  const ux = speed >= RUNNING_M_S ? v.x / (speed * speedScale) : (rim!.x - h.x) / toRim;
+  const uy = speed >= RUNNING_M_S ? v.y / (speed * speedScale) : (rim!.y - h.y) / toRim;
   const along = (q: Pos) => (q.x - h.x) * ux + (q.y - h.y) * uy;
   const across = (q: Pos) => -(q.x - h.x) * uy + (q.y - h.y) * ux;
   if (along(p) < -BODY_M) return target;
@@ -416,6 +432,14 @@ export class Motion {
   /** Where each player is heading this frame. */
   /** Where each player is heading right now: the beat's spot, or his man, or the man he is chasing. */
   target: Record<string, Pos> = {};
+  /** Three-point rating and position per player key. */
+  private info: Record<string, PlayerInfo> = {};
+  /** Who each defender is guarding right now (it changes on a switch). */
+  private markingNow: Record<string, string> = {};
+  /** Whom each chaser set out after: a different man later means the ball was passed on. */
+  private chaseFirst: Record<string, string> = {};
+  /** A drive being helped on: the handler, the helper, the man he left, who rotates to that man, and until when. */
+  help: { handler: string; helper: string; man: string; rotator: string | null; until: number } | null = null;
   /** The ball as the off-ball players' bodies follow it. */
   private seen: Pos | null = null;
   /** Small weight shifts off the ball: an offset and when it next changes. */
@@ -487,6 +511,54 @@ export class Motion {
   }
 
   /** Speed rating per player key. Anyone missing runs at the plain pace. */
+  /** Three-point rating and position per player key: who is guarded tight. */
+  setPlayerInfo(info: Record<string, PlayerInfo>): void {
+    this.info = { ...info };
+  }
+
+  playerInfo(key: string): PlayerInfo | undefined {
+    return this.info[key];
+  }
+
+  /** An elite three-point shooter: his defender stays attached and is never the one sent to help. */
+  private tight(key: string): boolean {
+    return (this.info[key]?.three ?? 0) >= ELITE_THREE;
+  }
+
+  /**
+   * Help on a drive. A handler going at the rim past his man brings the nearest help defender (never
+   * the one on an elite shooter) to stop the ball in front of him; the weak-side defender nearest the
+   * helper's man rotates to him. Held a moment, and dropped as soon as the ball moves on: then
+   * everyone recovers to his own man (a defender whose man gets the ball closes out).
+   */
+  private updateHelp(live: LiveContext | undefined, holder: string | null, speedScale: number): void {
+    const marking = live?.marking;
+    if (!live || live.dead || !marking || !holder || isRef(holder) || !holder.startsWith(`${live.offence}:`) || holder === live.posting || !this.pos[holder]) {
+      this.help = null;
+      return;
+    }
+    if (this.help && (this.help.handler !== holder || this.clock > this.help.until)) this.help = null;
+    if (this.help) return;
+    const rim = live.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y };
+    const h = this.pos[holder];
+    const v = this.vel[holder] ?? { x: 0, y: 0 };
+    const toRim = Math.hypot(rim.x - h.x, rim.y - h.y) || 1;
+    const coming = (v.x * (rim.x - h.x) + v.y * (rim.y - h.y)) / toRim / speedScale;
+    if (toRim > HELP_DRIVE_M || coming < HELP_COMING_M_S) return;
+    const onBall = Object.keys(marking).find((d) => marking[d] === holder);
+    const od = onBall ? this.pos[onBall] : undefined;
+    // Beaten: his own man is no longer between him and the rim.
+    if (od && Math.hypot(rim.x - od.x, rim.y - od.y) < toRim - 0.3) return;
+    const stop = { x: h.x + ((rim.x - h.x) / toRim) * HELP_STOP_M, y: h.y + ((rim.y - h.y) / toRim) * HELP_STOP_M };
+    const free = Object.keys(marking).filter((d) => d !== onBall && marking[d] !== holder && !this.tight(marking[d]) && this.pos[d] && this.pos[marking[d]]);
+    const helper = free.filter((d) => Math.hypot(this.pos[d].x - stop.x, this.pos[d].y - stop.y) < HELP_REACH_M).sort((a, b) => Math.hypot(this.pos[a].x - stop.x, this.pos[a].y - stop.y) - Math.hypot(this.pos[b].x - stop.x, this.pos[b].y - stop.y))[0];
+    if (!helper) return;
+    const left = marking[helper];
+    const lp = this.pos[left];
+    const rotator = free.filter((d) => d !== helper).sort((a, b) => Math.hypot(this.pos[a].x - lp.x, this.pos[a].y - lp.y) - Math.hypot(this.pos[b].x - lp.x, this.pos[b].y - lp.y))[0];
+    this.help = { handler: holder, helper, man: left, rotator: rotator ?? null, until: this.clock + HELP_HOLD_S };
+  }
+
   setSpeedRatings(ratings: Record<string, number>): void {
     this.speeds = {};
     for (const [key, rating] of Object.entries(ratings)) this.speeds[key] = speedFactor(rating);
@@ -519,6 +591,9 @@ export class Motion {
     // Whoever is on defence right now: the side without the ball (after a rebound, that can be the
     // team the possession started with).
     const defending = live ? defendingSide(live.action, live.offence) : 'none';
+    this.markingNow = live?.marking ?? {};
+    if (!live?.chase) this.chaseFirst = {};
+    this.updateHelp(live, ballHolder, speedScale);
     const handlerTarget = this.footwork(ballHolder, ballHolder ? targets[ballHolder] : undefined, outOfBounds, live);
     for (const [key, beatTarget] of Object.entries(targets)) {
       let target = key === ballHolder && handlerTarget ? handlerTarget : beatTarget;
@@ -526,11 +601,12 @@ export class Motion {
       if (live && man && this.pos[man]) {
         // On his man where the man is now, read a moment late: not where the beat will leave him.
         const r = (this.read[key] ??= { ...this.pos[man] });
-        const follow = 1 - Math.exp(-gameDt / (man === ballHolder ? READ_ON_BALL_S : READ_S));
+        // On the ball, or attached to an elite shooter, he reads his man's every move.
+        const follow = 1 - Math.exp(-gameDt / (man === ballHolder || this.tight(man) ? READ_ON_BALL_S : READ_S));
         r.x += (this.pos[man].x - r.x) * follow;
         r.y += (this.pos[man].y - r.y) * follow;
         const norm = (q: Pos): Pos => (live.dir === 1 ? q : { x: COURT.w - q.x, y: q.y });
-        target = norm(guardSpot(norm(r), norm(live.ball ?? r), man === ballHolder, !!live.pressing));
+        target = norm(guardSpot(norm(r), norm(live.ball ?? r), man === ballHolder, !!live.pressing, { tight: this.tight(man) }));
         if (man === ballHolder) {
           // A handler coming at him: he gives ground first, a cushion that grows with the speed.
           const rim = norm(HOOP);
@@ -553,6 +629,20 @@ export class Motion {
           target = { x: target.x + Math.cos(across) * shuffle, y: target.y + Math.sin(across) * shuffle };
         }
       } else delete this.read[key];
+      const hp = this.help;
+      if (live && hp && man && this.pos[hp.handler]) {
+        const norm = (q: Pos): Pos => (live.dir === 1 ? q : { x: COURT.w - q.x, y: q.y });
+        if (key === hp.helper) {
+          // Stopping the ball: in front of the driver, between him and the rim.
+          const rim = live.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y };
+          const h = this.pos[hp.handler];
+          const d = Math.hypot(rim.x - h.x, rim.y - h.y) || 1;
+          target = insideCourt({ x: h.x + ((rim.x - h.x) / d) * HELP_STOP_M, y: h.y + ((rim.y - h.y) / d) * HELP_STOP_M });
+        } else if (key === hp.rotator && this.pos[hp.man]) {
+          // Rotating over to the man the helper left.
+          target = insideCourt(norm(guardSpot(norm(this.pos[hp.man]), norm(live.ball ?? this.pos[hp.man]), false, !!live.pressing, { tight: this.tight(hp.man) })));
+        }
+      }
       const chased = live && !man && !live.dead ? live.chase?.[key] : undefined;
       const cp = chased ? this.pos[chased] : undefined;
       if (live && chased && cp && this.pos[key]) {
@@ -568,7 +658,13 @@ export class Motion {
         const side = lat >= 0 ? 1 : -1;
         const ahead = (me.x - cp.x) * ux + (me.y - cp.y) * uy;
         const lead = CHASE_LEAD_S / speedScale;
-        if (live.action?.kind === 'fromPlayer') {
+        const first = (this.chaseFirst[key] ??= chased);
+        const toRimNow = Math.hypot(rim.x - cp.x, rim.y - cp.y);
+        if (live.action?.kind !== 'fromPlayer' && chased !== first && sp / speedScale < RUNNING_M_S && toRimNow > CLOSE_OUT_FROM_M) {
+          // The ball went back to a man standing out on the floor (a trailer, for a jumper): he
+          // closes out on him, between him and the rim, rather than waiting under the basket.
+          target = insideCourt({ x: cp.x + ((rim.x - cp.x) / toRimNow) * CHASE_CLOSE_M, y: cp.y + ((rim.y - cp.y) / toRimNow) * CHASE_CLOSE_M });
+        } else if (live.action?.kind === 'fromPlayer') {
           // The shot is going up: at him, beside him on his own side, a hand up. Late, but there.
           target = insideCourt({ x: cp.x - uy * side * CHASE_SIDE_M, y: cp.y + ux * side * CHASE_SIDE_M });
         } else if (ahead > CHASE_WELL_AHEAD_M || (ahead > 0 && sp / speedScale < RUNNING_M_S)) {
@@ -619,7 +715,7 @@ export class Motion {
       if (live?.openBreak && !live.dead && !man && ballHolder && key !== ballHolder && !isRef(key) && !key.startsWith(`${live.offence}:`)) {
         // On a break with nobody back, a defender in front of the ball handler stays on his own side
         // of the handler's line: wherever the beat sends him, he never cuts across in front of him.
-        const side = keepToSide(p, { x: tx, y: ty }, this.pos[ballHolder], this.vel[ballHolder], speedScale);
+        const side = keepToSide(p, { x: tx, y: ty }, this.pos[ballHolder], this.vel[ballHolder], speedScale, live.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y });
         tx = side.x;
         ty = side.y;
       }
@@ -830,6 +926,15 @@ export class Motion {
         if (d < (beat.contest === key ? Math.max(CONTEST_M, HAND_UP_M) : HAND_UP_M)) return true;
       }
     }
+    // Stopping a drive: hands up, in front of him.
+    if (this.help?.helper === key && a.kind === 'held' && a.holder === this.help.handler) return true;
+    // One pass away in the half court: a hand in the passing lane, denying the catch.
+    const mine = beat.marking?.[key];
+    const ballMan = a.kind === 'held' ? a.holder : null;
+    if (mine && ballMan && mine !== ballMan && beat.phase === 'play' && !beat.dead && !isRef(ballMan) && team(mine) === team(ballMan) && this.pos[mine] && this.pos[ballMan]) {
+      const m = this.pos[mine];
+      if (Math.hypot(m.x - this.pos[ballMan].x, m.y - this.pos[ballMan].y) < DENY_M && Math.hypot(m.x - me.x, m.y - me.y) < DENY_HAND_M) return true;
+    }
     // A catch out on the floor: the defender nearest him closes out with his hands up.
     const caught = a.kind === 'held' && !a.dribble ? a.holder : a.kind === 'pass' && this.passArrived(a) ? a.to : null;
     if (caught && !beat.dead && !isRef(key) && !isRef(caught) && caught !== beat.outOfBounds && team(key) !== team(caught) && this.pos[caught]) {
@@ -1029,10 +1134,10 @@ export class Motion {
     if (key.startsWith(ballTeam)) return { angle: blend(toward(seen)), quick: false };
     // Defence. On the ball: square to the handler, sliding; beaten by more than a step, he turns and runs.
     // (Not someone only running past him on his way somewhere else: he keeps running.)
-    if (holder && this.pos[holder] && Math.hypot(this.pos[holder].x - me.x, this.pos[holder].y - me.y) < ON_BALL_M && (scene.guards[key] === holder || away < DEF_RUN_TO)) {
+    if (holder && this.pos[holder] && Math.hypot(this.pos[holder].x - me.x, this.pos[holder].y - me.y) < ON_BALL_M && ((this.markingNow[key] ?? scene.guards[key]) === holder || away < DEF_RUN_TO)) {
       // Only the man guarding the handler can be beaten; a zone holds its ground.
       const t = this.target[key];
-      const guarding = scene.guards[key] === holder;
+      const guarding = (this.markingNow[key] ?? scene.guards[key]) === holder;
       const beaten = guarding && !!t && Math.hypot(t.x - me.x, t.y - me.y) > CHASE_M;
       // Square to his man along the line from the basket: steady as they jostle, never circling him.
       const rim = scene.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y };
@@ -1041,7 +1146,7 @@ export class Motion {
       return quick(beaten ? blend(square) : square);
     }
     // Off the ball: see man and ball. A zone just watches the ball.
-    const man = this.pos[scene.guards[key]];
+    const man = this.pos[(this.markingNow[key] ?? scene.guards[key])];
     // With a long way to go he turns and sprints at once: a defender reacts, he does not drift round.
     return { angle: blend(toward(man ? { x: (man.x + seen.x) / 2, y: (man.y + seen.y) / 2 } : seen)), quick: away > RUN_TO_SPOT_TO };
   }

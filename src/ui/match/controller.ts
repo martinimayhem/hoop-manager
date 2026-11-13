@@ -281,6 +281,7 @@ export class LiveMatch {
     const ratings: Record<string, number> = {};
     for (const side of [0, 1] as const) for (const p of this.s.teams[side].team.players) ratings[playerKey(side, p.id)] = composite(p).speed;
     this.motion.setSpeedRatings(ratings);
+    this.motion.setPlayerInfo(Object.fromEntries(([0, 1] as const).flatMap((side) => this.s.teams[side].team.players.map((p) => [playerKey(side, p.id), { three: p.attrs.three, position: p.position }]))));
     this.view = [this.snapshotTeam(0), this.snapshotTeam(1)];
     this.flushEngineEvents();
   }
@@ -809,6 +810,7 @@ export class LiveMatch {
         defence: b.defence,
         keyMatchup: s.teams[other(b.offence)].plan.keyMatchup,
         moveFactor: (key) => this.motion.moveFactor(key),
+        player: (key) => this.motion.playerInfo(key),
         clockStart: b.clockStart,
         clockEnd: s.clock,
         start: b.how,

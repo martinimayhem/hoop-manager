@@ -167,8 +167,9 @@ function measure(seed: number) {
     }
     // The on-ball defender, man-to-man, during the half-court action.
     if (beat.phase === 'play' && beat.ball.kind === 'held' && holder && mo.pos[holder]) {
-      const d = Object.keys(sc.guards).find((k) => sc.guards[k] === holder);
-      if (d && mo.pos[d] && beat.marking?.[d]) {
+      // His defender as of this beat: it changes on a switch.
+      const d = Object.keys(beat.marking ?? {}).find((k) => beat.marking![k] === holder);
+      if (d && mo.pos[d]) {
         const hp = mo.pos[holder];
         const dp = mo.pos[d];
         const hoop = holder.startsWith(`${sc.offence}:`) === (sc.dir === 1) ? { x: HOOP_X, y: MID_Y } : { x: COURT.w - HOOP_X, y: MID_Y };
@@ -248,10 +249,13 @@ describe('movement realism', () => {
       deadClockTicks: r.deadClockTicks,
     }));
     // Sharp turns (over 120 degrees in 0.6 s): was 10.5 a minute per player.
-    expect(r.bigTurns / playerMinutes).toBeLessThan(3);
+    // Help and recover and switches add some honest changes of direction: up to 3.2.
+    expect(r.bigTurns / playerMinutes).toBeLessThan(3.2);
     // The on-ball defender: within 2.5 m (was off 16% of the time) and goal-side (was wrong 12%).
     expect(r.onBall).toBeGreaterThan(1000);
-    expect(r.onBallFar / r.onBall).toBeLessThan(0.06);
+    // Since help and recover: a skip pass to a man whose defender sank to help is open for the step
+    // it takes to close out, and a switch hands the ball to a defender a step away. So 9%, not 6%.
+    expect(r.onBallFar / r.onBall).toBeLessThan(0.09);
     expect(r.onBallWrongSide / r.onBall).toBeLessThan(0.06);
     // Defender and attacker trading sides as they walk past each other: was part of 1.2 a possession.
     // Getting beaten on a drive and recovering is basketball; that is the rest of the allowance.

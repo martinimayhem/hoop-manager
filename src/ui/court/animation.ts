@@ -6,10 +6,16 @@
 
 import { FREE_THROW_LINE_X, HALF_X, KEY_HALF_WIDTH, fromHoop, shotPoint } from '../../engine/court';
 import { other } from '../../engine/state';
-import type { DefenceScheme, KeyMatchup, OffensiveFocus, ShotType, Side, Tempo, TimedEvent, Transition } from '../../engine/types';
-import { BODY_M, COURT, FORMATIONS, HOOP, HOOP_X, MID_Y, MIN_SPACING_M, ZONE, guardSpot, insideCourt, spread } from './formations';
+import { POSITIONS, type DefenceScheme, type KeyMatchup, type OffensiveFocus, type Position, type ShotType, type Side, type Tempo, type TimedEvent, type Transition } from '../../engine/types';
+import { BODY_M, COURT, ELITE_THREE, FORMATIONS, HOOP, HOOP_X, MID_Y, MIN_SPACING_M, ZONE, guardSpot, insideCourt, spread } from './formations';
 
 export { COURT, HOOP_X, MID_Y };
+
+/** What the animation needs to know about a player beyond where he is. */
+export interface PlayerInfo {
+  three: number;
+  position: Position;
+}
 
 export interface Pos {
   x: number;
@@ -137,6 +143,8 @@ export interface ScriptContext {
   keyMatchup?: KeyMatchup;
   /** How fast a player moves relative to the plain pace (speed rating and fatigue). */
   moveFactor?: (key: string) => number;
+  /** A player's three-point rating and position: who gets guarded tight, and who can switch with whom. */
+  player?: (key: string) => PlayerInfo | undefined;
   clockStart: number;
   clockEnd: number;
   /** How the possession started: after a defensive rebound, a steal, or a dead ball (inbound). */
@@ -189,6 +197,8 @@ const DENY_INBOUND_X = 2.4;
 const POST_BACKDOWN_M_S = 2;
 /** A possession shorter than this has no time to set up. */
 const EARLY_OFFENCE_SECONDS = 8;
+/** A possession at least this long reaches its screens late in the shot clock: anyone switches then. */
+const LATE_SWITCH_S = 17;
 /** A chaser in transition aims this far behind the ball handler, and this far to his own side. */
 const CHASE_GAP_M = 1.4;
 /** A defender with further than this to go, ball live, runs: he does not jog it. */
@@ -403,6 +413,38 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     placed.add(k);
   };
 
+  /** An elite three-point shooter: his defender stays attached to him. */
+  const tight = (k: string) => (ctx.player?.(k)?.three ?? 0) >= ELITE_THREE;
+  /**
+   * Switching at a screen: the handler's defender and the screener's trade men, when they are of a
+   * size (no more than one position apart) or late in a long possession. Man-to-man only. Returns
+   * whether they switched.
+   */
+  const willSwitch = (handler: string, screener: string): boolean => {
+    if (ctx.defence === 'zone') return false;
+    if (offKeys.indexOf(handler) < 0 || offKeys.indexOf(screener) < 0) return false;
+    const pa = ctx.player?.(handler)?.position;
+    const pb = ctx.player?.(screener)?.position;
+    const sized = !!pa && !!pb && Math.abs(POSITIONS.indexOf(pa) - POSITIONS.indexOf(pb)) <= 1;
+    return sized || seconds >= LATE_SWITCH_S;
+  };
+  /** The screener's defender steps up level with the screen ("shows"), so the switch is a step, not a run. */
+  const show = (screener: string) => {
+    const sd = guards[offKeys.indexOf(screener)];
+    if (!sd || !at[screener]) return;
+    place(sd, insideCourt({ x: at[screener].x + 0.9, y: at[screener].y + (at[screener].y < MID_Y ? 0.5 : -0.5) }));
+    paceFor[sd] = 'run';
+  };
+  const switchOn = (handler: string, screener: string): boolean => {
+    if (!willSwitch(handler, screener)) return false;
+    const ia = offKeys.indexOf(handler);
+    const ib = offKeys.indexOf(screener);
+    [guards[ia], guards[ib]] = [guards[ib], guards[ia]];
+    guarding[guards[ia]] = offKeys[ia];
+    guarding[guards[ib]] = offKeys[ib];
+    return true;
+  };
+
   /** Who is guarding whom in the coming beat; the motion layer keeps them on their man frame by frame. */
   let marking: Record<string, string> = {};
   const settleDefence = () => {
@@ -421,7 +463,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       // Nobody crowds the inbounder: their defender stands off the baseline and denies the pass.
       if (man === outOfBounds) at[k] = throwFrom ? { x: throwFrom.x, y: throwFrom.y < MID_Y ? 1.1 : COURT.h - 1.1 } : { x: DENY_INBOUND_X, y: at[man].y - 1.2 };
       else if (at[man]) {
-        at[k] = guardSpot(at[man], ball, man === holder, pressing);
+        at[k] = guardSpot(at[man], ball, man === holder, pressing, { tight: tight(man) });
         marking[k] = man;
       }
     });
@@ -441,6 +483,16 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       if (t) {
         at[guards[i]] = { x: t.x + 0.6, y: t.y - 0.6 };
         at[guards[(i + 1) % guards.length]] = { x: t.x + 0.6, y: t.y + 0.6 };
+      }
+      // The second man left his own man open: the nearest of the rest rotates over to him, leaving
+      // his own (further from the ball) instead.
+      const open = offKeys[(i + 1) % offKeys.length];
+      const rot = guards
+        .filter((k) => k !== guards[i] && k !== guards[(i + 1) % guards.length] && !placed.has(k) && !holdBack.has(k) && marking[k] !== holder)
+        .sort((a, b) => dist(at[a], at[open]) - dist(at[b], at[open]))[0];
+      if (rot && at[open]) {
+        at[rot] = guardSpot(at[open], ball, false, false, { tight: tight(open) });
+        marking[rot] = open;
       }
     }
   };
@@ -1194,13 +1246,15 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       at[screener] = { x: h.x + 0.9, y: h.y - dir * 0.7 };
       paceFor[screener] = 'run';
       contact = [handler, screener];
+      if (willSwitch(handler, screener)) show(screener);
       push(0.3, dribble(), [], `${screenerName} comes up to set a screen for ${handlerName}…`, handler, 0.8);
+      const switched = switchOn(handler, screener);
       // Off the screen: the handler turns the corner, the big rolls to the rim or pops out.
       at[handler] = insideCourt({ x: h.x + 2, y: h.y + dir * 2.6 });
       at[screener] = (seed >>> 7) & 1 ? { x: HOOP.x - 2.3, y: MID_Y - dir * 0.8 } : insideCourt({ x: h.x - 0.4, y: h.y - dir * 2.6 });
       paceFor[handler] = 'run';
       paceFor[screener] = 'run';
-      push(0.35, dribble(), [], `…${handlerName} comes off it`, handler, 0.7);
+      push(0.35, dribble(), [], switched ? `…${handlerName} comes off it, and they switch` : `…${handlerName} comes off it`, handler, 0.7);
       return 0;
     }
     if (play === 'drive') {
@@ -1464,7 +1518,9 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           const h = at[assistKey];
           at[shooterKey] = { x: h.x + 0.75, y: h.y + (h.y < MID_Y ? 0.6 : -0.6) };
           contact = [assistKey, shooterKey];
+          if (willSwitch(assistKey, shooterKey)) show(shooterKey);
           push(0.4, dribble(), [], `${passerName} calls for the screen from ${shooterName}…`, shooterKey, 0.7);
+          const switched = switchOn(assistKey, shooterKey);
           // He comes off it, but away from where the roller is going: a pick set in the corner
           // would otherwise send him down the baseline into the roll.
           at[assistKey] = insideCourt({ x: h.x + 2.1, y: h.y + (h.y < MID_Y ? 1.5 : -1.5) });
@@ -1472,7 +1528,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           at[shooterKey] = { ...spot };
           paceFor[shooterKey] = 'run';
           mustArrive = [shooterKey];
-          push(0.45, dribble(), [], `…comes off it, ${shooterName} rolls to the rim…`, shooterKey);
+          push(0.45, dribble(), [], switched ? `…they switch, ${shooterName} rolls to the rim…` : `…comes off it, ${shooterName} rolls to the rim…`, shooterKey);
           passTo(shooterKey, 0.25);
         } else if (ev.shotType === 'pnrPull') {
           passTo(shooterKey);
@@ -1482,10 +1538,12 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           // The screen comes from the middle of the floor, as on the roll.
           at[screener] = { x: h.x + 0.75, y: h.y + (h.y < MID_Y ? 0.6 : -0.6) };
           contact = [shooterKey, screener];
+          if (willSwitch(shooterKey, screener)) show(screener);
           push(0.35, dribble(), [], `${shooterName} uses the screen…`, shooterKey, 0.7);
+          const switched = switchOn(shooterKey, screener);
           at[shooterKey] = { ...spot };
           paceFor[shooterKey] = 'run';
-          push(0.4, dribble(), [], `${shooterName} pulls up…`, shooterKey);
+          push(0.4, dribble(), [], switched ? `They switch, ${shooterName} pulls up…` : `${shooterName} pulls up…`, shooterKey);
         } else if (ev.shotType === 'post') {
           // The big gets to the block before anyone feeds him.
           at[shooterKey] = { x: spot.x - 0.45, y: spot.y };
@@ -1603,7 +1661,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         // otherwise whoever is nearest. Whether they get there in time is down to their legs.
         const nearest = defIds.map(kDef).sort((a, b) => dist(at[a], from) - dist(at[b], from))[0];
         const chaser = Object.keys(chasing)[0];
-        challenger = onShooter ?? (openFinish && chaser ? chaser : nearest);
+        // Whoever is chasing the ball down stays on it through the shot, and contests it.
+        challenger = onShooter ?? chaser ?? nearest;
         if (challenger !== chaser) chasing = {};
         else chasing = { [chaser]: shooterKey };
         blocking = !!ev.blockerId;

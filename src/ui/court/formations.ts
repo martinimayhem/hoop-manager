@@ -125,19 +125,53 @@ export function spread(spots: Record<string, Pos>, keys: string[], mobility: (ke
   });
 }
 
+/** A three-point rating from this up is an elite shooter: his defender stays attached. */
+export const ELITE_THREE = 80;
+/** One pass away: his man is this close to the ball. The defender plays the passing lane. */
+export const DENY_M = 6.5;
+/** How far into the passing lane a denying defender steps, at most. */
+const DENY_STEP_M = 0.5;
+/** Two passes away: from this far from the ball the defender starts sinking into the paint to help. */
+const HELP_FROM_M = 7.5;
+const HELP_FULL_M = 12;
+/** How far into the paint help goes, as a share of the way from his spot to the middle of the lane. */
+const HELP_SHARE = 0.55;
+
+/** How a defender plays his man, beyond where the man and the ball are. */
+export interface GuardStyle {
+  /** His man is a dangerous three-point shooter: stay attached, no help duty. */
+  tight?: boolean;
+}
+
 /**
- * Where a man-to-man defender stands: on the line from their man to the basket. Tight on the ball;
- * off the ball they sag further the further their man is from it. A press stays tight everywhere,
- * and anything else waits for the offence near half court.
+ * Where a man-to-man defender stands: on the line from their man to the basket. Tight on the ball.
+ * Off the ball, in the half court:
+ * - one pass away (his man near the ball), he denies: close, and a step into the passing lane;
+ * - two passes away, he sinks into the paint on his man's side to help (the pack line), and comes
+ *   back out to his man if the ball goes there;
+ * - against an elite shooter he stays attached wherever the ball is: help comes from the others.
+ * A press stays tight everywhere, and anything else waits for the offence near half court.
  */
-export function guardSpot(man: Pos, ball: Pos, onBall: boolean, pressing: boolean): Pos {
+export function guardSpot(man: Pos, ball: Pos, onBall: boolean, pressing: boolean, style: GuardStyle = {}): Pos {
   const dx = HOOP.x - man.x;
   const dy = HOOP.y - man.y;
   const toHoop = Math.hypot(dx, dy) || 1;
   const fromBall = Math.hypot(man.x - ball.x, man.y - ball.y);
-  const wanted = pressing ? (onBall ? 1 : 1.2) : onBall ? 1 : Math.max(1.8, Math.min(3.6, 1.2 + fromBall * 0.28));
+  const halfCourt = !pressing && !onBall && ball.x > HALF_X + 3 && man.x > HALF_X;
+  const deny = halfCourt && fromBall < DENY_M && fromBall > 0.5;
+  const wanted = pressing ? (onBall ? 1 : 1.2) : onBall ? 1 : style.tight && halfCourt ? 1 : deny ? 1.3 : Math.max(1.8, Math.min(3.6, 1.2 + fromBall * 0.28));
   const gap = Math.min(wanted, toHoop * 0.6);
-  const spot = { x: man.x + (dx / toHoop) * gap, y: man.y + (dy / toHoop) * gap };
+  let spot = { x: man.x + (dx / toHoop) * gap, y: man.y + (dy / toHoop) * gap };
+  if (deny || (style.tight && halfCourt && fromBall > 0.5)) {
+    // A step into the passing lane, between his man and the ball: a hand in it.
+    const step = Math.min(DENY_STEP_M, fromBall * 0.15);
+    spot = { x: spot.x + ((ball.x - man.x) / fromBall) * step, y: spot.y + ((ball.y - man.y) / fromBall) * step };
+  } else if (halfCourt && !style.tight && fromBall > HELP_FROM_M) {
+    // Help side: into the paint on his man's side, ready to stop a drive, near enough to get back.
+    const w = Math.min(1, (fromBall - HELP_FROM_M) / (HELP_FULL_M - HELP_FROM_M)) * HELP_SHARE;
+    const paint = { x: HOOP.x - 3, y: MID_Y + (man.y - MID_Y) * 0.3 };
+    spot = { x: spot.x + (paint.x - spot.x) * w, y: spot.y + (paint.y - spot.y) * w };
+  }
   // Get back, stop the ball, then find your man: with the ball coming up the floor ahead of his man,
   // a defender gets between the ball and the basket first, never left behind it, pressing or not.
   // Faded in over the last two metres before his man draws level with the ball, so the spot never

@@ -25,6 +25,24 @@ In every live-ball situation:
 6. **Bodies.** No player passes through an opponent, and no defender's run crosses the ball
    handler's path.
 
+## Man-to-man: when to leave your man
+
+A defender stays with his man except in these cases (`guardSpot` in `src/ui/court/formations.ts`,
+help in `Motion.updateHelp`, switches and double-team rotations in `animation.ts`):
+
+- **Help side**: two passes away he sinks into the paint on his man's side; he recovers to his man
+  (closing out, hands up) if the ball goes there.
+- **Stopping the ball**: a driver who has beaten his man near the rim draws the nearest help
+  defender in front of him; the next defender rotates to the man the helper left.
+- **Switching on screens**: when the two defenders are of a size (no more than one position apart),
+  or late in a long possession. The screener's defender shows first, so it is a step, not a run.
+- **Double teams and traps**: the second man's own man is left; the nearest other defender rotates
+  to him.
+- **Transition**: protect the basket first, match up once the ball is stopped (see above).
+
+He stays attached to an **elite shooter** (80+ from three): tight, never sent to help. **One pass
+away** he denies: a step into the passing lane, a hand in it. Enforced by `tests/mantoman.test.ts`.
+
 These are enforced by `tests/realism.test.ts` ("defenders always try" and "bodies"). Any animation
 change must keep those tests passing.
 
