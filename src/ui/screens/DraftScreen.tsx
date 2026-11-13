@@ -2,7 +2,7 @@
 // position, name, price and whether he can still be signed), the selected player and both squads on
 // the right. Ratings are scout estimates: a range for players you do not know well.
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { positionGroup } from '../../engine/ratings';
 import { createRng } from '../../engine/rng';
 import type { Position, Side, Team } from '../../engine/types';
@@ -67,6 +67,15 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
   const [affordable, setAffordable] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  /** Click a player to see him; click him again (or press Escape) to put him away. */
+  const toggleSelected = (id: string) => setSelected((cur) => (cur === id ? null : id));
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelected(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const turn = currentTurn(state);
   // Which team the human is acting for right now.
@@ -215,8 +224,12 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
                   <tr
                     key={id}
                     className={`clickable ${owner !== undefined ? 'taken' : ''} ${selected === id ? 'selected picked-row' : ''}`}
-                    onClick={() => setSelected(id)}
-                    onDoubleClick={() => check.ok && doPick(id)}
+                    onClick={() => toggleSelected(id)}
+                    onDoubleClick={() => {
+                      // The two clicks of a double-click select and unselect: keep him selected as he signs.
+                      setSelected(id);
+                      if (check.ok) doPick(id);
+                    }}
                   >
                     <td className="left">
                       {owner !== undefined ? (
@@ -273,6 +286,7 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
             ownerSide={state.owner[sel.player.id]}
             check={actingTeam !== null ? canPick(state, actingTeam, sel.player.id) : { ok: false, reason: 'Not your turn' }}
             onSign={() => doPick(sel.player.id)}
+            onClose={() => setSelected(null)}
           />
         ) : (
           <div className="brk-key dr-hint muted small">
@@ -281,7 +295,7 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
           </div>
         )}
         {([0, 1] as const).map((team) => (
-          <Squad key={team} state={state} team={team} scouted={scouted} onSelect={setSelected} onRelease={(id) => setState(release(state, team, id))} />
+          <Squad key={team} state={state} team={team} scouted={scouted} onSelect={toggleSelected} onRelease={(id) => setState(release(state, team, id))} />
         ))}
       </div>
     </div>
@@ -296,6 +310,7 @@ function PlayerCard({
   ownerSide,
   check,
   onSign,
+  onClose,
 }: {
   p: PoolPlayer;
   ratings: Record<RatingKey, Range>;
@@ -303,6 +318,7 @@ function PlayerCard({
   ownerSide?: Side;
   check: { ok: boolean; reason?: string };
   onSign: () => void;
+  onClose: () => void;
 }) {
   const pl = p.player;
   const colour = ownerSide === 0 ? 'var(--home)' : ownerSide === 1 ? 'var(--away)' : 'var(--line)';
@@ -311,7 +327,13 @@ function PlayerCard({
       <div className="brk-key-body">
         <Portrait player={pl} side={ownerSide} size={84} number={false} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="brk-key-name">{pl.name}</div>
+          <div className="row">
+            <div className="brk-key-name">{pl.name}</div>
+            <div className="spacer" />
+            <button className="tiny" onClick={onClose} title="Close (Esc)">
+              ✕
+            </button>
+          </div>
           <div className="muted small">
             {pl.position} · {pl.archetype} · {pl.heightCm} cm · {pl.weightKg} kg · {positionGroup(pl.position)} · fame {p.hype}
           </div>

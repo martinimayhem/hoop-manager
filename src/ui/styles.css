@@ -372,11 +372,16 @@ tr.taken {
 .app:has(> .match) {
   max-width: none;
 }
+/* The court's width, from the height the screen leaves it (scoreboard, play-by-play, controls). The
+   play-by-play above and the stats below line up with it. */
+.match {
+  --court-w: min(100%, calc((100vh - 315px) * 2));
+}
 .court-box {
   background: #05090b;
   border: 2px solid #174b43;
   box-shadow: 0 5px 0 #087a7e, 0 9px 22px #0009;
-  width: min(100%, calc((100vh - 240px) * 2));
+  width: var(--court-w);
   margin: 0 auto;
 }
 .court-box .feeds {
@@ -431,8 +436,8 @@ kbd {
 .team-panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  overflow: auto;
+  gap: 5px;
+  overflow: hidden;
 }
 .pl {
   display: grid;
@@ -1256,4 +1261,961 @@ th.sorted {
 }
 .dr-hint {
   line-height: 1.4;
+}
+
+/* ---- Side panels: who is on the floor (the numbers are in the middle) ---- */
+.pl .pl-name {
+  grid-column: 2;
+  grid-row: 1;
+}
+.pl .fouls {
+  grid-column: 3;
+  grid-row: 1;
+  text-align: right;
+}
+.pl .pl-sub {
+  grid-column: 2 / 4;
+  grid-row: 2;
+}
+
+/* ---- Play-by-play, above the court ---- */
+.pbp {
+  position: relative;
+  width: var(--court-w);
+  margin: 0 auto;
+  cursor: pointer;
+  background: linear-gradient(180deg, #111c2b, #0b131d);
+  border: 1px solid #22344a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 14px #0006;
+}
+.pbp-latest {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-left: 4px solid;
+  padding-left: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+}
+.pbp-latest .pbp-text {
+  flex: 1;
+  min-width: 0;
+}
+.pbp-latest .pbp-text.info {
+  font-weight: 500;
+  font-style: italic;
+  color: var(--muted);
+}
+.pbp-time {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+.pbp-more {
+  color: var(--muted);
+  font-size: 11px;
+}
+.pbp-older {
+  margin-top: 3px;
+  padding-left: 14px;
+  font-size: 12.5px;
+  color: #aab6cc;
+}
+.pbp-older > div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+.pbp-older > div + div {
+  opacity: 0.55;
+}
+.pbp-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+.pbp-log {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 55vh;
+  overflow: hidden;
+  z-index: 15;
+  cursor: default;
+  background: #0b131dF2;
+  border: 1px solid #22344a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  box-shadow: 0 12px 30px #000c;
+}
+.pbp-log > div {
+  padding: 3px 0;
+  border-bottom: 1px solid #ffffff0a;
+}
+.pbp-log .score {
+  font-weight: 700;
+}
+.pbp-log .info {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ---- Bench rows: one line each, so the panel fits without scrolling ---- */
+.pl.compact {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  font-size: 11.5px;
+}
+.pl.compact .portrait {
+  grid-row: auto;
+}
+.pl.compact .pl-name {
+  grid-column: 2;
+  grid-row: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl.compact .pl-sub {
+  grid-column: 3;
+  grid-row: 1;
+}
+.pl.compact .fouls {
+  grid-column: 4;
+  grid-row: 1;
+}
+.pbp-latest .pbp-text.setup {
+  font-weight: 600;
+  font-style: italic;
+  color: #d6deec;
+}
+
+/* ---- The display type: condensed and bold, for names, headings and numbers ---- */
+.ov-star-head,
+.ov-star-name,
+.tile-v,
+.ov-coach-head,
+.lt-title,
+.lt-head,
+.lt-name,
+.lt-c,
+.gc-tile-l,
+.gc-tile-v {
+  font-family: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  font-stretch: condensed;
+}
+
+/* ---- Overlays on the empty corners of the court; sized from the court, so they scale with it ---- */
+.court-box {
+  container-type: inline-size;
+}
+.ov-star {
+  position: absolute;
+  right: 1.1cqw;
+  bottom: 1.3cqw;
+  width: 25.5cqw;
+  z-index: 3;
+  background: linear-gradient(180deg, rgba(20, 28, 42, 0.92), rgba(9, 14, 22, 0.94));
+  border: 1px solid #2a3a52;
+  border-radius: 0.8cqw;
+  box-shadow: 0 0.6cqw 2cqw #000b, inset 0 1px 0 #ffffff14;
+  overflow: hidden;
+  backdrop-filter: blur(3px);
+}
+.ov-star-head {
+  background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 55%, #000));
+  color: #fff;
+  font-size: 0.95cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.35cqw 0.9cqw;
+  text-shadow: 0 1px 2px #0008;
+}
+.ov-star-body {
+  display: flex;
+  align-items: center;
+  gap: 0.9cqw;
+  padding: 0.7cqw 0.9cqw 0.4cqw;
+}
+.ov-star-portrait {
+  flex: none;
+  width: 5.6cqw;
+  height: 5.6cqw;
+  border-radius: 50%;
+  border: 0.22cqw solid var(--team);
+  box-shadow: 0 0 1.2cqw color-mix(in srgb, var(--team) 60%, transparent);
+  background: radial-gradient(circle at 50% 35%, #2b3a52, #121a28);
+  overflow: hidden;
+}
+.ov-star-portrait .portrait,
+.lt-face .portrait {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.ov-star-portrait img,
+.lt-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 20%;
+}
+.ov-star-who {
+  min-width: 0;
+}
+.ov-star-name {
+  font-size: 1.75cqw;
+  font-weight: 700;
+  line-height: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-star-team {
+  margin-top: 0.2cqw;
+  font-size: 0.9cqw;
+  color: #9fb0c8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-tiles {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.35cqw;
+  padding: 0.3cqw 0.9cqw 0.8cqw;
+}
+.tile {
+  text-align: center;
+  padding: 0.35cqw 0.1cqw 0.25cqw;
+  background: #ffffff0b;
+  border: 1px solid #ffffff14;
+  border-radius: 0.4cqw;
+}
+.tile-v {
+  font-size: 1.45cqw;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.tile-l {
+  font-size: 0.65cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8d9ab5;
+}
+.tile.hot {
+  background: linear-gradient(180deg, var(--team), color-mix(in srgb, var(--team) 60%, #000));
+  border-color: transparent;
+}
+.tile.hot .tile-l {
+  color: #ffffffd0;
+}
+.ov-coach {
+  position: absolute;
+  left: 1.1cqw;
+  top: 1.1cqw;
+  width: 26cqw;
+  z-index: 3;
+  padding: 0.6cqw 0.9cqw;
+  border-left: 0.3cqw solid;
+  border-radius: 0 0.6cqw 0.6cqw 0;
+  background: linear-gradient(90deg, rgba(9, 14, 22, 0.94), rgba(9, 14, 22, 0.8));
+  box-shadow: 0 0.5cqw 1.5cqw #000a;
+}
+.ov-coach-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+.ov-coach-head span {
+  color: #8d9ab5;
+  letter-spacing: 0.04em;
+}
+.ov-coach-text {
+  margin-top: 0.2cqw;
+  font-size: 1.15cqw;
+  line-height: 1.3;
+  color: #e8edf7;
+}
+
+/* ---- Under the court: team tiles and the leader tables, rows stretched to fit, never scrolled ---- */
+.match-info {
+  flex: 1 1 0;
+  min-height: 0;
+  width: var(--court-w);
+  margin: 0 auto;
+  overflow: hidden;
+}
+.court-box .feeds {
+  display: block;
+}
+.gamecast {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.gc-tiles {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+.gc-tile {
+  background: linear-gradient(180deg, #172338, #0f1827);
+  border: 1px solid #24364e;
+  border-radius: 6px;
+  padding: 4px 8px 5px;
+  box-shadow: inset 0 1px 0 #ffffff0d;
+}
+.gc-tile-l {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8d9ab5;
+  text-align: center;
+}
+.gc-tile-v {
+  display: flex;
+  justify-content: space-between;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #6f7d96;
+  font-variant-numeric: tabular-nums;
+}
+.gc-tile-v .lead {
+  color: #fff;
+}
+.gc-tile-v .lead.home {
+  text-shadow: 0 0 10px #ff7a1a90;
+}
+.gc-tile-v .lead.away {
+  text-shadow: 0 0 10px #2f7bff90;
+}
+.gc-tile-bar {
+  display: flex;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #22344a;
+}
+.lt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #161f2e, #0e151f);
+  border: 1px solid #2a3a52;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px #0008, inset 0 1px 0 #ffffff0d;
+}
+.lt-title {
+  background: linear-gradient(90deg, #d7263d, #f46036);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  text-shadow: 0 1px 2px #0007;
+}
+.lt-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto repeat(var(--rows), minmax(0, 1fr));
+  padding: 0 12px 4px 0;
+}
+.lt-sub {
+  margin-left: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0.8;
+}
+.lt-head,
+.lt-row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+  column-gap: 8px;
+  min-height: 0;
+}
+.lt-head {
+  text-transform: uppercase;
+  padding: 5px 0 3px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #f4a23c;
+  text-align: right;
+  border-bottom: 1px solid #ffffff14;
+}
+.lt-head .left {
+  text-align: left;
+}
+.lt-head > :first-child,
+.lt-row > :first-child {
+  padding-left: 12px;
+}
+.lt-row {
+  border-bottom: 1px solid #ffffff0a;
+  overflow: hidden;
+  box-shadow: inset 4px 0 0 var(--team);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--team) 12%, transparent), transparent 30%);
+}
+.lt-row:nth-child(odd) {
+  background-color: #ffffff04;
+}
+.lt-no {
+  color: var(--team) !important;
+  font-weight: 700;
+}
+.lt-pos {
+  color: #8d9ab5 !important;
+}
+.lt-rank {
+  font-size: 12px;
+  color: #6f7d96;
+  text-align: center;
+}
+.lt-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lt-face {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--team);
+  background: radial-gradient(circle at 50% 35%, #2b3a52, #121a28);
+  overflow: hidden;
+}
+.lt-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.lt-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.1;
+}
+.lt-team {
+  font-size: 11px;
+  color: var(--team);
+  white-space: nowrap;
+}
+.lt-c {
+  font-size: 15px;
+  text-align: right;
+  color: #d6deec;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lt-c.key {
+  font-size: 21px;
+  font-weight: 700;
+  color: #f4a23c;
+}
+.lt-empty {
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* =====================================================================================
+   Design system: the look of the game-leaders table everywhere. Condensed bold type for
+   headings, numbers and buttons; dark gradient cards; a red-orange banner on each card's
+   heading; orange column headers; team colours as accents. Later rules win over earlier.
+   ===================================================================================== */
+:root {
+  --display: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  --card-1: #161f2e;
+  --card-2: #0e151f;
+  --card-line: #2a3a52;
+  --banner: linear-gradient(90deg, #d7263d, #f46036);
+  --head: #f4a23c;
+  --panel: #131c2a;
+  --panel-2: #1a2537;
+  --line: #2a3a52;
+}
+body {
+  background:
+    radial-gradient(1400px 700px at 50% -15%, #182740 0%, transparent 60%),
+    #0a0f18;
+  background-attachment: fixed;
+}
+
+/* Type */
+h1,
+h2,
+h3,
+th,
+button,
+.menu .title,
+.choice b,
+.tag,
+.price,
+.budget,
+.range,
+.rating,
+.shirt-no,
+.stars,
+.brk-key-name,
+.brk-key-line,
+.brk-cmp-label,
+.brk-roster-head b,
+.brk-choice-label,
+.dr-head h1 {
+  font-family: var(--display);
+  font-stretch: condensed;
+}
+h1 {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+h2 {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+h3 {
+  color: var(--head);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+/* Cards */
+.panel {
+  background: linear-gradient(180deg, var(--card-1), var(--card-2));
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px #0008, inset 0 1px 0 #ffffff0d;
+}
+/* A card's first heading is its banner, edge to edge. */
+.panel:not(.row) > h3:first-child {
+  margin: -12px -12px 10px;
+  padding: 6px 12px;
+  background: var(--banner);
+  color: #fff;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  border-radius: 7px 7px 0 0;
+  text-shadow: 0 1px 2px #0007;
+}
+.panel.row > h3:first-child {
+  color: var(--head);
+}
+
+/* Tables */
+th {
+  color: var(--head);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--card-1);
+  border-bottom: 1px solid #ffffff14;
+}
+th.sorted {
+  color: #fff;
+}
+td {
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid #ffffff0a;
+}
+tbody tr:nth-child(even) {
+  background: #ffffff05;
+}
+tbody tr.clickable:hover {
+  background: #f4603614;
+}
+tr.selected,
+tr.picked-row td {
+  outline: none;
+  background: #f4603622 !important;
+}
+tr.selected {
+  box-shadow: inset 3px 0 0 #f46036;
+}
+
+/* Buttons and fields */
+button {
+  background: linear-gradient(180deg, #1c283c, #131c2a);
+  border: 1px solid var(--card-line);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+button:hover:not(:disabled) {
+  border-color: #f46036;
+  box-shadow: 0 0 0 1px #f4603655;
+}
+button.primary {
+  background: var(--banner);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 2px #0007;
+  box-shadow: 0 4px 14px #d7263d40;
+}
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 18px #f4603660;
+}
+button.active,
+button.chip.active,
+.card.active {
+  background: linear-gradient(180deg, #3a2018, #24150f);
+  border-color: #f46036;
+  box-shadow: 0 0 0 1px #f46036, 0 0 14px #f4603633;
+  color: #fff;
+}
+input,
+select {
+  background: #0b111b;
+  border: 1px solid var(--card-line);
+  box-shadow: inset 0 1px 3px #0008;
+}
+input:focus,
+select:focus {
+  outline: none;
+  border-color: #f46036;
+}
+.tag {
+  background: #ffffff0d;
+  border: 1px solid #ffffff12;
+  letter-spacing: 0.04em;
+}
+
+/* Menu */
+.menu .title {
+  font-size: 64px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-shadow: 0 4px 24px #f4603640;
+}
+.menu .title span {
+  background: var(--banner);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.choice {
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.choice b {
+  font-size: 17px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.choice small {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-stretch: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* Tactic cards (prep) and chips */
+.card {
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.explain,
+.suggest,
+.swap-hint {
+  background: #0b111b;
+  border: 1px solid var(--card-line);
+  border-radius: 6px;
+}
+.suggest {
+  border-color: #f4603655;
+  background: linear-gradient(90deg, #f460360f, transparent);
+}
+
+/* Break screen and draft: the same cards */
+.brk-key,
+.brk-compare,
+.brk-roster,
+.brk-advice {
+  background: linear-gradient(180deg, var(--card-1), var(--card-2));
+  border-color: var(--card-line);
+  box-shadow: 0 6px 18px #0008, inset 0 1px 0 #ffffff0d;
+}
+.brk-key-label {
+  font-family: var(--display);
+  letter-spacing: 0.12em;
+}
+.brk-key-name {
+  font-size: 19px;
+  text-transform: uppercase;
+}
+.brk-key-line {
+  font-size: 19px;
+}
+.brk-roster-head b {
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.brk-head h1,
+.dr-head h1 {
+  font-size: 28px;
+}
+.brk-advice {
+  border-color: #f4603655;
+  background: linear-gradient(90deg, #f460361a, var(--card-2) 60%);
+}
+
+/* Score in the match */
+.match .scoreboard {
+  background: linear-gradient(180deg, #121c2a, #0a1119);
+  border-color: var(--card-line);
+}
+.sb-name {
+  font-family: var(--display);
+  font-size: 22px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.team-panel h3 {
+  font-size: 13px;
+}
+
+/* Scroll bars, where a long list needs one: thin and dark, part of the card. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3a52 transparent;
+}
+.prep > .panel {
+  overflow-x: visible;
+}
+.brk-table .range {
+  min-width: 44px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+/* ---- Player card (key player at a break; the court's player of the game is its twin) ---- */
+.card-star {
+  background: linear-gradient(180deg, var(--card-1), var(--card-2));
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px #0008, inset 0 1px 0 #ffffff0d;
+  overflow: hidden;
+}
+.card-star-head {
+  background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 50%, #000));
+  color: #fff;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  text-shadow: 0 1px 2px #0008;
+}
+.card-star-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 6px;
+}
+.card-star-portrait {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid var(--team);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--team) 55%, transparent);
+  background: radial-gradient(circle at 50% 35%, #2b3a52, #121a28);
+  overflow: hidden;
+}
+.card-star-portrait .portrait {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.card-star-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 20%;
+}
+.card-star-name {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-star-team {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #9fb0c8;
+}
+.card-tiles {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+  padding: 4px 12px 12px;
+}
+.card-tiles .tile {
+  padding: 5px 2px 4px;
+  border-radius: 5px;
+}
+.card-tiles .tile-v {
+  font-size: 20px;
+}
+.card-tiles .tile-l {
+  font-size: 10px;
+}
+
+/* ---- Roster cards: the team name in a banner of its colour ---- */
+.brk-roster {
+  border-top-width: 1px;
+  border-radius: 8px;
+  padding: 0 6px 6px;
+  overflow: hidden;
+}
+.brk-roster-head {
+  margin: 0 -6px 4px;
+  padding: 5px 12px;
+  background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 45%, #000) 70%);
+  align-items: center;
+}
+.brk-roster-head b {
+  color: #fff;
+  text-shadow: 0 1px 2px #0008;
+}
+.brk-roster-head .muted {
+  color: #ffffffb0;
+}
+
+/* ---- Box score and result ---- */
+.box-team {
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 0 8px 8px;
+  background: #0b111b80;
+}
+.box-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 -8px 4px;
+  padding: 5px 12px;
+  background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 45%, #000) 70%);
+}
+.box-head b {
+  font-family: var(--display);
+  font-size: 17px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 1px 2px #0008;
+}
+.box-score {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+}
+.box-totals {
+  margin-top: 6px;
+}
+.result-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  gap: 16px;
+  align-items: start;
+}
+.result-title {
+  font-size: 40px;
+  margin: 2px 0 8px;
+}
+.result-score {
+  margin-left: 14px;
+  color: #fff;
+}
+
+/* ---- Side panels in the match: the team in a banner of its colour ---- */
+.tp-banner {
+  margin: -12px -12px 4px;
+  padding: 6px 12px;
+  background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 45%, #000) 75%);
+  color: #fff;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 7px 7px 0 0;
+  text-shadow: 0 1px 2px #0008;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-panel h3 {
+  color: var(--head) !important;
+}
+
+/* ---- Scouting report: the whole table inside its card; long headers wrap onto two lines ---- */
+.scout-table {
+  width: 100%;
+}
+.scout-table th {
+  white-space: normal;
+  line-height: 1.15;
+  vertical-align: bottom;
+  padding-bottom: 3px;
+}
+.scout-table .stars {
+  white-space: nowrap;
 }

@@ -9,8 +9,9 @@ import type { Setup } from '../App';
 import { BoxScoreTables } from '../components/BoxScoreTable';
 import { Portrait, ShirtNumber } from '../components/Portrait';
 import { featuresUrl, lookOf } from '../looks';
-import { EnergyBar, RatingBadge } from '../components/common';
+import { EnergyBar } from '../components/common';
 import { BreakScreen } from '../components/BreakScreen';
+import { CourtOverlays, Gamecast, PlayByPlay } from '../components/Gamecast';
 import { REFS, playerKey } from '../court/animation';
 import { CANVAS_H, CANVAS_W, CourtRenderer, type DotInfo } from '../court/render';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
@@ -49,6 +50,21 @@ export function MatchScreen({
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   const [showBox, setShowBox] = useState(false);
   const [showFeed, setShowFeed] = useState(false);
+  // The strip under the court: shown when there is room for it (a tall screen leaves plenty), else
+  // the commentary and the assistant open over the court from the button.
+  const infoRef = useRef<HTMLDivElement>(null);
+  /** Below this height (px) there is no room for the stats under the court. */
+  const INFO_MIN_HEIGHT = 230;
+  const [roomy, setRoomy] = useState(false);
+  useEffect(() => {
+    const el = infoRef.current;
+    if (!el) return;
+    const measure = () => setRoomy(el.clientHeight >= INFO_MIN_HEIGHT);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [seenTip, setSeenTip] = useState(-1);
   const [muted, setMuted] = useState(sound.muted);
   /** Paused because the player switched away; they continue from the overlay. */
@@ -181,7 +197,7 @@ export function MatchScreen({
   // way to the end. The engine's momentum is unchanged; this is only the needle.
   const momentumPct = 50 - Math.max(-1, Math.min(1, m.momentum * MOMENTUM_DISPLAY)) * 46;
   const humanTips = m.tips.filter((t) => controllers[t.side] === 'human');
-  const unreadTips = showFeed ? 0 : humanTips.filter((t) => t.id > seenTip).length;
+  const unreadTips = showFeed || roomy ? 0 : humanTips.filter((t) => t.id > seenTip).length;
 
   return (
     <div className="match">
@@ -192,6 +208,7 @@ export function MatchScreen({
 
       <TeamPanel m={m} side={0} view={m.view[0]} human={controllers[0] === 'human'} />
       <div className="court-wrap">
+        <PlayByPlay m={m} />
         <div className="court-box">
           {away && m.paused && (
             <div className="away-pause">
@@ -208,38 +225,11 @@ export function MatchScreen({
             »
           </div>
           <canvas ref={canvasRef} className="court" width={CANVAS_W} height={CANVAS_H} />
-          {m.caption && (
-            <div className="caption">
-              <div className="stripe" style={{ background: m.caption.side === 0 ? 'var(--home)' : m.caption.side === 1 ? 'var(--away)' : 'var(--muted)' }} />
-              <div className={`text ${m.caption.kind}`}>{m.caption.text}</div>
-            </div>
-          )}
-          {showFeed && (
+          {/* The commentary is in the play-by-play above; the court's empty corners carry the player of the game and the assistant. */}
+          <CourtOverlays m={m} humanSides={humanSides} />
+          {showFeed && !roomy && (
             <div className="feeds">
-              <div className="panel feed">
-                {m.feed.map((f) => (
-                  <div key={f.id} className={f.kind}>
-                    <span className="t">
-                      {periodLabel(f.quarter)} {clockString(f.clock)}
-                    </span>
-                    <span className={f.side === 0 ? 'home' : f.side === 1 ? 'away' : ''}>{f.side !== null && f.kind !== 'info' ? '● ' : ''}</span>
-                    {f.text}
-                  </div>
-                ))}
-              </div>
-              <div className="panel feed">
-                <h3>Assistant coach</h3>
-                {humanTips.map((t) => (
-                  <div key={t.id} className="tip" style={{ borderColor: t.side === 0 ? 'var(--home)' : 'var(--away)' }}>
-                    <span className="t">
-                      {periodLabel(t.quarter)} {clockString(t.clock)}
-                    </span>
-                    {humanSides.length > 1 && <b className={t.side === 0 ? 'home' : 'away'}>{m.s.teams[t.side].team.abbr}: </b>}
-                    {t.text}
-                  </div>
-                ))}
-                {humanTips.length === 0 && <div className="muted small">Watching the game…</div>}
-              </div>
+              <Gamecast m={m} />
             </div>
           )}
         </div>
@@ -292,16 +282,22 @@ export function MatchScreen({
           >
             {muted ? '🔇' : '🔊'}
           </button>
-          <button
-            className={`small ${showFeed ? 'active' : ''}`}
-            onClick={() => {
-              setShowFeed(!showFeed);
-              setSeenTip(humanTips[0]?.id ?? seenTip);
-            }}
-          >
-            Commentary &amp; coach
-            {unreadTips > 0 && <span className="count">{unreadTips}</span>}
-          </button>
+          {!roomy && (
+            <button
+              className={`small ${showFeed ? 'active' : ''}`}
+              onClick={() => {
+                setShowFeed(!showFeed);
+                setSeenTip(humanTips[0]?.id ?? seenTip);
+              }}
+            >
+              Game stats
+              {unreadTips > 0 && <span className="count">{unreadTips}</span>}
+            </button>
+          )}
+        </div>
+        {/* Below the court, where there is room: team stats, game leaders and the assistant, always in view. */}
+        <div className="match-info" ref={infoRef}>
+          {roomy && <Gamecast m={m} />}
         </div>
       </div>
       <TeamPanel m={m} side={1} view={m.view[1]} human={controllers[1] === 'human'} />
@@ -426,7 +422,7 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
     setPicked(null);
   };
 
-  const row = (id: string) => {
+  const row = (id: string, compact = false) => {
     const p = team.players.find((x) => x.id === id)!;
     const v = view.players[id];
     const goingOut = view.lineup.includes(id) && !upcoming.includes(id);
@@ -434,23 +430,19 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
     return (
       <div
         key={id}
-        className={`pl ${v.fouledOut ? 'out' : ''} ${canAct ? 'clickable' : ''} ${picked === id ? 'picked' : ''}`}
+        className={`pl ${compact ? 'compact' : ''} ${v.fouledOut ? 'out' : ''} ${canAct ? 'clickable' : ''} ${picked === id ? 'picked' : ''}`}
         onClick={() => click(id)}
         title={canAct ? 'Click a player on court and one on the bench to substitute' : undefined}
       >
-        <Portrait player={p} side={side} size={42} />
+        <Portrait player={p} side={side} size={compact ? 30 : 40} />
         <span className="pl-name">
           <ShirtNumber player={p} side={side} />
           {p.name}&nbsp;<span className="muted">{p.position}</span>
           {goingOut && <span className="pending"> ⬇ out</span>}
           {comingIn && <span className="pending"> ⬆ in</span>}
         </span>
-        <span className="pl-stat" title="Match rating (1-10, 6 = average)">
-          <RatingBadge r={v.rating} /> <b>{v.pts}</b>
-          <span className="muted"> pts</span>
-        </span>
         <span className="pl-sub">
-          <EnergyBar energy={v.energy} width={88} />
+          <EnergyBar energy={v.energy} width={compact ? 54 : 88} />
           <span className="mins muted" title="Minutes played">
             {Math.floor(v.seconds / 60)}′
           </span>
@@ -465,7 +457,8 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
   const bench = team.players.map((p) => p.id).filter((id) => !view.lineup.includes(id));
   const planned = m.plannedTactics(side);
   return (
-    <div className="panel team-panel">
+    <div className="panel team-panel" style={{ ['--team' as string]: colour }}>
+      <div className="tp-banner">{team.name}</div>
       {human && (
         <div className="tactics-bar">
           <h3 style={{ color: colour, margin: 0 }}>Sideline calls</h3>
@@ -495,13 +488,7 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
       )}
       {human && (
         <div style={{ marginTop: 8 }}>
-          <div className={`swap-hint ${picked ? 'active' : ''}`}>
-            {picked
-              ? `${nameOf(picked)} selected: now click who swaps with them.`
-              : canAct
-                ? 'Sub: click a player on court, then one on the bench.'
-                : 'Subs open again when play resumes.'}
-          </div>
+          {picked && <div className="swap-hint active">{nameOf(picked)} selected: now click who swaps with them.</div>}
           {m.queuedSubs[side].map((q) => (
             <div key={q.outId + q.inId} className="pending">
               ⇄ {nameOf(q.inId)} in for {nameOf(q.outId)}: at the next dead ball
@@ -515,14 +502,17 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
           {error && <div className="bad small">{error}</div>}
         </div>
       )}
-      <h3 style={{ color: colour, marginTop: 8 }}>On court</h3>
-      {view.lineup.map(row)}
-      <h3 style={{ marginTop: 8 }}>Bench</h3>
-      {bench.map(row)}
+      <h3 style={{ color: colour, marginTop: 6 }} title={human ? 'Substitute: click a player on court, then one on the bench' : undefined}>
+        On court
+      </h3>
+      {view.lineup.map((id) => row(id))}
+      <h3 style={{ marginTop: 6 }}>Bench</h3>
+      {bench.map((id) => row(id, true))}
 
     </div>
   );
 }
+
 
 /** How much further the momentum needle moves than the momentum itself. */
 const MOMENTUM_DISPLAY = 2;

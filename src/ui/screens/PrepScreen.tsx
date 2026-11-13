@@ -65,6 +65,7 @@ export function PrepScreen({ setup, teams, onReady, onMenu }: { setup: Setup; te
       </div>
       <div className="prep">
         <div className="panel">
+          <h3>Game plan</h3>
           <PlanEditor
             team={team}
             opponent={opponent}
@@ -74,6 +75,7 @@ export function PrepScreen({ setup, teams, onReady, onMenu }: { setup: Setup; te
           />
         </div>
         <div className="panel">
+          <h3>Scouting report: {opponent.name}</h3>
           <ScoutingReport opponent={opponent} us={team} side={side === 0 ? 1 : 0} />
         </div>
       </div>

@@ -146,31 +146,46 @@ function KeyPlayer({ m, side }: { m: LiveMatch; side: Side }) {
     .map((p) => ({ p, s: t.players[p.id].stats, r: playerRating(t.players[p.id].stats) }))
     .filter((x) => x.r !== null)
     .sort((a, b) => (b.r ?? 0) - (a.r ?? 0))[0];
+  const colour = side === 0 ? 'var(--home)' : 'var(--away)';
   return (
-    <div className={`brk-key ${side === 1 ? 'right' : ''}`} style={{ borderColor: side === 0 ? 'var(--home)' : 'var(--away)' }}>
-      <div className="brk-key-label" style={{ color: side === 0 ? 'var(--home)' : 'var(--away)' }}>
-        Key player · {t.team.name}
-      </div>
+    <div className="card-star" style={{ ['--team' as string]: colour }}>
+      <div className="card-star-head">Key player · {t.team.name}</div>
       {best ? (
-        <div className="brk-key-body">
-          <Portrait player={best.p} side={side} size={68} />
-          <div>
-            <div className="brk-key-name">
-              <ShirtNumber player={best.p} side={side} /> {best.p.name} <span className="muted small">{best.p.position}</span>
+        <>
+          <div className="card-star-body">
+            <div className="card-star-portrait">
+              <Portrait player={best.p} side={side} size={72} number={false} />
             </div>
-            <div className="brk-key-line">
-              <b>{best.s.pts}</b> pts · <b>{best.s.oreb + best.s.dreb}</b> reb · <b>{best.s.ast}</b> ast
-            </div>
-            <div className="muted small">
-              FG {best.s.fgm}/{best.s.fga} · 3P {best.s.tpm}/{best.s.tpa} · {Math.round(best.s.seconds / 60)} min
-            </div>
-            <div className="small">
-              Match rating <RatingBadge r={best.r} />
+            <div style={{ minWidth: 0 }}>
+              <div className="card-star-name">{best.p.name}</div>
+              <div className="card-star-team">
+                #{best.p.number} · {best.p.position} · {Math.round(best.s.seconds / 60)} min
+              </div>
             </div>
           </div>
-        </div>
+          <div className="card-tiles">
+            <div className="tile hot">
+              <div className="tile-v">{(best.r ?? 0).toFixed(1)}</div>
+              <div className="tile-l">Rating</div>
+            </div>
+            {[
+              [`${best.s.pts}`, 'Pts'],
+              [`${best.s.oreb + best.s.dreb}`, 'Reb'],
+              [`${best.s.ast}`, 'Ast'],
+              [`${best.s.fgm}-${best.s.fga}`, 'FG'],
+              [`${best.s.tpm}-${best.s.tpa}`, '3P'],
+            ].map(([v, l]) => (
+              <div key={l} className="tile">
+                <div className="tile-v">{v}</div>
+                <div className="tile-l">{l}</div>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
-        <div className="muted small">Nobody has played yet.</div>
+        <div className="muted small" style={{ padding: 12 }}>
+          Nobody has played yet.
+        </div>
       )}
     </div>
   );
@@ -312,9 +327,9 @@ function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: G
   };
 
   return (
-    <div className="brk-roster" style={{ borderTopColor: side === 0 ? 'var(--home)' : 'var(--away)' }}>
+    <div className="brk-roster" style={{ ['--team' as string]: side === 0 ? 'var(--home)' : 'var(--away)' }}>
       <div className="brk-roster-head">
-        <b style={{ color: side === 0 ? 'var(--home)' : 'var(--away)' }}>{t.team.name}</b>
+        <b>{t.team.name}</b>
         <span className="muted small">
           {onChange ? (picked ? `${byId.get(picked)?.name} picked: now click who swaps with him.` : 'Click a player on court, then one on the bench, to swap.') : 'Their players'}
         </span>

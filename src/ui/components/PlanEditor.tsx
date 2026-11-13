@@ -85,11 +85,10 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
       >
         <td className="left">
           <span className="player-cell">
-            <Portrait player={p} side={side} size={40} />
+            <Portrait player={p} side={side} size={24} />
             <ShirtNumber player={p} side={side} />
-            <span className="who">
+            <span className="brk-name" title={p.archetype}>
               {p.name}
-              <span className="tag">{p.archetype}</span>
             </span>
           </span>
         </td>
@@ -167,8 +166,8 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
             ? `${pickedName} selected: now click a ${pickedOnCourt ? 'bench player to bring in' : 'player on court to take off'}.`
             : 'To swap: click a player on court, then a bench player.'}
         </div>
-        <div className="scroll" style={{ maxHeight: 420 }}>
-          <table>
+        <div>
+          <table className="brk-table">
             <thead>
               <tr>
                 <th className="left">Player</th>

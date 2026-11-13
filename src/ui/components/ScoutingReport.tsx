@@ -18,12 +18,9 @@ export function ScoutingReport({ opponent, us, side }: { opponent: Team; us: Tea
   const players = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall);
   return (
     <div style={{ display: 'grid', gap: 12 }}>
+      <div className="muted small">Ranges are your scout's estimates. Famous players are easy to read; unknowns could surprise you.</div>
       <div>
-        <h3>Scouting report: {opponent.name}</h3>
-        <div className="muted small">Ranges are your scout's estimates. Famous players are easy to read; unknowns could surprise you.</div>
-      </div>
-      <div className="scroll" style={{ maxHeight: 300 }}>
-        <table>
+        <table className="brk-table scout-table">
           <thead>
             <tr>
               <th className="left">Player</th>
@@ -41,11 +38,10 @@ export function ScoutingReport({ opponent, us, side }: { opponent: Team; us: Tea
               <tr key={p.id}>
                 <td className="left">
                   <span className="player-cell">
-                    <Portrait player={p} side={side} size={40} />
+                    <Portrait player={p} side={side} size={24} />
                     <ShirtNumber player={p} side={side} />
-                    <span className="who">
+                    <span className="brk-name" title={p.archetype}>
                       {p.name}
-                      <span className="tag">{p.archetype}</span>
                     </span>
                   </span>
                 </td>

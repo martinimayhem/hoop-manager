@@ -6,7 +6,7 @@ import { describe as commentate, namesFor, type Names } from '../../engine/comme
 import { callTimeout, canCallTimeout, createMatch, setGamePlan, stepPossession } from '../../engine/match';
 import { composite } from '../../engine/ratings';
 import { emit, other } from '../../engine/state';
-import type { DefenceCall, DefenceScheme, GamePlan, MatchState, OffenceCall, PlayerGameState, PossessionCalls, Side, Team, TimedEvent, Transition } from '../../engine/types';
+import type { DefenceCall, DefenceScheme, GamePlan, MatchState, OffenceCall, PlayerGameState, PlayerStats, PossessionCalls, Side, Team, TeamExtras, TimedEvent, Transition } from '../../engine/types';
 import { playerRating } from '../../engine/stats';
 import { aiCall, asksForCall, isClutch } from '../../game/clutch';
 import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
@@ -126,7 +126,7 @@ export interface FeedItem {
 }
 
 /** Per-player numbers as of the last completed possession (so panels don't spoil the animation). */
-export type PlayerView = Pick<PlayerGameState, 'energy' | 'fouls' | 'fouledOut' | 'ejected' | 'technicals'> & { pts: number; reb: number; ast: number; seconds: number; rating: number | null };
+export type PlayerView = Pick<PlayerGameState, 'energy' | 'fouls' | 'fouledOut' | 'ejected' | 'technicals'> & { pts: number; reb: number; ast: number; fgm: number; fga: number; tpm: number; tpa: number; seconds: number; rating: number | null; stats: PlayerStats };
 
 /** Visual/audio cue for the court renderer and sound engine. */
 export type FxKind = 'swish' | 'three' | 'clank' | 'dunk' | 'block' | 'steal' | 'foul' | 'violation' | 'timeout' | 'quarterEnd' | 'gameEnd';
@@ -170,6 +170,10 @@ export interface TeamView {
   quarterFouls: number;
   /** Team fouls in the last two minutes of the period. */
   lateFouls: number;
+  /** Paint, fast-break and second-chance points so far. */
+  extras: TeamExtras;
+  /** Who started the game: the rest are the bench. */
+  starters: string[];
   /** The coach was ejected: his assistant runs the bench. */
   coachEjected: boolean;
   coachTechnicals: number;
@@ -217,6 +221,8 @@ export class LiveMatch {
    * not when the engine has already played the possession (that would give away what is coming).
    */
   momentum = 0;
+  /** The two starting fives, for bench points. */
+  private readonly starters: [string[], string[]];
   /** The "Argue the call" button: whose, and until when (real seconds). Null when not up. */
   argue: { side: Side; until: number } | null = null;
   /**
@@ -274,6 +280,7 @@ export class LiveMatch {
   constructor(home: Team, away: Team, plans: [GamePlan, GamePlan], seed: number, controllers: [Controller, Controller], speed: Speed) {
     this.s = createMatch(home, away, plans[0], plans[1], seed);
     this.s.humanCoach = [controllers[0] === 'human', controllers[1] === 'human'];
+    this.starters = [[...plans[0].starters], [...plans[1].starters]];
     this.names = namesFor(this.s);
     this.controllers = controllers;
     this.speed = speed;
@@ -1037,11 +1044,16 @@ export class LiveMatch {
         pts: p.stats.pts,
         reb: p.stats.oreb + p.stats.dreb,
         ast: p.stats.ast,
+        fgm: p.stats.fgm,
+        fga: p.stats.fga,
+        tpm: p.stats.tpm,
+        tpa: p.stats.tpa,
         seconds: p.stats.seconds,
         rating: playerRating(p.stats),
+        stats: { ...p.stats },
       };
     }
-    return { lineup: [...t.lineup], players, timeoutsLeft: t.timeoutsLeft, quarterFouls: t.quarterFouls, lateFouls: t.lateFouls, coachEjected: t.coachEjected, coachTechnicals: t.coachTechnicals };
+    return { lineup: [...t.lineup], players, timeoutsLeft: t.timeoutsLeft, quarterFouls: t.quarterFouls, lateFouls: t.lateFouls, extras: { ...t.extras }, starters: [...this.starters[side]], coachEjected: t.coachEjected, coachTechnicals: t.coachTechnicals };
   }
 
   private bump(): void {

@@ -6,11 +6,12 @@ const pct = (m: number, a: number) => (a ? `${Math.round((100 * m) / a)}%` : '鈥
 
 function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side }) {
   return (
-    <div>
-      <h2 style={{ color: colour }}>
-        {t.name} <span className="muted">{t.score}</span>
-      </h2>
-      <table>
+    <div className="box-team" style={{ ['--team' as string]: colour }}>
+      <div className="box-head">
+        <b>{t.name}</b>
+        <span className="box-score">{t.score}</span>
+      </div>
+      <table className="brk-table">
         <thead>
           <tr>
             <th className="left">Player</th>
@@ -35,7 +36,7 @@ function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side
             <tr key={player.id}>
               <td className="left">
                 <span className="player-cell">
-                  <Portrait player={player} side={side} size={40} />
+                  <Portrait player={player} side={side} size={24} />
                   <ShirtNumber player={player} side={side} />
                   {starter ? <b>{player.name}</b> : player.name}&nbsp;<span className="muted small">{player.position}</span>
                 </span>
@@ -68,7 +69,7 @@ function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side
           ))}
         </tbody>
       </table>
-      <div className="muted small" style={{ marginTop: 4 }}>
+      <div className="muted small box-totals">
         FG {pct(t.totals.fgm, t.totals.fga)} 路 3P {pct(t.totals.tpm, t.totals.tpa)} ({t.totals.tpm}/{t.totals.tpa}) 路 FT {pct(t.totals.ftm, t.totals.fta)} 路 REB{' '}
         {t.totals.oreb + t.totals.dreb} ({t.totals.oreb} off) 路 TO {t.totals.tov} 路 Paint {t.extras.paintPts} 路 Fast break {t.extras.fastBreakPts} 路 2nd chance{' '}
         {t.extras.secondChancePts}

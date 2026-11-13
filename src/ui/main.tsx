@@ -8,7 +8,7 @@ const Turntable = import.meta.env.DEV ? lazy(() => import('./dev/Turntable').the
 const turntable = Turntable && new URLSearchParams(window.location.search).has('turntable');
 // Dev only: ?break plays a match to the end of Q1 (?break=2: halftime) and shows the break screen.
 const BreakPreview = import.meta.env.DEV ? lazy(() => import('./dev/BreakPreview').then((m) => ({ default: m.BreakPreview }))) : null;
-const breakPreview = BreakPreview && new URLSearchParams(window.location.search).has('break');
+const breakPreview = BreakPreview && (new URLSearchParams(window.location.search).has('break') || new URLSearchParams(window.location.search).has('gamecast') || new URLSearchParams(window.location.search).has('result'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
