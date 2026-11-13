@@ -8,13 +8,12 @@ import type { Controller } from '../../game/draft';
 import type { Setup } from '../App';
 import { BoxScoreTables } from '../components/BoxScoreTable';
 import { Portrait, ShirtNumber } from '../components/Portrait';
-import { featuresUrl, lookOf } from '../looks';
 import { EnergyBar } from '../components/common';
 import { PlayerCard, type CardAnchor } from '../components/PlayerCard';
 import { BreakScreen } from '../components/BreakScreen';
 import { CourtOverlays, Gamecast, PlayByPlay } from '../components/Gamecast';
-import { REFS, playerKey } from '../court/animation';
-import { CANVAS_H, CANVAS_W, CourtRenderer, type DotInfo } from '../court/render';
+import { CANVAS_H, CANVAS_W, CourtRenderer } from '../court/render';
+import { courtDots } from '../court/dots';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
 import { ARGUE_SECONDS, HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
 
@@ -189,16 +188,7 @@ export function MatchScreen({
       }
       const ctx = scene3d ? null : canvasRef.current?.getContext('2d');
       if (ctx) {
-        const holder = m.holderKey();
-        const dots: Record<string, DotInfo> = {};
-        for (const side of [0, 1] as const) {
-          for (const p of m.s.teams[side].team.players) {
-            const k = playerKey(side, p.id);
-            dots[k] = { label: String(p.number), side, heightM: p.heightCm / 100, hasBall: holder === k, look: lookOf(p).sprite, features: featuresUrl(p) };
-          }
-        }
-        for (const k of REFS) dots[k] = { label: '', side: 0, heightM: 1.84, hasBall: holder === k, ref: true };
-        rendererRef.current!.draw(ctx, m.frame(), dots, now / 1000);
+        rendererRef.current!.draw(ctx, m.frame(), courtDots(m), now / 1000);
         if (badgeRef.current) badgeRef.current.hidden = !m.isFastForwarding();
       }
       if (m.version !== seen) {
