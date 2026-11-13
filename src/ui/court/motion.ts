@@ -214,6 +214,8 @@ export interface LiveContext {
   openBreak?: boolean;
   /** Defender to attacker: chasing him down in transition, on his heels wherever he goes. */
   chase?: Record<string, string>;
+  /** Players who go for their spot at once, without a moment to read the play. */
+  goNow?: string[];
   /** Bringing the ball up or an open break: the open floor, where runners swerve round opponents. */
   openFloor?: boolean;
 }
@@ -697,7 +699,7 @@ export class Motion {
       // player keeps his own reaction time, so they set off one by one, never as a group.
       const r = (hash(`${key}:react`) % 100) / 100;
       const delay = key === ballHolder ? 0 : live && !key.startsWith(`${live.offence}:`) ? 0.1 + r * 0.25 : 0.05 + r * 0.55;
-      const aim = man || cp ? target : this.reactedAim(key, target, delay, gameDt);
+      const aim = man || cp || live?.goNow?.includes(key) ? target : this.reactedAim(key, target, delay, gameDt);
       let tx = aim.x;
       let ty = aim.y;
       if (key !== ballHolder && !man && !live?.dead && !isRef(key)) {

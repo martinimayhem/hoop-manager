@@ -248,6 +248,8 @@ describe('floor spacing and positions', () => {
           keys.forEach((a, i) => {
             for (const b of keys.slice(i + 1)) {
               if (beat.contact?.includes(a) && beat.contact.includes(b)) continue;
+              // The man going for a rebound off the coming miss leaves his spot for it.
+              if (beat.goNow?.includes(a) || beat.goNow?.includes(b)) continue;
               expect(apart(beat.players[a], beat.players[b])).toBeGreaterThanOrEqual(MIN_SPACING_M - 0.015);
             }
           });
@@ -469,12 +471,16 @@ describe('the ball', () => {
         const rebound = events[i + 1];
         if (ev.made || rebound?.type !== 'rebound') return;
         misses++;
-        const bounce = script.beats[at + 1];
-        const grab = script.beats[at + 2];
-        expect(bounce.ball.kind).toBe('fixed');
+        // Off the rim on a path of its own to where the engine has it come down (a loose ball
+        // bouncing on once more), then into the rebounder's hands, fighting for it.
+        const grabAt = script.beats.findIndex((b, j) => j > at && b.fire.includes(i + 1));
+        const flights = script.beats.slice(at + 1, grabAt);
+        const grab = script.beats[grabAt];
+        expect(flights.length).toBeGreaterThanOrEqual(1);
+        expect(flights.length).toBeLessThanOrEqual(2);
+        for (const f of flights) expect(f.ball.kind).toBe('fixed');
         expect(grab.ball.kind).toBe('toPlayer');
-        expect(grab.jump?.length).toBeGreaterThanOrEqual(2);
-        expect(grab.fire).toContain(i + 1);
+        if (flights.length === 1) expect(grab.jump?.length).toBeGreaterThanOrEqual(2);
       });
     });
     expect(misses).toBeGreaterThan(50);

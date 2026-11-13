@@ -6,7 +6,7 @@
 
 import { FREE_THROW_LINE_X, HALF_X, KEY_HALF_WIDTH, fromHoop, shotPoint } from '../../engine/court';
 import { other } from '../../engine/state';
-import { POSITIONS, type DefenceScheme, type KeyMatchup, type OffensiveFocus, type Position, type ShotType, type Side, type Tempo, type TimedEvent, type Transition } from '../../engine/types';
+import { POSITIONS, type ReboundLanding, type DefenceScheme, type KeyMatchup, type OffensiveFocus, type Position, type ShotType, type Side, type Tempo, type TimedEvent, type Transition } from '../../engine/types';
 import { BODY_M, COURT, ELITE_THREE, FORMATIONS, HOOP, HOOP_X, MID_Y, MIN_SPACING_M, ZONE, guardSpot, insideCourt, spread } from './formations';
 
 export { COURT, HOOP_X, MID_Y };
@@ -119,6 +119,8 @@ export interface Beat {
   openBreak?: boolean;
   /** Defender to attacker: a defender chasing the ball handler down in transition, on his heels wherever he goes. */
   chase?: Record<string, string>;
+  /** Players who go for their spot at once, without a moment to read the play: the rebounder off a miss. */
+  goNow?: string[];
 }
 
 export interface Script {
@@ -175,6 +177,18 @@ export const RIM_HEIGHT = 3.05;
 const RIM: Ball = { x: HOOP_X, y: MID_Y, z: RIM_HEIGHT + 0.03 };
 const NET: Ball = { x: HOOP_X, y: MID_Y + 0.06, z: 0.15 };
 const RIM_CONTACT_M = 0.4;
+/** A rebound is taken overhead at about this height, at the top of the jump. */
+const REBOUND_CATCH_Z = 3.2;
+/** How fast a carom travels across the floor (m/s), and the shortest time it is in the air. */
+const CAROM_M_S = 4.2;
+const CAROM_MIN_S = 0.55;
+/** A player reacts to a miss this long after the ball leaves the shooter's hands. */
+const REBOUND_READ_S = 0.35;
+/** And gets going at about this (m/s²): a real first step, not an instant top speed. */
+const REBOUND_ACCEL = 8;
+/** Off the floor, a loose rebound bounces on at most this far, at this speed. */
+const LOOSE_ON_M = 7;
+const LOOSE_M_S = 4.5;
 /** Where the ball leaves the shooter's hands, roughly. */
 const RELEASE_Z = 2.9;
 /** A defender this close to the line between passer and receiver is in the passing lane. */
@@ -382,6 +396,14 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   let andOneAt = -1;
   /** Set after a shot hits the rim, until the rebound plays it off. */
   let rimHit: { contact: Ball; from: Pos } | null = null;
+  /**
+   * Where a rebound comes down, decided as the miss goes up so the rebounder can go at once: the spot
+   * on his side of the rim, a long way out off a long shot. If he cannot get there in time the ball
+   * hits the floor there (`loose`) and bounces on towards him, to `pick`.
+   */
+  let reboundPlan: { key: string; spot: Pos; loose: boolean; pick: Pos; flight: number; second: number } | null = null;
+  /** The rebounder and everyone fighting him for it, while the ball comes off the rim. */
+  let rebounding: string[] = [];
 
   /** The shooter, once at the spot he goes up from: he holds it, and teammates give way round him. */
   const holding = (k: string) => k === soft && !!shotAt && dist(at[k], shotAt) < 0.05;
@@ -569,6 +591,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       through: through.length > 0 ? through : undefined,
       openBreak: openBreak || undefined,
       chase: Object.keys(chasing).length > 0 ? { ...chasing } : undefined,
+      goNow: reboundPlan ? [reboundPlan.key] : rebounding.length > 0 ? [...rebounding] : undefined,
     });
     pendingFire = [];
     paceFor = {};
@@ -822,6 +845,33 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       place(k, insideCourt(spot));
       paceFor[k] = 'sprint';
     }
+  };
+  /**
+   * Plans the rebound for `k` off a shot from `shotFrom`: `lead` is how long the ball has yet to fly
+   * before it comes off the iron, time he can use to get there.
+   */
+  const planRebound = (k: string, land: ReboundLanding, lead: number) => {
+    const p = at[k];
+    // Where the engine says it comes down.
+    const raw = fromHoop(land.back, land.across);
+    const spot = insideCourt({ x: Math.min(HOOP_X - 0.82, raw.x), y: raw.y });
+    const flight = Math.max(CAROM_MIN_S, dist(spot, HOOP) / CAROM_M_S + 0.25);
+    // How far he gets in `t` seconds: a moment to read it, then from a standstill up to a sprint.
+    const legs = (t: number) => {
+      const go = Math.max(0, t - REBOUND_READ_S);
+      const top = PACE_M_S.sprint * factor(k);
+      const toTop = top / REBOUND_ACCEL;
+      return 0.7 * (go < toTop ? 0.5 * REBOUND_ACCEL * go * go : (top * toTop) / 2 + top * (go - toTop));
+    };
+    const d = dist(p, spot);
+    if (d <= legs(lead + flight) + 0.4) return { key: k, spot, loose: false, pick: spot, flight, second: 0 };
+    // Out of his reach: it hits the floor there and bounces on towards him, as far as it takes.
+    const ux = (p.x - spot.x) / (d || 1);
+    const uy = (p.y - spot.y) / (d || 1);
+    let on = 0.5;
+    for (; on < LOOSE_ON_M; on += 0.25) if (d - on <= legs(lead + flight + on / LOOSE_M_S + 0.15) + 0.4) break;
+    const pick = insideCourt({ x: spot.x + ux * on, y: spot.y + uy * on }, 0.6);
+    return { key: k, spot, loose: true, pick, flight, second: Math.max(0.3, dist(spot, pick) / LOOSE_M_S + 0.15) };
   };
   /** Where the last defender back stands, to commit to the ball or to recover into the lane. */
   const lastBack = () => defIds.map(kDef).sort((a, b) => at[b].x - at[a].x)[0];
@@ -1348,11 +1398,13 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
    * Free-throw places: three defenders and two attackers on the lane, the defence nearest the
    * basket; everyone else behind the arc, one defender on the shooter and the rest back.
    */
-  const ftPlaces = (shooter: string): Record<string, Pos> => {
+  const ftPlaces = (shooter: string, rebounder?: string): Record<string, Pos> => {
     const out: Record<string, Pos> = { [shooter]: { ...FT_SPOT } };
     const byY = (a: string, b: string) => at[a].y - at[b].y;
-    const defs = defIds.map(kDef);
-    const offs = offKeys.filter((k) => k !== shooter);
+    // Whoever the engine has rebounding a miss is on the lane for it: moved to the end of his list.
+    const last = (ks: string[]) => (rebounder && ks.includes(rebounder) ? [...ks.filter((k) => k !== rebounder), rebounder] : ks);
+    const defs = last(defIds.map(kDef));
+    const offs = last(offKeys.filter((k) => k !== shooter));
     // The bigs take the lane, each to the side he is on.
     const [d0, d1, d2] = defs.slice(-3).sort(byY);
     const [o0, o1] = offs.slice(-2).sort(byY);
@@ -1672,6 +1724,22 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         place(challenger, openFinish ? fromBehind(challenger, at[shooterKey]) : { x: at[shooterKey].x + ((HOOP.x - from.x) / toRim) * 0.85, y: at[shooterKey].y + ((HOOP.y - from.y) / toRim) * 0.85 });
         paceFor[challenger] = 'sprint';
         if (openFinish) lateContest(at[shooterKey], from, challenger);
+        // A miss: the rebounder the engine has goes as soon as it is up, crashing or boxing out and turning.
+        const next = events[i + 1];
+        if (!ev.made && next?.type === 'rebound') {
+          const rk = sideOf(next.side)(next.playerId);
+          // The man contesting the shot cannot leave until it is up: no head start for him.
+          if (rk === challenger && at[rk]) reboundPlan = planRebound(rk, next.land, 0);
+          if (rk !== shooterKey && rk !== challenger && at[rk]) {
+            reboundPlan = planRebound(rk, next.land, minSeconds * 0.6);
+            const go = reboundPlan.loose ? reboundPlan.pick : reboundPlan.spot;
+            if (rk.startsWith(`${off}:`)) {
+              at[rk] = { ...go };
+              contact = [...contact, rk];
+            } else place(rk, { ...go });
+            paceFor[rk] = 'sprint';
+          }
+        }
         if (ev.blockerId) {
           push(0.8, { kind: 'fromPlayer', from: shooterKey, to: ballAbs({ x: from.x - 2.1, y: from.y + 1.5, z: 0.3 }), arc: 0.9, style }, [i], undefined, undefined, minSeconds);
         } else if (ev.made) {
@@ -1710,35 +1778,49 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         refSpot = {};
         // Off a defensive rebound, whoever the engine has getting back is already on his way.
         const retreat = ev.offensive ? [] : getBackFor(ev.back ?? 0, [k]);
-        if (rimHit) {
-          // Off the iron: the ball pops up, everyone nearby crashes, and they fight for it in the air.
-          const { contact: hit, from } = rimHit;
+        {
+          // Off the iron (or off a block, from wherever it was knocked): to where the engine says it
+          // comes down, which the rebounder can get to; it never changes course in the air.
+          // Everyone nearer the spot crashes and jumps too.
+          const hit: Ball = rimHit ? rimHit.contact : { ...ballSpot, z: Math.max(ballSpot.z, 0.3) };
           rimHit = null;
-          const away = Math.atan2(from.y - HOOP.y, from.x - HOOP.x) + (((seed + i) % 3) - 1) * 0.7;
-          const reach = 1.05 + dist(from, HOOP) * 0.25 + ((seed + i) % 3) * 0.3;
-          const carom = insideCourt({ x: Math.min(HOOP_X - 0.82, HOOP.x + Math.cos(away) * reach), y: HOOP.y + Math.sin(away) * reach });
-          const rivals = [...offKeys, ...defIds.map(kDef)]
-            .filter((o) => o !== k && !retreat.includes(o))
-            .sort((a, b) => dist(at[a], carom) - dist(at[b], carom))
-            .slice(0, 3);
-          at[k] = { ...carom };
+          const plan = reboundPlan?.key === k ? reboundPlan : planRebound(k, ev.land, 0.4);
+          reboundPlan = null;
+          rebounding = [k];
+          const catchAt = plan.loose ? plan.pick : plan.spot;
+          const mine = dist(at[k], plan.spot);
+          const pool = [...offKeys, ...defIds.map(kDef)].filter((o) => o !== k && !retreat.includes(o));
+          const near = [...pool].sort((a, b) => dist(at[a], plan.spot) - dist(at[b], plan.spot));
+          const rivals = near.filter((o, j) => j < 3 || dist(at[o], plan.spot) < mine).slice(0, 6);
+          at[k] = { ...catchAt };
           paceFor[k] = 'sprint';
+          rebounding = [k, ...rivals];
+          const away = Math.atan2(plan.spot.y - HOOP.y, plan.spot.x - HOOP.x);
           rivals.forEach((o, j) => {
+            // Round the spot, a body off it, beaten to it.
             const turn = away + 2 + j * 1.15;
-            at[o] = { x: carom.x + Math.cos(turn) * BODY_M * 1.2, y: carom.y + Math.sin(turn) * BODY_M * 1.2 };
+            const r = BODY_M * 1.2 + Math.floor(j / 3) * 0.9;
+            at[o] = insideCourt({ x: catchAt.x + Math.cos(turn) * r, y: catchAt.y + Math.sin(turn) * r });
             paceFor[o] = 'sprint';
           });
-          const top: Ball = { ...carom, z: 3.35 };
-          reachers = [k, ...rivals];
-          push(0.3, { kind: 'fixed', from: ballAbs(hit), to: ballAbs(top), arc: 0.35 }, [], undefined, undefined, 0.55);
-          jumpers = [k, ...rivals];
-          reachers = [k, ...rivals];
-          push(0.25, { kind: 'toPlayer', from: ballAbs(top), to: k, arc: 0, high: true }, [i], undefined, k, 0.45);
-        } else {
-          at[k] = { x: HOOP.x - 1.2 - (i % 3) * 0.3, y: HOOP.y + ((i % 5) - 2) * 0.6 };
-          paceFor[k] = 'sprint';
-          push(0.35, { kind: 'toPlayer', from: ballAbs({ ...ballSpot, z: Math.max(ballSpot.z, 2.4) }), to: k, arc: 0.75 }, [i], undefined, k, 0.6);
+          if (!plan.loose) {
+            const up: Ball = { ...plan.spot, z: REBOUND_CATCH_Z };
+            reachers = [k, ...rivals];
+            push(0.3, { kind: 'fixed', from: ballAbs(hit), to: ballAbs(up), arc: 0.5 + dist(plan.spot, HOOP) * 0.08 }, [], undefined, undefined, plan.flight);
+            jumpers = [k, ...rivals];
+            reachers = [k, ...rivals];
+            push(0.25, { kind: 'toPlayer', from: ballAbs(up), to: k, arc: 0, high: true }, [i], undefined, k, 0.4);
+          } else {
+            // It hits the floor, bounces on towards him, and he picks it up on the run.
+            const floor: Ball = { ...plan.spot, z: 0.11 };
+            const pick: Ball = { ...plan.pick, z: 0.9 };
+            reachers = [...rivals];
+            push(0.3, { kind: 'fixed', from: ballAbs(hit), to: ballAbs(floor), arc: 0.6 + dist(plan.spot, HOOP) * 0.08 }, [], 'Loose ball!', undefined, plan.flight);
+            push(0.2, { kind: 'fixed', from: ballAbs(floor), to: ballAbs(pick), arc: 0.45 }, [], undefined, undefined, plan.second);
+            push(0.15, { kind: 'toPlayer', from: ballAbs(pick), to: k, arc: 0.05 }, [i], undefined, k, 0.3);
+          }
         }
+        rebounding = [];
         holder = k;
         if (ev.offensive) {
           // Second chance: everyone else fans back out and the defence recovers.
@@ -1921,7 +2003,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         const last = ev.attempt === ev.of;
         if (ev.attempt === 1) {
           // Everyone walks to his place while the lead official gets the ball under the basket.
-          Object.assign(at, ftPlaces(k));
+          const reb = events.slice(i + 1).find((e) => e.type === 'rebound');
+          Object.assign(at, ftPlaces(k, reb?.type === 'rebound' ? sideOf(reb.side)(reb.playerId) : undefined));
           refSpot = { [trail]: { x: FT_SPOT.x - 2, y: TRAIL_Y }, [centre]: { x: FT_SPOT.x - 2, y: CENTRE_Y } };
           const walk = walkTo();
           const mark = beats.length;
@@ -1941,6 +2024,16 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         push(0, hold(), [], undefined, undefined, 0.6);
         // On the last one the lane comes in as the ball leaves his hands; before that nobody moves.
         if (last) stepIn();
+        // A miss coming: the rebounder the engine has goes for where it will come down.
+        const reb = events[i + 1];
+        if (last && !ev.made && reb?.type === 'rebound') {
+          const rk = sideOf(reb.side)(reb.playerId);
+          if (rk !== k && at[rk]) {
+            reboundPlan = planRebound(rk, reb.land, 0.6);
+            at[rk] = { ...(reboundPlan.loose ? reboundPlan.pick : reboundPlan.spot) };
+            paceFor[rk] = 'sprint';
+          }
+        }
         const arc = shotArc(FT_SPOT, 'set');
         const to = ev.made ? RIM : rimContact(FT_SPOT, seed + i);
         deadBeat = !last;

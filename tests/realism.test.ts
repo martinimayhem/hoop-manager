@@ -249,8 +249,9 @@ describe('movement realism', () => {
       deadClockTicks: r.deadClockTicks,
     }));
     // Sharp turns (over 120 degrees in 0.6 s): was 10.5 a minute per player.
-    // Help and recover and switches add some honest changes of direction: up to 3.2.
-    expect(r.bigTurns / playerMinutes).toBeLessThan(3.2);
+    // Help and recover and switches add some honest changes of direction, and so does everyone near
+    // a rebound turning for the ball the moment it comes off the rim: up to 3.3.
+    expect(r.bigTurns / playerMinutes).toBeLessThan(3.3);
     // The on-ball defender: within 2.5 m (was off 16% of the time) and goal-side (was wrong 12%).
     expect(r.onBall).toBeGreaterThan(1000);
     // Since help and recover: a skip pass to a man whose defender sank to help is open for the step
@@ -444,6 +445,8 @@ function watchEffort(seed: number, highlights: boolean): Effort {
   const e: Effort = { idle: [], defenderSeconds: 0, shots: [] };
   const slow: Record<string, number> = {};
   const slowFrom: Record<string, string> = {};
+  /** Each defender's velocity last frame (m/s of game time), to tell a hard stop-and-turn from drifting. */
+  const lastVel: Record<string, P> = {};
   let ballSide: string | null = null;
   let seen: Script | null = null;
   let shotBeat: object | null = null;
@@ -497,7 +500,14 @@ function watchEffort(seed: number, highlights: boolean): Effort {
       // and the rule that nobody goes through an opponent holds him there.
       const tiedUp = Object.keys(mo.pos).some((o) => o.startsWith(ballSide!) && dist(mo.pos[o], mo.pos[k]) < 1);
       const near = (spot && dist(mo.pos[k], spot) < 2) || (man && mo.pos[man] && dist(mo.pos[k], mo.pos[man]) < 2) || onBall || tiedUp;
-      if (speed < jog && !near) {
+      // Stopping and turning back for his spot at full effort (accelerating towards it at 4 m/s² or
+      // more) is working, not drifting, slow as he is for that moment.
+      const gv = { x: v.x / mo.scale, y: v.y / mo.scale };
+      const pv = lastVel[k];
+      lastVel[k] = gv;
+      const toSpot = spot ? Math.atan2(spot.y - mo.pos[k].y, spot.x - mo.pos[k].x) : 0;
+      const pushing = !!spot && !!pv && gameDt > 0 && ((gv.x - pv.x) * Math.cos(toSpot) + (gv.y - pv.y) * Math.sin(toSpot)) / gameDt > 4;
+      if (speed < jog && !near && !pushing) {
         if (!slow[k]) slowFrom[k] = `from ${m.clock.toFixed(1)}s beat ${index}`;
         slow[k] = (slow[k] ?? 0) + gameDt;
         if (slow[k] > 1 && slow[k] - gameDt <= 1) e.idle.push(`seed ${seed} q${sc.quarter} ${Math.round(m.clock)}s ${k} ${speed.toFixed(1)} m/s, ${spot ? dist(mo.pos[k], spot).toFixed(1) : '?'} m from his spot, facing ${spot ? Math.round(Math.abs(deg(angleDiff(mo.facing[k] ?? 0, Math.atan2(spot.y - mo.pos[k].y, spot.x - mo.pos[k].x))))) : '?'}° off it, ${a.kind} beat ${index} ${beat.phase}${beat.caption ? ` "${beat.caption}"` : ''}, ${slowFrom[k]}`);
@@ -548,5 +558,129 @@ describe('defenders always try', () => {
     console.log(`shots ${shots.length}, hand down within 4 m ${bad.length}`, bad.slice(0, 12));
     expect(shots.length).toBeGreaterThan(100);
     expect(bad).toEqual([]);
+  }, 600000);
+});
+
+// ---------------------------------------------------------------------------
+// Rebounds: the engine says who gets it; the animation sends the ball to him. The ball comes off the
+// rim on his side and comes down where he can get to, on a path of its own (it never bends towards
+// anyone in the air); he goes as soon as the shot is up; whoever is nearer the spot fights for it too.
+
+interface ReboundWatch {
+  rebounds: number;
+  /** How far the ball was from the rebounder when it reached his hands. */
+  far: string[];
+  /** Flights from the rim that changed direction in the air. */
+  bends: string[];
+  /** Players nearer the landing spot than the rebounder who neither jumped nor crashed. */
+  idle: string[];
+}
+
+function watchRebounds(seed: number, highlights: boolean): ReboundWatch {
+  const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], seed, ['ai', 'ai'], 'normal');
+  m.highlights = highlights;
+  const inner = m as unknown as { script: Script | null; scriptEvents: TimedEvent[]; durations: number[]; t: number; motion: Motion };
+  const w: ReboundWatch = { rebounds: 0, far: [], bends: [], idle: [] };
+  let seen: Script | null = null;
+  /** The rebound being watched: the beats from the miss off the rim to the catch. */
+  let reb: { from: number; to: number; key: string; spot: P | null; rivals: Set<string>; busy: Set<string>; dir: number | null; last: { x: number; y: number; z: number } | null; bent: boolean; caught: boolean } | null = null;
+  const where = (sc: Script) => `seed ${seed} q${sc.quarter} ${Math.round(m.clock)}s`;
+  for (let i = 0; i < 2_000_000 && m.phase !== 'final'; i++) {
+    m.tick(DT);
+    if (m.phase === 'timeout' || m.phase === 'break') m.resume();
+    const sc = inner.script;
+    const f = m.frame();
+    if (!sc || !f) continue;
+    if (sc !== seen) {
+      seen = sc;
+      reb = null;
+    }
+    const { index, u } = beatAt(sc, inner.durations, inner.t);
+    const beat = sc.beats[index];
+    const mo = inner.motion;
+    // A rebound off the iron: the beat that fires it, and the miss before it.
+    if (!reb) {
+      const evs = inner.scriptEvents;
+      const r = sc.beats.findIndex((b, bi) => bi >= index && b.fire.some((e) => evs[e]?.type === 'rebound'));
+      if (r < 0) continue;
+      const shot = sc.beats.slice(0, r).map((b, bi) => ({ b, bi })).reverse().find(({ b }) => b.ball.kind === 'fromPlayer' && (b.ball.style !== 'throw'));
+      // From the moment the ball comes off the iron (the bounce off the rim is not a turn in the air).
+      if (!shot || index !== shot.bi + 1) continue;
+      const ev = evs[sc.beats[r].fire.find((e) => evs[e]?.type === 'rebound')!] as Extract<TimedEvent, { type: 'rebound' }>;
+      const key = `${ev.side}:${ev.playerId}`;
+      reb = { from: index, to: r, key, spot: null, rivals: new Set(), busy: new Set(), dir: null, last: null, bent: false, caught: false };
+      w.rebounds++;
+      // Where it comes down: where the last rebound beat starts from.
+      const last = sc.beats[r].ball;
+      const land = last.kind === 'toPlayer' || last.kind === 'fixed' ? last.from : null;
+      if (land) {
+        reb.spot = { x: land.x, y: land.y };
+        const dk = dist(mo.pos[key], reb.spot);
+        for (const k of Object.keys(mo.pos)) if (!isRef(k) && k !== key && dist(mo.pos[k], reb.spot) < dk - 0.3 && dist(mo.pos[k], reb.spot) < 4) reb.rivals.add(k);
+      }
+    }
+    if (index > reb.to || index < reb.from) {
+      if (index > reb.to) {
+        for (const k of reb.rivals) if (!reb.busy.has(k)) w.idle.push(`${where(sc)} ${k} nearer the ball than ${reb.key} did nothing`);
+        reb = null;
+      }
+      continue;
+    }
+    // In flight: the ball keeps its line (a bounce off the floor aside).
+    const b = f.ball;
+    const rising = beat.ball.kind === 'toPlayer' && index === reb.to;
+    // (The last stretch into his hands, within his reach (1 m), is the catch, not a turn in the air.)
+    const inReach = mo.pos[reb.key] && dist(b, mo.pos[reb.key]) < 1;
+    if (reb.last && !inReach && !(rising && beat.ball.kind === 'toPlayer' && beat.ball.high && u > 0.5) && b.z > 0.3 && reb.last.z > 0.3) {
+      const dx = b.x - reb.last.x;
+      const dy = b.y - reb.last.y;
+      if (Math.hypot(dx, dy) > 0.06) {
+        const dir = Math.atan2(dy, dx);
+        if (reb.dir !== null && Math.abs(angleDiff(reb.dir, dir)) > (25 * Math.PI) / 180 && !reb.bent) {
+          reb.bent = true;
+          w.bends.push(`${where(sc)} rebound to ${reb.key} turned ${Math.round(deg(Math.abs(angleDiff(reb.dir, dir))))}° in the air`);
+        }
+        reb.dir = dir;
+      }
+    }
+    if (b.z < 0.3) reb.dir = null;
+    reb.last = { ...b };
+    // Whoever is nearer the spot goes for it too.
+    for (const k of reb.rivals) if ((f.lift?.[k] ?? 0) > 0.1 || Math.hypot(mo.vel[k].x, mo.vel[k].y) / (f.timeScale ?? 1) > 1.5 || (f.reach?.[k] ?? 0) > 0.5) reb.busy.add(k);
+    // The catch: the moment the last beat starts, the ball is in his hands' reach.
+    if (index === reb.to && !reb.caught) {
+      reb.caught = true;
+      const a = beat.ball;
+      const from = a.kind === 'toPlayer' || a.kind === 'fixed' ? a.from : b;
+      const d = dist(from, mo.pos[reb.key]);
+      if (d > 1) w.far.push(`${where(sc)} ${reb.key} ${d.toFixed(1)} m from the ball as it reached him`);
+    }
+  }
+  expect(m.phase).toBe('final');
+  return w;
+}
+
+describe('rebounds', () => {
+  const runs: ReboundWatch[] = [];
+  const all = () => {
+    if (runs.length === 0) for (const [seed, highlights] of [[1, false], [2, true]] as const) runs.push(watchRebounds(seed, highlights));
+    return runs;
+  };
+  it('the rebounder is within 1 m of the ball when it reaches him', () => {
+    const r = all();
+    const far = r.flatMap((w) => w.far);
+    console.log(`rebounds ${r.reduce((n, w) => n + w.rebounds, 0)}, too far ${far.length}`, far.slice(0, 8));
+    expect(r.reduce((n, w) => n + w.rebounds, 0)).toBeGreaterThan(60);
+    expect(far).toEqual([]);
+  }, 600000);
+  it('a rebound never changes direction in the air towards anyone', () => {
+    const bends = all().flatMap((w) => w.bends);
+    console.log(`bends ${bends.length}`, bends.slice(0, 8));
+    expect(bends).toEqual([]);
+  }, 600000);
+  it('nobody nearer the ball than the rebounder stands and watches', () => {
+    const idle = all().flatMap((w) => w.idle);
+    console.log(`idle ${idle.length}`, idle.slice(0, 8));
+    expect(idle).toEqual([]);
   }, 600000);
 });
