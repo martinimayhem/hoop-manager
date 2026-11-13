@@ -16,8 +16,10 @@ In every live-ball situation:
 2. **Open-lane break.** The chaser ends up about 1.5–2 m from the shooter at the shot, hand up: a
    late contest or chase-down attempt that misses. Anyone else back near the rim steps out at the
    shooter from the side (`lateContest`). This never changes the engine's result.
-3. **Every shot**, layups and dunks included: every defender within about 4.5 m of the shooter gets a
-   hand up. Only one further away may leave his hands down.
+3. **Every shot**, layups and dunks included: the defender nearest the shooter gets a hand up if he
+   is within about 4.5 m (a late contest), and so does any other defender within 2.5 m. Nobody
+   further off raises his hands at nothing; on a rebound only those the ball comes down within
+   about 2 m of reach for it.
 4. **Half court.** No defender is idle. He tracks his man or his zone spot, steps towards the ball
    when it comes his way, and closes out with his hands up on a catch.
 5. **After a score or a turnover**, the side that has to defend runs back. Nobody walks or jogs back

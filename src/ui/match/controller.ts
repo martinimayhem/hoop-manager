@@ -13,6 +13,7 @@ import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
 import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
+import { HALF_X } from '../../engine/court';
 import { COURT, beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
 import { GATHER_STEPS_M, Motion, facingScene } from '../court/motion';
 import { clockString } from '../labels';
@@ -91,6 +92,10 @@ function endBall(beat: Beat): Pos {
   }
 }
 
+/** Over and back: with the ball over half court, a pass waits until the receiver is this far over too. */
+const OVER_HALF_M = 0.8;
+/** The longest a pass waits for that (real seconds); a receiver who cannot get there is not waited on forever. */
+const OVER_HALF_WAIT_S = 3;
 const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
 /** In highlights mode, how many plays of each quarter are shown; the rest are played out instantly. */
 export const HIGHLIGHTS_PER_QUARTER = 5;
@@ -252,6 +257,10 @@ export class LiveMatch {
   private scriptEvents: TimedEvent[] = [];
   private durations: number[] = [];
   private beatEnds: number[] = [];
+  /** How long the pass about to be thrown has waited for its receiver to get over half court. */
+  private passWait = 0;
+  /** The script in which the offence has had the ball over half court: it may not go back. */
+  private overHalfIn: Script | null = null;
   /** Debugging: log every time a player holding the ball strays further than his two steps. */
   debugTravels = false;
   /** Everything the travelling check has logged, for tests. */
@@ -487,6 +496,7 @@ export class LiveMatch {
     }
     this.t += dt;
     const sc = this.script;
+    const waiting = this.overAndBack(sc, dt);
     // The clock only ever runs down, whatever the speed is changed to on the way.
     const clock = sc.clockStart - (sc.clockStart - sc.clockEnd) * this.running();
     const shown = Math.ceil(this.clock);
@@ -523,8 +533,9 @@ export class LiveMatch {
     }
     const { index, u } = beatAt(sc, this.durations, this.t);
     const beat = sc.beats[index];
-    // Whoever has the ball in their hands: the holder, or a receiver once the pass has arrived.
-    const b = beat.ball;
+    // Whoever has the ball in their hands: the holder, or a receiver once the pass has arrived. A
+    // pass held back for its receiver to get over half court: the passer keeps dribbling.
+    const b: Beat['ball'] = waiting ? { kind: 'held', holder: waiting, dribble: true } : beat.ball;
     this.holder = b.kind === 'held' ? b.holder : b.kind === 'pass' && this.motion.passArrived(b) ? b.to : null;
     const speedScale = (this.speed === 'fast' ? 2.1 : 1) / (this.slowMo ? 1.8 : 1);
     const rate = this.skips(beat) ? FAST_FORWARD[this.speed] : beat.slow ? 0.45 : 1;
@@ -541,15 +552,20 @@ export class LiveMatch {
         dead: beat.dead,
         posting: beat.posting,
         through: beat.through,
-        action: beat.ball,
+        action: b,
         openBreak: beat.openBreak,
         chase: beat.chase,
         goNow: beat.goNow,
         openFloor: beat.phase === 'bringUp' || !!beat.openBreak,
+        frontcourt: this.overHalfIn === sc,
       });
     }
     if (this.debugTravels) this.checkFootwork();
-    const ball = this.motion.ball(beat.ball, u, sc.dir);
+    const ball = this.motion.ball(b, u, sc.dir);
+    // Frontcourt: an attacker with the ball, ball and feet over half court, in live play.
+    const hp = this.holder ? this.motion.pos[this.holder] : null;
+    const upFloor = (x: number) => (sc.dir === 1 ? x : COURT.w - x);
+    if (!beat.dead && hp && this.holder!.startsWith(`${sc.offence}:`) && this.holder !== beat.outOfBounds && upFloor(hp.x) > HALF_X + 0.3 && upFloor(ball.x) > HALF_X + 0.3) this.overHalfIn = sc;
     this.motion.updateFacing(facingScene(sc, this.durations, index, u, ball, rate * speedScale), dt * rate, speedScale);
     this.motion.updateArms(beat, ball, u, dt * rate, speedScale);
     this.lastFrame = {
@@ -890,6 +906,29 @@ export class LiveMatch {
       start += d;
     });
     return Math.min(1, run / game);
+  }
+
+  /**
+   * OVER AND BACK: once the offence has the ball over half court it may not go back. A pass about to
+   * be thrown from the frontcourt to a teammate still coming up from the backcourt waits, with the
+   * passer dribbling and the script held at the start of the pass, until he is over. Where everyone
+   * actually is decides it, not where the script meant them to be by then. Returns the passer while
+   * the pass waits.
+   */
+  private overAndBack(sc: Script, dt: number): string | null {
+    const { index } = beatAt(sc, this.durations, this.t);
+    const a = sc.beats[index].ball;
+    const own = `${sc.offence}:`;
+    const pos = this.motion.pos;
+    if (a.kind !== 'pass' || this.motion.thrown(a) || !a.from.startsWith(own) || !a.to.startsWith(own) || !pos[a.from] || !pos[a.to]) {
+      this.passWait = 0;
+      return null;
+    }
+    const up = (x: number) => (sc.dir === 1 ? x : COURT.w - x);
+    if (up(pos[a.from].x) <= HALF_X || up(pos[a.to].x) >= HALF_X + OVER_HALF_M || this.passWait >= OVER_HALF_WAIT_S) return null;
+    this.passWait += dt;
+    this.t = (index > 0 ? this.beatEnds[index - 1] : 0) + 1e-6;
+    return a.from;
   }
 
   /** How the ball comes back into play, from whatever ended the play before the possession starting at event `from`. */

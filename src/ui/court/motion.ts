@@ -3,6 +3,7 @@
 // little when off the ball, and the ball follows whoever has it: bounced in time with the
 // handler's strides and shielded from the nearest defender, thrown when passed.
 
+import { HALF_X } from '../../engine/court';
 import { fatigueFactor } from '../../engine/ratings';
 import type { Side } from '../../engine/types';
 import { PACE_M_S, PASS_SPEED, PROBE_FROM_RIM_M, isRef, type Ball, type BallAction, type Beat, type Pace, type PlayerInfo, type Pos, type Script, type ShotStyle } from './animation';
@@ -49,12 +50,12 @@ const BOUNDS_MARGIN = 0.3;
 const REBOUND_JUMP_M = 0.8;
 /** How high a rebound is taken: above the rim, at the top of the jump. */
 const CATCH_Z = 3.55;
-/** Hands go up for a rebound while the ball is above this height and this close. */
+/** Hands go up for a rebound while the ball is above this height and this close: coming down within reach, not across the lane. */
 const REACH_BALL_Z = 1.6;
-const REACH_BALL_M = 3.5;
+const REACH_BALL_M = 2;
 /** A challenger further than this from the shooter has no shot to contest. */
 const CONTEST_M = 2.5;
-/** Any defender this close to a shooter gets a hand up: a late contest, whether or not he can jump at it. */
+/** The defender nearest the shooter gets a hand up from this close: a late contest, whether or not he can jump at it. Anyone else only within CONTEST_M. */
 const HAND_UP_M = 4.6;
 /** A defender this close to a man who has just caught it closes out with his hands up. */
 const CLOSE_OUT_M = 2.5;
@@ -218,7 +219,12 @@ export interface LiveContext {
   goNow?: string[];
   /** Bringing the ball up or an open break: the open floor, where runners swerve round opponents. */
   openFloor?: boolean;
+  /** The offence has had the ball over half court: the ball handler may not go back over it. */
+  frontcourt?: boolean;
 }
+
+/** Over and back: how far over half court the ball handler stays once his team has the ball there. */
+const HALF_LINE_M = 0.5;
 
 /**
  * The ball handler's footwork. Gathered: he has just caught it or picked it up. Dribbling: he may go
@@ -256,8 +262,11 @@ interface Carry {
   bounce: number;
 }
 
-/** Bodies do not pass through each other: anyone closer than a body's width is eased apart. */
-function keepApart(pos: Record<string, Pos>): void {
+/**
+ * Bodies do not pass through each other: anyone closer than a body's width is eased apart. `firm`
+ * holds his ground (the rebounder going up for his ball): whoever runs into him gives way.
+ */
+function keepApart(pos: Record<string, Pos>, firm?: string): void {
   const keys = Object.keys(pos);
   // A few passes: easing one pair apart can push a third player in a crowd.
   for (let pass = 0; pass < 6; pass++) {
@@ -285,6 +294,8 @@ function keepApart(pos: Record<string, Pos>): void {
           const aPinned = pinned(a, -ux, -uy);
           const bPinned = pinned(b, ux, uy);
           if (aPinned !== bPinned) shareA = aPinned ? 0 : 1;
+          else if (keys[i] === firm) shareA = 0;
+          else if (keys[j] === firm) shareA = 1;
         }
         pos[keys[i]] = { x: a.x - ux * gap * shareA, y: a.y - uy * gap * shareA };
         pos[keys[j]] = { x: b.x + ux * gap * (1 - shareA), y: b.y + uy * gap * (1 - shareA) };
@@ -793,8 +804,17 @@ export class Motion {
     }
     // More than once: a line can push someone back into a neighbour, who then has to give way along it.
     for (let round = 0; round < 3; round++) {
-      keepApart(next);
+      keepApart(next, live && !live.dead ? live.goNow?.[0] : undefined);
       for (const key of Object.keys(next)) if (key !== outOfBounds && !isRef(key)) keepInside(next, key, BOUNDS_M_S * dt * speedScale);
+      // Over and back: half court is a line at the ball handler's back, like the sideline.
+      if (live?.frontcourt && ballHolder && next[ballHolder] && ballHolder.startsWith(`${live.offence}:`)) {
+        const p = next[ballHolder];
+        const line = live.dir === 1 ? HALF_X + HALF_LINE_M : COURT.w - HALF_X - HALF_LINE_M;
+        if (live.dir === 1 ? p.x < line : p.x > line) {
+          next[ballHolder] = { x: line, y: p.y };
+          nextVel[ballHolder] = { x: 0, y: nextVel[ballHolder]?.y ?? 0 };
+        }
+      }
     }
     // Bodies last: a player eased back onto the floor may have been put into someone. Whoever has
     // a line at his back stays put; the other gives way.
@@ -920,12 +940,15 @@ export class Motion {
     const a = beat.ball;
     const team = (k: string) => k.slice(0, k.indexOf(':'));
     if (a.kind === 'fromPlayer' && a.style !== 'throw' && a.style !== 'set') {
-      // A shot: every defender anywhere near goes up with a hand, the challenger and anyone else
-      // close enough to bother him. Late or not, he tries.
+      // A shot: the challenger and the defender nearest the shooter go up with a hand, late or not;
+      // anyone else only if he is close enough to bother the shot. Nobody further off reaches at nothing.
       const shooter = this.pos[a.from];
       if (shooter && !isRef(key) && team(key) !== team(a.from) && u < SHOTS[a.style].release + 0.35) {
-        const d = Math.hypot(shooter.x - me.x, shooter.y - me.y);
-        if (d < (beat.contest === key ? Math.max(CONTEST_M, HAND_UP_M) : HAND_UP_M)) return true;
+        const off = (k: string) => Math.hypot(shooter.x - this.pos[k].x, shooter.y - this.pos[k].y);
+        const d = off(key);
+        if (d < CONTEST_M) return true;
+        const nearest = Object.keys(this.pos).every((k) => k === key || isRef(k) || team(k) === team(a.from) || off(k) >= d);
+        if (d < HAND_UP_M && (beat.contest === key || nearest)) return true;
       }
     }
     // Stopping a drive: hands up, in front of him.
@@ -1212,6 +1235,11 @@ export class Motion {
       if (!best || d < best.d) best = { x: p.x, y: p.y, d };
     }
     return best;
+  }
+
+  /** Whether a pass has left the passer's hands yet. */
+  thrown(action: BallAction): boolean {
+    return this.flights.has(action);
   }
 
   /** Whether a pass has reached the receiver's hands yet. */
