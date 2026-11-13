@@ -52,8 +52,8 @@ export function measureContact(m: LiveMatch, scene: Scene3D, seconds: number) {
       }
       let hands: ('l' | 'r')[] = [];
       let kind = '';
-      if (/dribble \(right hand\): on the ball/.test(arms)) [hands, kind] = [['r'], 'dribble'];
-      else if (/dribble \(left hand\): on the ball/.test(arms)) [hands, kind] = [['l'], 'dribble'];
+      if (/dribble \(right hand\): (pushing it down|caught it)/.test(arms)) [hands, kind] = [['r'], 'dribble'];
+      else if (/dribble \(left hand\): (pushing it down|caught it)/.test(arms)) [hands, kind] = [['l'], 'dribble'];
       else if (arms === 'holding it') [hands, kind] = [['l', 'r'], 'holding'];
       else if (arms === 'pass: picking it up') [hands, kind] = [['l', 'r'], 'pass (picking it up)'];
       else if (/jump shot [123]\/6/.test(arms)) [hands, kind] = [['l', 'r'], 'jump shot (gather to set point)'];

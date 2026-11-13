@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import type { BallAction, Frame } from '../court/animation';
+import { RIM_HEIGHT, type BallAction, type Frame } from '../court/animation';
 import { SHOTS } from '../court/motion';
 
 /** Court metres (x along, y across, z up) to the 3D scene (x along, y up, z across). */
@@ -108,19 +108,30 @@ const PALM_THICK = 0.022;
 const CUP = 0.26;
 const RELAXED_CURL = 0.35;
 /**
- * The model's arms are short for a basketball player (shoulder to wrist 0.27 of his height, measured; a
- * real one about 0.33): made this much longer, which brings the hands down to where a dribble is.
+ * The model's arms are short for a basketball player (shoulder to wrist 0.27 of his height, measured;
+ * a real one about 0.33). They are made this much longer, along their length only: the elbow and the
+ * wrist move out and the upper arm and forearm stretch to meet them; their thickness and the hands
+ * stay as they are.
  */
-const ARM_SCALE = 1.2;
-/** ...and at least this far out to the side of his middle: outside his legs. */
-const DRIBBLE_SIDE_M = 0.32;
-/** ...and at least this far in front of him: clear of a striding thigh. */
-const DRIBBLE_AHEAD_M = 0.28;
-/** In front of his middle the ball stays this far out (the oval's front). */
-const DRIBBLE_FRONT_M = 0.5;
-/** Dribbling: the hand rides the ball down to this height (ball centre, m), and meets it again on the way up from this one. */
-const DRIBBLE_RIDE_Z = 0.6;
-const DRIBBLE_MEET_Z = 0.78;
+const ARM_LENGTH = 1.2;
+/** Physics of the ball (CLAUDE.md, Reference values). */
+const GRAVITY = 9.81;
+const RESTITUTION = 0.8;
+/** Dribble cycle, top of the bounce to top of the bounce (s): standing, and at a run. */
+const DRIBBLE_T = [0.75, 0.6];
+/** Where the hand meets the ball (its centre, m): standing, and at a run. */
+const DRIBBLE_TOP = [0.95, 0.86];
+/** Where the ball comes up beside him: this far out to his side, and this far in front (standing / at a run). */
+const DRIBBLE_OUT_M = 0.34;
+const DRIBBLE_AHEAD = [0.3, 0.5];
+/** Within this long of the dribble ending, he catches the ball at the top instead of pushing it again (s). */
+/** How long the hand is on the ball in each dribble push: shortest, longest. */
+const DRIBBLE_PUSH_S = [0.05, 0.15] as const;
+const DRIBBLE_CATCH_S = 0.75;
+/** A dunker is this far in front of the rim's centre at the top of his jump: his hands are over it. */
+const DUNK_FROM_RIM_M = 0.55;
+/** After a dunk he hangs on the rim this long, then lets go. */
+const DUNK_HANG_S = 0.45;
 /**
  * Dribbling he stands nearly upright, knees soft; only driving (fast, at the basket) does he get
  * low and lean in. Crouch weight and forward lean (radians), dribbling and driving.
@@ -308,12 +319,41 @@ export class Player3D {
   private palmLen = 0.07;
   /** Knees bent ready to jump: the dip before a jump shot. */
   private dip = 0;
-  /** The ball's height last frame, to tell it going down from coming up. */
-  private ballY = 0;
   /** The frame's ball last frame during a shot, to see the moment it leaves his hands. */
   private shotBall: THREE.Vector3 | null = null;
   /** Dribbling: how far into the lower, leaning posture (eases in and out). */
   private dribbling = 0;
+  /** The dribbled ball, flying by physics: where it is, how fast, and what the hand is doing with it. */
+  private drib: {
+    pos: THREE.Vector3;
+    vel: THREE.Vector3;
+    phase: 'push' | 'flight' | 'held';
+    t: number;
+    tc: number;
+    vRelease: number;
+    top0: number;
+    /** Where the hand met it for this push. */
+    from: THREE.Vector3;
+    side: 1 | -1;
+    target: THREE.Vector3;
+  } | null = null;
+  /** The head's forward, in the head bone's own space. */
+  private headFwd = new THREE.Vector3(0, 0, 1);
+  /** A dunker carried to the rim: the offset from where the frame has him, and how much of it. */
+  private dunkOff = new THREE.Vector3();
+  private dunkW = 0;
+  /** Hanging on the rim after a dunk: how much (1 while his hands are on it, easing to 0 as he drops). */
+  private hangW = 0;
+  /** The rim he is dunking on (and his line to it), kept after the shot ends so he can hang on it; and for how long he has. */
+  private dunkRim: { rim: THREE.Vector3; toRim: THREE.Vector3; across: THREE.Vector3 } | null = null;
+  private hangT = 0;
+  /** His shoulder's height above his feet and his arm's reach (shoulder to palm), measured as he is drawn. */
+  private shoulderUp = 1.5;
+  private armReach = 0.8;
+  /** A held ball being taken up from wherever it was: blended in over a moment. */
+  private heldBefore = false;
+  private blendIn = 1;
+  private blendFrom: THREE.Vector3 | null = null;
   state: RigState = { speed: 0, mode: '', weights: {}, arms: '' };
 
   constructor(character: GLTF, clips: THREE.AnimationClip[], private info: Record<string, ClipInfo>, look: PlayerLook) {
@@ -349,8 +389,9 @@ export class Player3D {
     });
     // As tall as the player is.
     this.scale = look.heightM / (bounds.max.y - bounds.min.y);
-    // Heavier players a little wider, never taller.
-    const girth = Math.max(0.9, Math.min(1.2, look.girth));
+    // Heavier players a little wider, never taller (half the build's difference: a full one made
+    // heavy players' arms and shoulders look swollen).
+    const girth = 1 + (Math.max(0.9, Math.min(1.2, look.girth)) - 1) * 0.5;
     model.scale.set(this.scale * girth, this.scale, this.scale * girth);
     model.position.y = -bounds.min.y * this.scale;
     this.root.add(model);
@@ -375,6 +416,40 @@ export class Player3D {
       const axis = new THREE.Vector3().crossVectors(along, new THREE.Vector3(0, -1, 0)).normalize();
       axis.applyQuaternion(bone.getWorldQuaternion(new THREE.Quaternion()).invert());
       this.fingers[side].push({ bone, open: bone.quaternion.clone(), axis, thumb: f[1] === 'thumb' });
+    }
+    // Longer arms, along their length only: the skin of the upper arm and forearm is stretched
+    // along the bone (not scaled up), and the elbow and wrist joints are moved out to match (each
+    // frame, after the clips have posed them).
+    const stretchAlong = (axis: THREE.Vector3, k: number) => {
+      const a = axis.clone().normalize();
+      const m = new THREE.Matrix4();
+      const e = (i: number, j: number) => (i === j ? 1 : 0) + (k - 1) * [a.x, a.y, a.z][i] * [a.x, a.y, a.z][j];
+      m.set(e(0, 0), e(0, 1), e(0, 2), 0, e(1, 0), e(1, 1), e(1, 2), 0, e(2, 0), e(2, 1), e(2, 2), 0, 0, 0, 0, 1);
+      return m;
+    };
+    const stretch = new Map<THREE.Bone, THREE.Matrix4>();
+    for (const sd of ['l', 'r'] as const) {
+      stretch.set(this.bones[`upperarm_${sd}`], stretchAlong(this.bones[`lowerarm_${sd}`].position, ARM_LENGTH));
+      stretch.set(this.bones[`lowerarm_${sd}`], stretchAlong(this.bones[`hand_${sd}`].position, ARM_LENGTH));
+    }
+    model.traverse((o) => {
+      const mesh = o as THREE.SkinnedMesh;
+      if (!mesh.isSkinnedMesh) return;
+      const sk = mesh.skeleton;
+      const inverses = sk.bones.map((bone, i) => (stretch.has(bone) ? stretch.get(bone)!.clone().multiply(sk.boneInverses[i]) : sk.boneInverses[i]));
+      const offset = new THREE.Matrix4();
+      sk.update = function () {
+        for (let i = 0; i < this.bones.length; i++) {
+          offset.multiplyMatrices(this.bones[i].matrixWorld, inverses[i]);
+          offset.toArray(this.boneMatrices, i * 16);
+        }
+        if (this.boneTexture) this.boneTexture.needsUpdate = true;
+      };
+    });
+    // Which way the head faces, in its own bone space: the body's front at the bind pose.
+    {
+      const front3 = new THREE.Vector3(toe.x - heel.x, 0, toe.z - heel.z).normalize();
+      this.headFwd = front3.applyQuaternion(this.bones.Head.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
     }
     this.mixer = new THREE.AnimationMixer(model);
     for (const clip of clips) {
@@ -419,7 +494,26 @@ export class Player3D {
     if (aim) this.facing = Math.atan2(aim.to.y - p.y, aim.to.x - p.x);
     const lift = frame.lift?.[key] ?? 0;
     const stance = frame.stance?.[key] ?? 0;
-    this.root.position.set(at.x, lift, at.z);
+    // A dunk: the frame has him take off short of the rim, so he is carried in to it as he rises,
+    // until his hands are over it at the top; after the dunk the offset eases away as he lands.
+    if (shot && shot.style === 'dunk') {
+      const rim = toScene(shot.to.x, shot.to.y);
+      const toward = rim.clone().sub(at).setY(0);
+      const dist = toward.length();
+      if (dist > DUNK_FROM_RIM_M) {
+        toward.normalize();
+        this.dunkOff.copy(rim).addScaledVector(toward, -DUNK_FROM_RIM_M).sub(at).setY(0);
+      } else this.dunkOff.set(0, 0, 0);
+      const rising = Math.min(1, lift / (SHOTS.dunk.jump * 0.8));
+      this.dunkW = Math.max(this.dunkW, this.released > 0 ? 1 : rising * rising * (3 - 2 * rising));
+    } else if (!(this.dunkRim && this.hangT < DUNK_HANG_S)) this.dunkW = Math.max(0, this.dunkW - dt / 0.6);
+    // Through the rim he hangs on it (the frame has him already coming down when the ball gets there):
+    // held up with his hands on the rim, arms nearly straight, then he lets go and drops.
+    if (this.dunkRim && this.hangT > 0 && this.hangT < DUNK_HANG_S) this.hangW = 1;
+    else this.hangW = Math.max(0, this.hangW - dt / 0.3);
+    const hangLift = RIM_HEIGHT + 0.02 - this.armReach * 0.85 - this.shoulderUp;
+    const shown = lift + Math.max(0, hangLift - lift) * this.hangW * this.hangW * (3 - 2 * this.hangW);
+    this.root.position.set(at.x + this.dunkOff.x * this.dunkW, shown, at.z + this.dunkOff.z * this.dunkW);
 
     // Hips to where he runs, chest to where he faces; running away from his facing: a backpedal.
     const moving = this.speed > STILL_M_S && lift < 0.04 && !aim;
@@ -478,9 +572,12 @@ export class Player3D {
       else a.time = (a.time + dt) % (info?.duration || a.getClip().duration);
     }
     this.mixer.update(0);
-    // Longer arms (the clips do not touch bone scale, so this holds).
-    this.arms.l.upper.scale.setScalar(ARM_SCALE);
-    this.arms.r.upper.scale.setScalar(ARM_SCALE);
+    // Longer arms: the clips set the joints' positions every frame, so the elbow and wrist are moved
+    // out again each time (the skin stretches to them, see the skeleton above).
+    for (const sd of ['l', 'r'] as const) {
+      this.bones[`lowerarm_${sd}`].position.multiplyScalar(ARM_LENGTH);
+      this.bones[`hand_${sd}`].position.multiplyScalar(ARM_LENGTH);
+    }
     this.root.updateMatrixWorld(true);
 
     // Square him up. The clips stand him at an angle of their own (the idle turns the chest away),
@@ -508,8 +605,20 @@ export class Player3D {
     this.curl = { l: RELAXED_CURL, r: RELAXED_CURL };
     // Just before a pass he picks the ball up into both hands at the chest, to pass it from there.
     const passSoon = holder === key && !!next && next.in < PASS_GATHER_S && next.action.kind === 'pass' && next.action.from === key;
-    this.arms3d(key, frame, action, holder, lift, dt, coming, passSoon);
+    this.arms3d(key, frame, action, holder, lift, dt, coming, passSoon, next);
     this.openHands();
+    // The head: level and to the ball (as the frame has it turned); a shooter or dunker looks at the
+    // rim, from the gather to the landing.
+    {
+      const headAt = this.bones.Head.getWorldPosition(new THREE.Vector3());
+      let toward: THREE.Vector3;
+      if (aim) toward = toScene(aim.to.x, aim.to.y, aim.to.z ?? RIM_HEIGHT).sub(headAt);
+      else {
+        const l = frame.look?.[key] ?? this.facing;
+        toward = new THREE.Vector3(Math.cos(l), 0, Math.sin(l));
+      }
+      this.lookTowards(toward);
+    }
     this.state = {
       speed: this.speed,
       mode: `${backwards ? 'backpedal ' : ''}${air > 0 ? `air ${lift.toFixed(2)} m ` : ''}${crouch > 0.05 ? `stance ${stance.toFixed(2)} ` : ''}${Math.abs(twist) > 0.2 ? `twist ${Math.round((twist * 180) / Math.PI)}°` : ''}`,
@@ -574,6 +683,121 @@ export class Player3D {
     for (const b of bones) turnWorld(this.bones[b], UP, -off / bones.length);
   }
 
+  /**
+   * The dribbled ball, one step of physics. `frameSide`: the side the frame has the ball (a
+   * crossover); `ending`: the dribble ends soon, so at the next top he catches it.
+   */
+  private stepDribble(frameSide: 1 | -1, fwd: THREE.Vector3, right: THREE.Vector3, dt: number, ending: boolean) {
+    const run = Math.max(0, Math.min(1, (this.speed - 1) / 3.5));
+    const T = DRIBBLE_T[0] + (DRIBBLE_T[1] - DRIBBLE_T[0]) * run;
+    const top = DRIBBLE_TOP[0] + (DRIBBLE_TOP[1] - DRIBBLE_TOP[0]) * run;
+    const ahead = DRIBBLE_AHEAD[0] + (DRIBBLE_AHEAD[1] - DRIBBLE_AHEAD[0]) * run;
+    const vel = this.speed > STILL_M_S ? new THREE.Vector3(Math.cos(this.moveDir), 0, Math.sin(this.moveDir)).multiplyScalar(this.speed) : new THREE.Vector3();
+    // Where the ball should be at the top of a bounce `later` seconds from now: beside him, out in front.
+    const apex = (later: number, side: number) =>
+      this.root.position.clone().setY(top).addScaledVector(vel, later).addScaledVector(fwd, ahead).addScaledVector(right, side * DRIBBLE_OUT_M);
+    // The push for a cycle of T: how long the hand is on the ball and how fast it leaves it, so that
+    // after the bounce it comes back up to `top`.
+    const push = (from: number) => {
+      const u = Math.sqrt(2 * GRAVITY * (top - BALL_R)) / RESTITUTION;
+      const solve = (tc: number) => {
+        let vR = u * 0.6;
+        for (let i = 0; i < 6; i++) {
+          const hR = from - 0.5 * vR * tc;
+          vR = Math.sqrt(Math.max(0.01, u * u - 2 * GRAVITY * (hR - BALL_R)));
+        }
+        return { vR, flight: (u - vR) / GRAVITY + (RESTITUTION * u) / GRAVITY };
+      };
+      // A real push is short (the hand is on the ball about a tenth of a second); the cycle is "about"
+      // T, so when the bounce is off (a low or high top) the cycle gives, not the push.
+      let lo: number = DRIBBLE_PUSH_S[0];
+      let hi: number = DRIBBLE_PUSH_S[1];
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (mid + solve(mid).flight > T) hi = mid;
+        else lo = mid;
+      }
+      const tc = (lo + hi) / 2;
+      return { tc, ...solve(tc) };
+    };
+    if (!this.drib) {
+      // Starting a dribble: from wherever the ball is, the hand on it pushes it down.
+      const start = (this.ballShown ?? apex(0, frameSide)).clone();
+      start.y = Math.max(top - 0.15, Math.min(top + 0.3, start.y));
+      const p = push(start.y);
+      this.drib = { pos: start, vel: new THREE.Vector3(), phase: 'push', t: 0, tc: p.tc, vRelease: p.vR, top0: start.y, from: start.clone(), side: frameSide, target: apex(T, frameSide) };
+    }
+    const d = this.drib;
+    if (d.phase === 'push') {
+      // The hand pushes it down from the top, faster and faster, and carries it along beside him.
+      d.t += dt;
+      const t = Math.min(d.t, d.tc);
+      // In the hand, it is carried from where the hand met it to beside him (no jump).
+      const here = apex(0, d.side);
+      const k = d.tc > 0 ? t / d.tc : 1;
+      d.pos.set(d.from.x + (here.x - d.from.x) * k, d.top0 - (0.5 * d.vRelease * t * t) / d.tc, d.from.z + (here.z - d.from.z) * k);
+      if (d.t >= d.tc) {
+        // Let go: down at the release speed, and across so that it comes up beside him next time.
+        const flight = (Math.sqrt(2 * GRAVITY * (top - BALL_R)) / RESTITUTION - d.vRelease) / GRAVITY + Math.sqrt(2 * GRAVITY * (top - BALL_R)) / GRAVITY;
+        d.side = frameSide;
+        d.target = apex(flight, d.side);
+        // No further than he can really be by then: from where it leaves the hand, his run plus a little.
+        const reach = d.target.clone().sub(d.pos).setY(0);
+        const most = Math.min(this.speed, 7) * flight + 0.35;
+        if (reach.length() > most) d.target.copy(d.pos).add(reach.setLength(most)).setY(d.target.y);
+        d.vel.set((d.target.x - d.pos.x) / flight, -d.vRelease, (d.target.z - d.pos.z) / flight);
+        d.phase = 'flight';
+      }
+    } else if (d.phase === 'flight') {
+      // Free flight: gravity, and a bounce off the floor. Nothing else touches it.
+      const rising = d.vel.y > 0;
+      d.vel.y -= GRAVITY * dt;
+      d.pos.addScaledVector(d.vel, dt);
+      if (d.pos.y < BALL_R && d.vel.y < 0) {
+        d.pos.y = 2 * BALL_R - d.pos.y;
+        d.vel.y = -d.vel.y * RESTITUTION;
+        // Off the floor it goes where the dribble sent it, which is where he is now (he may have
+        // stopped or turned since the push): the bounce is where its direction changes, never in the air.
+        const up = d.vel.y / GRAVITY;
+        const meet = apex(up, d.side);
+        const across = meet.sub(d.pos).setY(0).divideScalar(Math.max(0.05, up));
+        const most = Math.min(this.speed, 7) + 1.5;
+        if (across.length() > most) across.setLength(most);
+        d.vel.x = across.x;
+        d.vel.z = across.z;
+      }
+      if (rising && d.vel.y <= 0) {
+        // The top of the bounce: the hand meets it. It pushes it again, or, the dribble ending, holds it.
+        d.vel.set(0, 0, 0);
+        if (ending) d.phase = 'held';
+        else {
+          const p = push(d.pos.y);
+          Object.assign(d, { phase: 'push', t: 0, tc: p.tc, vRelease: p.vR, top0: d.pos.y, from: d.pos.clone() });
+        }
+      }
+    } else {
+      // Caught: in his hand, beside him, until the dribble is over.
+      const here = apex(0, d.side);
+      const k = Math.min(1, dt / 0.12);
+      d.pos.set(d.pos.x + (here.x - d.pos.x) * k, d.pos.y, d.pos.z + (here.z - d.pos.z) * k);
+    }
+    return d;
+  }
+
+  /** Turns the head (and a little the neck) to look along `dir`, at most 75° from where it was. */
+  private lookTowards(dir: THREE.Vector3): void {
+    const head = this.bones.Head;
+    const cur = this.headFwd.clone().applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    const want = dir.clone().normalize();
+    const angle = Math.min(cur.angleTo(want), (75 * Math.PI) / 180);
+    if (angle < 0.01) return;
+    const axis = new THREE.Vector3().crossVectors(cur, want);
+    if (axis.lengthSq() < 1e-8) return;
+    axis.normalize();
+    turnWorld(this.bones.neck_01, axis, angle * 0.4);
+    turnWorld(head, axis, angle * 0.6);
+  }
+
   /** Which way he faces (court angle), for a dev camera. */
   get facingAngle(): number {
     return this.facing;
@@ -598,9 +822,30 @@ export class Player3D {
    */
   ball(frameBall: THREE.Vector3, dt: number): THREE.Vector3 {
     if (this.ballAt) {
-      this.ballShown = this.ballAt.clone();
+      // Taken up from wherever it was (not snapped into the hands): blended in over a moment.
+      if (!this.heldBefore) {
+        this.blendFrom = (this.ballShown ?? frameBall).clone();
+        this.blendIn = this.drib ? 1 : 0;
+      }
+      this.heldBefore = true;
+      this.blendIn = Math.min(1, this.blendIn + dt / 0.15);
+      const k = this.blendIn * this.blendIn * (3 - 2 * this.blendIn);
+      this.ballShown = this.blendFrom && k < 1 ? this.blendFrom.clone().lerp(this.ballAt, k) : this.ballAt.clone();
       this.ballBack = 0;
       return this.ballShown;
+    }
+    this.heldBefore = false;
+    // Dunked: slammed down through the rim the moment his hands go to it (the frame's ball lags,
+    // still over the rim), falling with gravity until the frame's own ball is lower.
+    if (this.dunkRim && this.hangT > 0) {
+      const r = this.dunkRim.rim;
+      const t = this.hangT;
+      const y = r.y + 0.05 - 2 * t - 0.5 * GRAVITY * t * t;
+      if (Math.hypot(frameBall.x - r.x, frameBall.z - r.z) < 0.8 && y < frameBall.y && y > BALL_R) {
+        this.ballShown = new THREE.Vector3(r.x, y, r.z);
+        this.ballBack = 0;
+        return this.ballShown;
+      }
     }
     if (this.ballShown && this.ballBack < 1) {
       this.ballBack = Math.min(1, this.ballBack + dt / 0.15);
@@ -652,7 +897,8 @@ export class Player3D {
   }
 
   /** The arms: on the ball when he has it, up for a contest, follow-through after a shot. */
-  private arms3d(key: string, frame: Frame, frameAction: BallAction | null, holder: string | null, lift: number, dt: number, coming: Extract<BallAction, { kind: 'fromPlayer' }> | null = null, passSoon = false): void {
+  private arms3d(key: string, frame: Frame, frameAction: BallAction | null, holder: string | null, lift: number, dt: number, coming: Extract<BallAction, { kind: 'fromPlayer' }> | null = null, passSoon = false, next: Upcoming | null = null): void {
+    let dribbling = false;
     // Gathering for a shot that is about to start counts as the shot's first stage.
     const action: BallAction | null = coming ?? frameAction;
     const ball = toScene(frame.ball.x, frame.ball.y, frame.ball.z);
@@ -723,6 +969,31 @@ export class Player3D {
       this.open = { l: 1, r: 1 };
       this.curl = { l: CUP, r: CUP };
     };
+    /** Through the rim: both hands on the front of the rim, palms on its top, as long as his arms reach
+     *  it; then they let go and come down with him. Runs on after the shot itself has ended. */
+    const hangOnRim = (): string => {
+      const { rim, toRim, across } = this.dunkRim!;
+      this.hangT += dt;
+      this.open = { l: 1, r: 1 };
+      this.curl = { l: CUP, r: CUP };
+      let onRim = 0;
+      for (const arm of [this.arms.l, this.arms.r]) {
+        const grip = rim.clone().addScaledVector(toRim, -0.2).addScaledVector(across, arm.side * 0.13).add(new THREE.Vector3(0, 0.02, 0));
+        const shoulder = arm.upper.getWorldPosition(new THREE.Vector3());
+        const elbow = arm.lower.getWorldPosition(new THREE.Vector3());
+        const armLen = shoulder.distanceTo(elbow) + elbow.distanceTo(arm.hand.getWorldPosition(new THREE.Vector3())) + this.palmLen;
+        this.armReach = armLen;
+        this.shoulderUp = shoulder.y - this.root.position.y;
+        if (this.hangT < DUNK_HANG_S && shoulder.distanceTo(grip) < armLen * 0.98) {
+          onRim++;
+          palmOn(arm, grip.clone().add(new THREE.Vector3(0, -BALL_R, 0)), up.clone(), toRim.clone());
+        } else {
+          reachTo(arm, shoulder.clone().addScaledVector(toRim, 0.25).add(new THREE.Vector3(0, -0.2, 0)).addScaledVector(across, arm.side * 0.15), 0.6);
+        }
+      }
+      if (this.hangT > DUNK_HANG_S + 0.6) this.dunkRim = null;
+      return onRim ? `dunk: hands on the rim (${onRim})` : 'dunk: let go, coming down';
+    };
     if (shooting && style !== 'throw' && action?.kind === 'fromPlayer') {
       // The ball in his hands, placed by the pose (the frame keeps it on his centre line, which in
       // 3D is inside his head). Once the frame's ball has left him, it follows the frame.
@@ -756,6 +1027,8 @@ export class Player3D {
             palmOn(arm, at, across.clone().multiplyScalar(arm.side).addScaledVector(toRim, -0.35).add(new THREE.Vector3(0, 0.15, 0)), toRim.clone().multiplyScalar(0.5).add(up));
           }
           this.ballAt = betweenPalms();
+          this.dunkRim = { rim: toScene(action.to.x, action.to.y, RIM_HEIGHT), toRim: toRim.clone(), across: across.clone() };
+          this.hangT = 0;
         } else if (style === 'layup') {
           // Up on the shooting hand, palm under the ball; the other arm up to protect it.
           arms = 'layup: on the shooting hand';
@@ -778,8 +1051,10 @@ export class Player3D {
           // (4 release, 5 follow-through and 6 the landing come once the ball has left him.)
           const peak = SHOTS[style ?? 'jumper'].jump || 0.6;
           const p = Math.min(1, lift / peak);
-          const chin = head.clone().addScaledVector(toRim, 0.3).addScaledVector(across, 0.05).add(new THREE.Vector3(0, 0.0, 0));
-          const set = head.clone().addScaledVector(toRim, 0.2).addScaledVector(across, 0.08).add(new THREE.Vector3(0, 0.24, 0));
+          // In front of the face at the chin, then above and in front of the forehead: his face stays
+          // under the ball, clear of his arms, eyes on the rim.
+          const chin = head.clone().addScaledVector(toRim, 0.38).addScaledVector(across, 0.05).add(new THREE.Vector3(0, 0.02, 0));
+          const set = head.clone().addScaledVector(toRim, 0.27).addScaledVector(across, 0.08).add(new THREE.Vector3(0, 0.32, 0));
           const ease = (x: number) => x * x * (3 - 2 * x);
           let at: THREE.Vector3;
           /** How far into the set: 0 at the gather (hands on the sides), 1 at the set point (under and behind, cocked). */
@@ -812,30 +1087,27 @@ export class Player3D {
           this.ballAt = betweenPalms();
         }
       } else {
-        this.released = Math.min(1, this.released + dt / 0.25);
+        this.released = Math.min(1, this.released + dt / (style === 'dunk' ? 0.45 : 0.25));
         if (style === 'dunk') {
-          // Through the rim and down: hands on the rim for a moment, then the arms come down as he lands.
-          const down = Math.max(0, Math.min(1, 1 - lift / 0.5));
-          arms = down < 0.5 ? 'dunk: hands through the rim' : 'dunk: coming down';
-          for (const arm of [this.arms.l, this.arms.r]) {
-            const t = head.clone().addScaledVector(toRim, 0.45).addScaledVector(across, arm.side * 0.15).add(new THREE.Vector3(0, 0.6 - 0.9 * down, 0));
-            reachTo(arm, t, 1 - down * 0.7);
-            this.orient(sideOf(arm), up.clone().negate().lerp(toRim, down), toRim.clone().lerp(up.clone().negate(), down), 1 - down * 0.7);
-          }
+          arms = this.dunkRim ? hangOnRim() : 'dunk: let go, coming down';
         } else {
           // 4 Release: the arm extends from the set point and the ball rolls off the fingertips;
           // 5 follow-through: arm up and a little forward, wrist snapped; 6 held like that down to the floor.
           arms = this.released < 0.6 ? `${style} 4/6: release` : lift > 0.05 ? `${style} 5/6: follow-through` : `${style} 6/6: landing, holding the follow-through`;
-          const set = head.clone().addScaledVector(toRim, 0.2).addScaledVector(across, 0.08).add(new THREE.Vector3(0, 0.24, 0));
+          const set = head.clone().addScaledVector(toRim, 0.27).addScaledVector(across, 0.08).add(new THREE.Vector3(0, 0.32, 0));
           const setWrist = set.addScaledVector(toRim, -0.12).add(new THREE.Vector3(0, -0.14, 0));
           // Up and forward towards the rim, about 60 degrees up (not straight up), as in the reference.
-          const full = shoulderR.clone().addScaledVector(toRim, 0.36).add(new THREE.Vector3(0, 0.46, 0));
+          // The arm all but straight (its own length from the shoulder), elbow locked.
+          const upperR = this.arms.r.upper.getWorldPosition(new THREE.Vector3());
+          const elbowR = this.arms.r.lower.getWorldPosition(new THREE.Vector3());
+          const forearm = upperR.distanceTo(elbowR) + elbowR.distanceTo(this.arms.r.hand.getWorldPosition(new THREE.Vector3()));
+          const full = shoulderR.clone().addScaledVector(toRim.clone().multiplyScalar(0.5).add(new THREE.Vector3(0, 0.87, 0)).normalize(), forearm * 0.96);
           const reachUp = setWrist.lerp(full, Math.min(1, this.released * 1.6));
           reachTo(this.arms.r, reachUp, 1, shoulderR.clone().addScaledVector(toRim, 0.7).add(new THREE.Vector3(0, -0.2, 0)));
           // A wrist flexes about 80°: with the forearm up, the fingers end pointing at the rim, just below level.
           this.orient('r', toRim.clone().multiplyScalar(0.3).add(new THREE.Vector3(0, -1, 0)), toRim.clone().add(new THREE.Vector3(0, -0.2, 0)), this.released);
           // The guide hand comes off the ball and drops out to the side at about head height.
-          const guideTo = shoulderL.clone().addScaledVector(toRim, 0.25).addScaledVector(across, -0.2).add(new THREE.Vector3(0, 0.22, 0));
+          const guideTo = shoulderL.clone().addScaledVector(toRim, 0.3).addScaledVector(across, -0.38).add(new THREE.Vector3(0, 0.1, 0));
           reachTo(this.arms.l, guideTo, 0.9, shoulderL.clone().addScaledVector(across, -0.6).add(new THREE.Vector3(0, -0.3, 0)));
           this.orient('l', across.clone(), up.clone().addScaledVector(toRim, 0.3), 0.9);
         }
@@ -845,77 +1117,48 @@ export class Player3D {
     }
     this.released = 0;
     this.shotBall = null;
-    const ballVy = dt > 0 ? (ball.y - this.ballY) / dt : 0;
-    this.ballY = ball.y;
+    if (this.dunkRim && holder !== key) {
+      this.state.arms = hangOnRim();
+      return;
+    }
+    this.dunkRim = null;
     if (passSoon) {
       // Picking the ball up for a pass: both hands, at the chest.
       arms = 'pass: picking it up';
       openBoth();
       this.ballAt = twoHands(chest.clone().addScaledVector(fwd, 0.34).add(new THREE.Vector3(0, -0.22, 0)));
     } else if (has && action?.kind === 'held' && action.dribble) {
-      // Dribbling, with the hand on the side the ball is (so a crossover changes hands). The palm on
-      // the top and back of the ball pushes it and rides it down to about knee height, lets it go,
-      // and is back up over the bounce to meet it. The other arm out in front to protect the ball,
-      // palm down.
-      const sideOfBall = Math.sign(ball.clone().sub(chest).dot(right)) || 1;
-      const hand = sideOfBall > 0 ? this.arms.r : this.arms.l;
+      // Dribbling. The ball follows physics (CLAUDE.md, Reference values): the hand meets it at the
+      // top of the bounce and pushes it down; it flies, bounces off the floor (restitution 0.8) and
+      // comes back up to the hand; it never sticks to the hand and never turns in the air. It goes on
+      // the side the frame's ball is (a crossover switches hands), outside his legs and out in front.
+      // Just before the dribble ends (a pass, a shot, a pick-up) he catches it at the top instead.
+      dribbling = true;
+      const frameSide = (Math.sign(ball.clone().sub(chest).dot(right)) || 1) as 1 | -1;
+      const ending = !!next && !(next.action.kind === 'held' && next.action.dribble) && next.in < DRIBBLE_CATCH_S;
+      const d = this.stepDribble(frameSide, fwd, right, dt, ending);
+      const hand = d.side > 0 ? this.arms.r : this.arms.l;
       const guard = hand === this.arms.r ? this.arms.l : this.arms.r;
       const h = sideOf(hand);
       this.open = { l: 1, r: 1 };
       this.curl[h] = CUP;
       this.curl[sideOf(guard)] = RELAXED_CURL * 0.6;
-      // The frame's ball can sweep across his middle; drawn (and played) at least a little out in front.
-      const flat = ball.clone().sub(this.root.position).setY(0);
-      const ahead = flat.dot(fwd);
-      const across = flat.dot(right);
-      // Bounced outside the line of his legs and out in front of them (as in the references), never
-      // through his knees. Drawn there every frame of the dribble: no easing that could cut inside.
-      {
-        // Outside an oval round him: 32 cm out to his sides, 50 cm out in front of his middle. The
-        // ball slides round its edge, so a crossover goes low across in front of him, never through
-        // him and never jumping from one side to the other.
-        // On the move the ball goes out ahead of his stride: further in front the faster he goes.
-        const minAhead = Math.min(0.5, DRIBBLE_AHEAD_M + 0.045 * this.speed);
-        const front = Math.max(DRIBBLE_FRONT_M, minAhead + 0.12);
-        let out = Math.max(minAhead, ahead);
-        let sideways = across;
-        const e = (sideways / DRIBBLE_SIDE_M) ** 2 + (out / front) ** 2;
-        if (e < 1) {
-          const k = 1 / Math.sqrt(Math.max(e, 1e-6));
-          sideways *= k;
-          out *= k;
-        }
-        // (Its height stays the frame's: only where it is across the floor moves.)
-        const height = ball.y;
-        ball.copy(this.root.position).addScaledVector(fwd, out).addScaledVector(right, sideways).setY(height);
-        this.ballAt = ball.clone();
-      }
-      const toMe = chest.clone().sub(ball).setY(0).normalize();
-      // On the ball only where his hand can be on it: from the top of the bounce down to as low as
-      // his arm reaches (standing, about the waist). Below that the ball goes on by itself.
-      const shoulder = hand.upper.getWorldPosition(new THREE.Vector3());
-      const lowerArm = hand.upper.getWorldPosition(new THREE.Vector3()).distanceTo(hand.lower.getWorldPosition(new THREE.Vector3())) + hand.lower.getWorldPosition(new THREE.Vector3()).distanceTo(hand.hand.getWorldPosition(new THREE.Vector3()));
-      const outFromShoulder = Math.hypot(ball.x - shoulder.x, ball.z - shoulder.z);
-      // The lowest the ball's centre can be with his palm still on its top: the palm reaches down, the ball is below it.
-      const lowest = shoulder.y - Math.sqrt(Math.max(0, (lowerArm + this.palmLen) ** 2 * 0.96 - outFromShoulder * outFromShoulder)) - BALL_R - PALM_THICK;
-      const ride = Math.max(DRIBBLE_RIDE_Z, lowest);
-      const on = ballVy <= 0 ? ball.y > ride : ball.y > Math.max(DRIBBLE_MEET_Z, ride + 0.05);
-      // Fingers forward over the ball and a little out to his side.
-      const over = toMe.clone().negate().addScaledVector(right, sideOfBall * 0.3);
-      if (on) {
-        palmOn(hand, ball, up.clone().multiplyScalar(0.85).addScaledVector(toMe, 0.5), over);
-        this.ballAt = onPalm(h);
-      } else {
-        // Waiting over the bounce at about the waist, palm down.
-        const above = new THREE.Vector3(ball.x, Math.max(DRIBBLE_MEET_Z, ball.y + 0.08), ball.z);
-        palmOn(hand, above, up.clone().multiplyScalar(0.85).addScaledVector(toMe, 0.5), over);
-      }
+      this.ballAt = d.pos.clone();
+      const toMe = chest.clone().sub(d.pos).setY(0).normalize();
+      // Fingers forward over the ball and a little out to his side; palm on its top and back.
+      const over = toMe.clone().negate().addScaledVector(right, d.side * 0.3);
+      const onTop = up.clone().multiplyScalar(0.85).addScaledVector(toMe, 0.5);
+      if (d.phase === 'flight') {
+        // Waiting, palm down, over where the ball will come up.
+        palmOn(hand, d.target, onTop, over);
+      } else palmOn(hand, d.pos, onTop, over);
       const protect = Math.max(0.35, 1 - this.speed / 7);
       const shoulderG = guard.upper.getWorldPosition(new THREE.Vector3());
       const forearmAt = shoulderG.clone().addScaledVector(fwd, 0.32).addScaledVector(right, guard.side * 0.18).add(new THREE.Vector3(0, -0.36, 0));
       reachTo(guard, forearmAt, protect, shoulderG.clone().addScaledVector(right, guard.side * 0.45).add(new THREE.Vector3(0, -0.6, 0)).addScaledVector(fwd, 0.1));
       this.orient(sideOf(guard), up.clone().negate(), fwd.clone().addScaledVector(right, -guard.side * 0.4), protect);
-      arms = on ? `dribble (${h === 'r' ? 'right' : 'left'} hand): on the ball` : `dribble (${h === 'r' ? 'right' : 'left'} hand): waiting over it`;
+      const which = h === 'r' ? 'right' : 'left';
+      arms = (d.phase === 'push' ? `dribble (${which} hand): pushing it down` : d.phase === 'flight' ? `dribble (${which} hand): ball bouncing` : `dribble (${which} hand): caught it`);
     } else if (action?.kind === 'pass' && action.from === key) {
       // Passing: both hands push the ball out towards the receiver (down for a bounce pass, up for a
       // lob) and follow through, palms out, thumbs down, arms out straight; then they come back.
@@ -984,6 +1227,7 @@ export class Player3D {
       }
     }
     void lift;
+    if (!dribbling) this.drib = null;
     this.state.arms = arms;
   }
 }

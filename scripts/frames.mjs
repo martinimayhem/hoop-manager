@@ -1,10 +1,13 @@
-// npm run frames -- --seed <n> --quarter <q> --from <clock> --to <clock> --every <seconds> [--view 2d|3d|both] [--zoom] [--out <dir>]
+// npm run frames -- --seed <n> --quarter <q> --from <clock> --to <clock> --every <seconds> [--view 2d|3d|both] [--zoom] [--follow <key>] [--warm <s>] [--out <dir>]
 //
 // Plays a match headlessly (Chrome via Playwright, with the game's own renderers) up to a moment and
 // saves PNG frames of the court, the clock and the commentary line burnt into each one, to
 // frames/<seed>-<quarter>-<from>-<to>/. Clocks are game clock, "10:30" or seconds; --from is the
 // earlier moment (more time left), --to the later one. --every is match seconds between frames.
 // --zoom frames the area round the ball (a closer 3D camera, an enlarged crop of the 2D court).
+// --follow <player key> (e.g. 0:ham-8): the 3D camera side on to that player, close (side on to the rim when he shoots).
+// --warm <s>: how many seconds the 3D view is drawn before the first frame (default 3).
+// Also saves sheet-2d.png / sheet-3d.png: every frame as a thumbnail in one image.
 //
 // Example: npm run frames -- --seed 1 --quarter 2 --from 10:30 --to 10:20 --every 0.1
 
@@ -53,6 +56,8 @@ try {
   });
   const params = new URLSearchParams({ capture: '', seed, q: quarter, from, every, view });
   if (a.zoom) params.set('zoom', '1');
+  if (a.follow) params.set('follow', a.follow);
+  if (a.warm) params.set('warm', a.warm);
   if (to) params.set('to', to);
   const url = `${base}?${params.toString()}`;
   console.log(`Playing seed ${seed} to Q${quarter} ${from} and capturing every ${every} s until ${to || '10 s later'} (${view})…`);
@@ -75,7 +80,7 @@ try {
   const n = await page.evaluate(() => window.__capture.frames.length);
   for (let i = 0; i < n; i++) {
     const f = await page.evaluate((k) => window.__capture.frames[k], i);
-    const file = join(dir, `${String(i).padStart(3, '0')}-${f.name}`);
+    const file = join(dir, f.name.startsWith('sheet-') ? f.name : `${String(i).padStart(3, '0')}-${f.name}`);
     writeFileSync(file, Buffer.from(f.png.split(',')[1], 'base64'));
   }
   console.log(`Saved ${n} images to ${dir}`);

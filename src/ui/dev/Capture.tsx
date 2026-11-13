@@ -66,6 +66,10 @@ export function Capture() {
       const view = q.get('view') ?? 'both';
       // Zoomed in on the ball: a closer 3D camera and an enlarged crop of the 2D court.
       const zoom = q.has('zoom') && q.get('zoom') !== 'false';
+      // Following one player (e.g. 0:ham-8): the 3D camera side on to him (to the rim when he shoots), close.
+      const follow = q.get('follow');
+      // How long the 3D rigs are drawn before the first frame (their dribble, feet and so on depend on it).
+      const warm = Number(q.get('warm')) || WARM_S;
       const want2d = view === '2d' || view === 'both';
       const want3d = view === '3d' || view === 'both';
 
@@ -95,7 +99,7 @@ export function Capture() {
       // Play (nothing drawn) to just before the moment, then draw the 3D rigs for a few seconds so
       // their speeds, feet and hands have settled.
       say(`playing to ${periodLabel(quarter)} ${clockString(from)}`);
-      for (let i = 0; m.phase !== 'final' && before(from + WARM_S); i++) {
+      for (let i = 0; m.phase !== 'final' && before(from + warm); i++) {
         step(false);
         if (i % 3000 === 0) await yieldNow();
       }
@@ -114,7 +118,9 @@ export function Capture() {
         ctx.fillStyle = '#d6deec';
         ctx.font = '500 22px system-ui, sans-serif';
         const text = m.caption?.text ?? m.feed[0]?.text ?? '';
-        ctx.fillText(`${label} · seed ${seed} · ${text}`.slice(0, 110), 34 + w, BANNER / 2);
+        // Following a player in 3D: what his arms are doing (the pose the rig chose), to check against the picture.
+        const pose = label === '3D' && follow && scene ? scene.rigOf(follow)?.state.arms : '';
+        ctx.fillText(`${label} · seed ${seed} · ${text}${pose ? ` · ${pose}` : ''}`.slice(0, 120), 34 + w, BANNER / 2);
       };
       const shoot = (t: number) => {
         const tag = `${periodLabel(m.quarter)}-${clockString(m.clock).replace(':', 'm')}s-t${t.toFixed(2)}`;
@@ -139,7 +145,11 @@ export function Capture() {
           state.frames.push({ name: `${tag}-2d.png`, png: o.toDataURL('image/png') });
         }
         if (want3d && scene) {
-          if (zoom && ball) {
+          if (follow) {
+            scene.devCamera = null;
+            scene.focus = follow;
+            scene.closeUp = 'side';
+          } else if (zoom && ball) {
             const b = toScene(ball.x, ball.y, 0);
             scene.devCamera = { from: new THREE.Vector3(b.x - 5.2, 4.2, b.z + 6.8), to: new THREE.Vector3(b.x, 1.2, b.z) };
           }
@@ -165,6 +175,27 @@ export function Capture() {
         const s0 = sim;
         step(true);
         t += sim - s0;
+      }
+      // Contact sheets: every frame of a view as a thumbnail in one image, to see the whole move at once.
+      for (const v of ['2d', '3d'] as const) {
+        const list = state.frames.filter((f) => f.name.endsWith(`-${v}.png`));
+        if (!list.length) continue;
+        const cols = Math.min(6, list.length);
+        const tw = 520;
+        const th = Math.round((tw * (H + BANNER)) / W);
+        const sheet = document.createElement('canvas');
+        sheet.width = cols * tw;
+        sheet.height = Math.ceil(list.length / cols) * th;
+        const g = sheet.getContext('2d')!;
+        g.fillStyle = '#0b1218';
+        g.fillRect(0, 0, sheet.width, sheet.height);
+        for (let i = 0; i < list.length; i++) {
+          const img = new Image();
+          img.src = list[i].png;
+          await img.decode();
+          g.drawImage(img, (i % cols) * tw, Math.floor(i / cols) * th, tw - 4, th - 4);
+        }
+        state.frames.push({ name: `sheet-${v}.png`, png: sheet.toDataURL('image/png') });
       }
       say(`done: ${shots} moments, ${state.frames.length} images`);
       state.done = true;

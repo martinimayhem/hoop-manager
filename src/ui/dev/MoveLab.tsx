@@ -271,7 +271,13 @@ export function MoveLab() {
       const towards = found.towards ? toScene(found.towards.x, found.towards.y) : null;
       const renderer2d = new CourtRenderer([TEAM_COLOURS[0], TEAM_COLOURS[1]]);
       const dotsBase = courtDots(m);
-      setStatus(`${def.label}: ${subject}${found.other ? ` (with ${found.other})` : ''} · ${periodLabel(steps[warm]?.quarter ?? 1)} ${clockString(steps[warm]?.clock ?? 0)} · seed ${seed} · ${steps.length - warm} steps, looped`);
+      // The move's own moment (not the window's start), and the frames command to capture it.
+      const moment = steps[at - start] ?? steps[warm];
+      const mClock = moment?.clock ?? 0;
+      const mm = `${Math.floor(mClock / 60)}:${(mClock % 60).toFixed(1).padStart(4, '0')}`;
+      setStatus(
+        `${def.label}: ${subject}${found.other ? ` (with ${found.other})` : ''} · at ${periodLabel(moment?.quarter ?? 1)} ${mm} (${mClock.toFixed(1)} s) · seed ${seed} · ${steps.length - warm} steps, looped · npm run frames -- --seed ${seed} --quarter ${moment?.quarter ?? 1} --from ${mm} --every 0.05 --follow ${subject}`,
+      );
 
       // Play: each loop starts fresh (rigs reset, then the warm-up steps drawn at once), then the window at the chosen speed.
       let pos = 0;
