@@ -2423,3 +2423,19 @@ select:focus {
   min-width: 0;
   flex-shrink: 0;
 }
+
+/* ---- The 3D view (beta): the same box as the 2D court ---- */
+canvas.court[hidden] {
+  display: none;
+}
+.court-3d-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9fb0c8;
+  font-size: 14px;
+  z-index: 4;
+  pointer-events: none;
+}

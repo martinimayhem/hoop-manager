@@ -14,7 +14,7 @@ import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
 import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
 import { HALF_X } from '../../engine/court';
-import { COURT, beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
+import { COURT, beatAt, beatDurations, buildScript, playerKey, type BallAction, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
 import { GATHER_STEPS_M, Motion, facingScene } from '../court/motion';
 import { clockString } from '../labels';
 import { excitement } from './highlights';
@@ -589,6 +589,21 @@ export class LiveMatch {
   /** Player key of whoever has the ball right now (null while it's in the air). */
   holderKey(): string | null {
     return this.holder;
+  }
+
+  /** What the ball is doing in the beat being shown: dribbled, passed, shot (and how). For views that draw more than the frame says. */
+  currentAction(): BallAction | null {
+    const sc = this.script;
+    return sc ? sc.beats[beatAt(sc, this.durations, this.t).index].ball : null;
+  }
+
+  /** What the ball does next, and how soon (real seconds): a view can show a shooter gathering for it. */
+  upcomingAction(): { action: BallAction; in: number } | null {
+    const sc = this.script;
+    if (!sc) return null;
+    const { index } = beatAt(sc, this.durations, this.t);
+    if (index + 1 >= sc.beats.length) return null;
+    return { action: sc.beats[index + 1].ball, in: Math.max(0, this.beatEnds[index] - this.t) };
   }
 
   // ---- Internals ------------------------------------------------------------

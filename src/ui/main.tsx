@@ -9,10 +9,24 @@ const turntable = Turntable && new URLSearchParams(window.location.search).has('
 // Dev only: ?break plays a match to the end of Q1 (?break=2: halftime) and shows the break screen.
 const BreakPreview = import.meta.env.DEV ? lazy(() => import('./dev/BreakPreview').then((m) => ({ default: m.BreakPreview }))) : null;
 const breakPreview = BreakPreview && (new URLSearchParams(window.location.search).has('break') || new URLSearchParams(window.location.search).has('gamecast') || new URLSearchParams(window.location.search).has('result'));
+// Dev only: ?3d is the 3D prototype (one rigged player driven by the match's frame data).
+const Court3DPreview = import.meta.env.DEV ? lazy(() => import('./dev/Court3DPreview').then((m) => ({ default: m.Court3DPreview }))) : null;
+const court3d = Court3DPreview && new URLSearchParams(window.location.search).has('3d');
+// Dev only: ?film shows every step of a dribble, a pass, a jump shot and a dunk in 3D, frame by frame.
+const Court3DFilm = import.meta.env.DEV ? lazy(() => import('./dev/Court3DFilm').then((m) => ({ default: m.Court3DFilm }))) : null;
+const film = Court3DFilm && new URLSearchParams(window.location.search).has('film');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {turntable && Turntable ? (
+    {film && Court3DFilm ? (
+      <Suspense fallback={null}>
+        <Court3DFilm />
+      </Suspense>
+    ) : court3d && Court3DPreview ? (
+      <Suspense fallback={null}>
+        <Court3DPreview />
+      </Suspense>
+    ) : turntable && Turntable ? (
       <Suspense fallback={null}>
         <Turntable />
       </Suspense>

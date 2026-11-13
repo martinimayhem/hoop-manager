@@ -19,6 +19,14 @@ import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, peri
 import { ARGUE_SECONDS, HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
 
 const TIMEOUT_KEYS = ['q', 'p'] as const;
+/** Where the 3D view (beta) choice is remembered in this browser. */
+const VIEW_3D_KEY = 'hm.view3d';
+/** What the match screen needs of the 3D scene; the scene itself loads only when the view is turned on. */
+interface Scene3DLike {
+  render(frame: ReturnType<LiveMatch['frame']>, action: ReturnType<LiveMatch['currentAction']>, holder: string | null, dt: number, next: ReturnType<LiveMatch['upcomingAction']>): void;
+  resize(w: number, h: number): void;
+  dispose(): void;
+}
 
 export function MatchScreen({
   setup,
@@ -71,6 +79,66 @@ export function MatchScreen({
   /** Paused because the player switched away; they continue from the overlay. */
   const [away, setAway] = useState(false);
 
+  // The 3D view (beta): off by default, remembered in this browser. Its code and models load the
+  // first time it is turned on; if it cannot start, the court stays 2D.
+  const [view3d, setView3d] = useState(() => {
+    try {
+      return localStorage.getItem(VIEW_3D_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [view3dState, setView3dState] = useState<'off' | 'loading' | 'ready' | string>('off');
+  const canvas3dRef = useRef<HTMLCanvasElement>(null);
+  const scene3dRef = useRef<Scene3DLike | null>(null);
+  const view3dRef = useRef(view3d);
+  view3dRef.current = view3d && view3dState === 'ready';
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_3D_KEY, view3d ? '1' : '0');
+    } catch {
+      // Not remembered: fine.
+    }
+    if (!view3d || scene3dRef.current) {
+      if (scene3dRef.current) setView3dState('ready');
+      return;
+    }
+    let cancelled = false;
+    setView3dState('loading');
+    (async () => {
+      try {
+        const [{ Scene3D, loadAssets }, { lookFor3d }] = await Promise.all([import('../court3d/scene3d'), import('../court3d/roster3d')]);
+        const assets = await loadAssets();
+        const canvas = canvas3dRef.current;
+        if (cancelled || !canvas) return;
+        const scene = new Scene3D(canvas, assets, (k) => lookFor3d(m, k));
+        scene.resize(canvas.clientWidth, canvas.clientHeight);
+        scene3dRef.current = scene;
+        setView3dState('ready');
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setView3dState(`3D view could not start: ${err instanceof Error ? err.message : String(err)}`);
+          setView3d(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view3d, m]);
+  useEffect(() => {
+    const canvas = canvas3dRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => scene3dRef.current?.resize(canvas.clientWidth, canvas.clientHeight));
+    ro.observe(canvas);
+    return () => {
+      ro.disconnect();
+      scene3dRef.current?.dispose();
+      scene3dRef.current = null;
+    };
+  }, []);
+
   // Animation loop: tick the controller, draw the court, re-render React when something changed.
   useEffect(() => {
     let raf = 0;
@@ -80,6 +148,8 @@ export function MatchScreen({
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
+      // Hidden (the 3D view is on): keep the size it has, so it draws at once when it is back.
+      if (rect.width === 0 || rect.height === 0) return;
       // Sharper than the screen where it is cheap, but never below it; past 2560 wide it costs frames.
       const pixelRatio = Math.min(3, Math.max(window.devicePixelRatio || 1, Math.min(2, 2560 / rect.width)));
       const width = Math.round(rect.width * pixelRatio);
@@ -111,7 +181,13 @@ export function MatchScreen({
       sound.play(fx);
       sound.setCrowd(m.crowdLevel());
       rendererRef.current!.react(fx, now / 1000);
-      const ctx = canvasRef.current?.getContext('2d');
+      const scene3d = view3dRef.current ? scene3dRef.current : null;
+      if (scene3d) {
+        // The rigs play at match time: slow motion slows their legs too.
+        scene3d.render(m.frame(), m.currentAction(), m.holderKey(), dt * (m.frame()?.timeScale ?? 1), m.upcomingAction());
+        if (badgeRef.current) badgeRef.current.hidden = !m.isFastForwarding();
+      }
+      const ctx = scene3d ? null : canvasRef.current?.getContext('2d');
       if (ctx) {
         const holder = m.holderKey();
         const dots: Record<string, DotInfo> = {};
@@ -225,7 +301,9 @@ export function MatchScreen({
           <div className="ff-badge" ref={badgeRef} hidden>
             »
           </div>
-          <canvas ref={canvasRef} className="court" width={CANVAS_W} height={CANVAS_H} />
+          <canvas ref={canvasRef} className="court" width={CANVAS_W} height={CANVAS_H} hidden={view3d && view3dState === 'ready'} />
+          <canvas ref={canvas3dRef} className="court court-3d" hidden={!(view3d && view3dState === 'ready')} />
+          {view3d && view3dState === 'loading' && <div className="court-3d-note">Loading 3D…</div>}
           {/* The commentary is in the play-by-play above; the court's empty corners carry the player of the game and the assistant. */}
           <CourtOverlays m={m} humanSides={humanSides} />
           {showFeed && !roomy && (
@@ -272,6 +350,13 @@ export function MatchScreen({
             }}
           >
             Box score
+          </button>
+          <button
+            className={`small ${view3d ? 'active' : ''}`}
+            title={view3dState.startsWith('3D view could not') ? view3dState : 'Show the match in 3D (beta). The 2D view stays the default.'}
+            onClick={() => setView3d(!view3d)}
+          >
+            3D view (beta)
           </button>
           <button
             className="small"

@@ -1,0 +1,3 @@
+player.glb and clips.glb are built from Quaternius packs (Universal Base Characters, Universal Animation
+Library; Standard versions), released under CC0 1.0 Universal (public domain):
+https://creativecommons.org/publicdomain/zero/1.0/  -  https://quaternius.com
