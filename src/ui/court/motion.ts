@@ -12,7 +12,7 @@ import { BODY_M, COURT, HOOP, MID_Y, guardSpot, insideCourt } from './formations
  * Shot mechanics per style: when in the beat the ball leaves the hands (0..1), how high the
  * shooter jumps (metres), and how high the hands hold the ball before release (metres, standing).
  */
-const SHOTS: Record<ShotStyle, { release: number; jump: number; hands: [number, number] }> = {
+export const SHOTS: Record<ShotStyle, { release: number; jump: number; hands: [number, number] }> = {
   jumper: { release: 0.32, jump: 0.6, hands: [1.68, 2.32] },
   hook: { release: 0.36, jump: 0.43, hands: [1.68, 2.56] },
   layup: { release: 0.55, jump: 0.8, hands: [1.37, 2.32] },
@@ -23,6 +23,8 @@ const SHOTS: Record<ShotStyle, { release: number; jump: number; hands: [number, 
 
 const ACCEL = 9; // m/s²: a real first step, not an instant top speed
 const BRAKE = 7.3; // planned below ACCEL so a player always has the grip to stop on the spot
+/** m/s²: a defender planting a foot to turn back the way he came. */
+const PLANT = 12;
 const HAND_HEIGHT = 1;
 /** With the ball in his hands and not dribbling, a player has two steps: this far from where he gathered it. */
 export const GATHER_STEPS_M = 1.2;
@@ -52,6 +54,20 @@ const REACH_BALL_Z = 1.6;
 const REACH_BALL_M = 3.5;
 /** A challenger further than this from the shooter has no shot to contest. */
 const CONTEST_M = 2.5;
+/** Any defender this close to a shooter gets a hand up: a late contest, whether or not he can jump at it. */
+const HAND_UP_M = 4.6;
+/** A defender this close to a man who has just caught it closes out with his hands up. */
+const CLOSE_OUT_M = 2.5;
+/** A chaser runs on the ball handler's heels: this far behind him, this far to his own side, aiming where he will be this far ahead (seconds). */
+const CHASE_BEHIND_M = 1.2;
+const CHASE_SIDE_M = 1.3;
+const CHASE_LEAD_S = 0.3;
+/** A defender further than this from his spot, ball live, runs to it: he never jogs to catch up. */
+const LONG_WAY_M = 2;
+/** Running alongside the man (level with him or in front), this far off his line at the least: never in his path. */
+const CHASE_ALONGSIDE_M = 1.6;
+/** Further than this in front of the man, a chaser drops to the rim and waits for him there. */
+const CHASE_WELL_AHEAD_M = 2.5;
 /** Hands go up or down in about an eighth of a second. */
 const ARM_RATE = 8;
 /** Bodies turn at a steady 180 degrees a second; only someone with the ball, or reacting to it, turns twice as fast. */
@@ -65,6 +81,12 @@ const LOOK_RUN_TO = 3.5;
 /** Between these distances from their spot, a player turns to run there rather than backing in. */
 const RUN_TO_SPOT_FROM = 2;
 const RUN_TO_SPOT_TO = 4;
+/** While the ball is in the air or loose, between these distances from his spot a player turns to run there. */
+const FAR_FROM_SPOT_FROM = 4;
+const FAR_FROM_SPOT_TO = 6;
+/** A defender between these distances from his spot turns from watching the play to running there. */
+const DEF_RUN_FROM = 2;
+const DEF_RUN_TO = 3.2;
 /** The head follows the ball this far either side of the body. */
 const HEAD_TURN = (70 * Math.PI) / 180;
 /** Slower than this (m/s of game time), a player is standing. */
@@ -73,7 +95,11 @@ const STANDING_M_S = 0.4;
 const BALL_READ_S = 0.5;
 /** Nobody runs faster than this. Feet are slower sideways, and slower still backwards. */
 const TOP_SPEED = 8;
+/** Flat out with the ball on a dribble: a step slower than a sprint without it. */
+const DRIBBLE_TOP_M_S = 6.9;
 const SLIDE_M_S = 3.5;
+/** A defender in a hard slide, staying in front or getting back into the play. */
+const DEF_SLIDE_M_S = 3.9;
 const BACKPEDAL_M_S = 3.2;
 /** With the ball nobody backpedals faster than a shuffle: he would lose it. He turns side-on instead. */
 const HOLDER_BACK_M_S = 1.2;
@@ -173,6 +199,8 @@ export interface LiveContext {
   through?: string[];
   /** A break with nobody back: no defender cuts across in front of the ball handler. */
   openBreak?: boolean;
+  /** Defender to attacker: chasing him down in transition, on his heels wherever he goes. */
+  chase?: Record<string, string>;
   /** Bringing the ball up or an open break: the open floor, where runners swerve round opponents. */
   openFloor?: boolean;
 }
@@ -299,6 +327,16 @@ export function steerAround(p: Pos, target: Pos, pos: Record<string, Pos>, key: 
   return offFloor(second) ? target : second;
 }
 
+/**
+ * The key prefix of the side on defence: the side without the ball, or about to be without it
+ * (a rebound coming down to the other side, a shot in the air). Officials are on neither.
+ */
+export function defendingSide(action: BallAction | null | undefined, offence: Side): string {
+  const withBall = !action ? null : action.kind === 'held' ? action.holder : action.kind === 'pass' || action.kind === 'fromPlayer' ? action.from : action.kind === 'toPlayer' ? action.to : null;
+  const attacking = withBall && !isRef(withBall) ? withBall.slice(0, withBall.indexOf(':')) : `${offence}`;
+  return attacking === '0' ? '1:' : '0:';
+}
+
 /** A ball handler slower than this (m/s of game time) is not on the run. */
 const RUNNING_M_S = 2;
 /** How far to his side a defender keeps from a running handler's line, at least. */
@@ -376,7 +414,8 @@ export class Motion {
   /** Each guarding defender's read of where his man is: a moment behind the man himself. */
   private read: Record<string, Pos> = {};
   /** Where each player is heading this frame. */
-  private target: Record<string, Pos> = {};
+  /** Where each player is heading right now: the beat's spot, or his man, or the man he is chasing. */
+  target: Record<string, Pos> = {};
   /** The ball as the off-ball players' bodies follow it. */
   private seen: Pos | null = null;
   /** Small weight shifts off the ball: an offset and when it next changes. */
@@ -394,7 +433,7 @@ export class Motion {
   private time = 0;
   /** Game seconds: real time scaled by playback speed, so the ball keeps pace with the players. */
   private clock = 0;
-  private scale = 1;
+  scale = 1;
   /** Each pass in the air: when and where it left the hands, and where it is aimed. */
   private flights = new WeakMap<BallAction, { start: number; from: Ball; aim: Pos; time: number }>();
   /** The last pass thrown: if its beat ends before it arrives, it keeps flying into the receiver's hands. */
@@ -477,6 +516,9 @@ export class Motion {
     const accel = ACCEL * speedScale * speedScale;
     const brake = BRAKE * speedScale * speedScale;
     const gameDt = dt * speedScale;
+    // Whoever is on defence right now: the side without the ball (after a rebound, that can be the
+    // team the possession started with).
+    const defending = live ? defendingSide(live.action, live.offence) : 'none';
     const handlerTarget = this.footwork(ballHolder, ballHolder ? targets[ballHolder] : undefined, outOfBounds, live);
     for (const [key, beatTarget] of Object.entries(targets)) {
       let target = key === ballHolder && handlerTarget ? handlerTarget : beatTarget;
@@ -511,6 +553,41 @@ export class Motion {
           target = { x: target.x + Math.cos(across) * shuffle, y: target.y + Math.sin(across) * shuffle };
         }
       } else delete this.read[key];
+      const chased = live && !man && !live.dead ? live.chase?.[key] : undefined;
+      const cp = chased ? this.pos[chased] : undefined;
+      if (live && chased && cp && this.pos[key]) {
+        // Chasing him down: on his heels, on his own side of the man's run, aiming where he is going.
+        const cv = this.vel[chased] ?? { x: 0, y: 0 };
+        const sp = Math.hypot(cv.x, cv.y);
+        const rim = live.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y };
+        const toRim = Math.hypot(rim.x - cp.x, rim.y - cp.y) || 1;
+        const ux = sp / speedScale > 1 ? cv.x / sp : (rim.x - cp.x) / toRim;
+        const uy = sp / speedScale > 1 ? cv.y / sp : (rim.y - cp.y) / toRim;
+        const me = this.pos[key];
+        const lat = -(me.x - cp.x) * uy + (me.y - cp.y) * ux;
+        const side = lat >= 0 ? 1 : -1;
+        const ahead = (me.x - cp.x) * ux + (me.y - cp.y) * uy;
+        const lead = CHASE_LEAD_S / speedScale;
+        if (live.action?.kind === 'fromPlayer') {
+          // The shot is going up: at him, beside him on his own side, a hand up. Late, but there.
+          target = insideCourt({ x: cp.x - uy * side * CHASE_SIDE_M, y: cp.y + ux * side * CHASE_SIDE_M });
+        } else if (ahead > CHASE_WELL_AHEAD_M || (ahead > 0 && sp / speedScale < RUNNING_M_S)) {
+          // In front of a man not yet going, or well in front of him (the ball passed back behind
+          // him): he gets back to his basket at once, to beside the rim on his own side, and meets
+          // him there. Never back through the play to him.
+          target = insideCourt({ x: rim.x - uy * side * CHASE_ALONGSIDE_M, y: rim.y + ux * side * CHASE_ALONGSIDE_M });
+        } else if (ahead > -CHASE_BEHIND_M / 2) {
+          // Level or in front with the man on his way: alongside him, on his own side, a step off his line.
+          const off = side * CHASE_ALONGSIDE_M;
+          target = insideCourt({ x: cp.x + cv.x * lead + ux * 0.3 - uy * off, y: cp.y + cv.y * lead + uy * 0.3 + ux * off });
+        } else {
+          // Behind him: on his heels, a little to his own side.
+          target = insideCourt({
+            x: cp.x + cv.x * lead - ux * CHASE_BEHIND_M - uy * side * CHASE_SIDE_M,
+            y: cp.y + cv.y * lead - uy * CHASE_BEHIND_M + ux * side * CHASE_SIDE_M,
+          });
+        }
+      }
       this.target[key] = target;
       const p = this.pos[key];
       if (!p) {
@@ -523,8 +600,8 @@ export class Motion {
       // The ball handler goes first; teammates react a beat later, the defence later still. Each
       // player keeps his own reaction time, so they set off one by one, never as a group.
       const r = (hash(`${key}:react`) % 100) / 100;
-      const delay = key === ballHolder ? 0 : live && !key.startsWith(`${live.offence}:`) ? 0.2 + r * 0.4 : 0.05 + r * 0.55;
-      const aim = man ? target : this.reactedAim(key, target, delay, gameDt);
+      const delay = key === ballHolder ? 0 : live && !key.startsWith(`${live.offence}:`) ? 0.1 + r * 0.25 : 0.05 + r * 0.55;
+      const aim = man || cp ? target : this.reactedAim(key, target, delay, gameDt);
       let tx = aim.x;
       let ty = aim.y;
       if (key !== ballHolder && !man && !live?.dead && !isRef(key)) {
@@ -566,7 +643,13 @@ export class Motion {
           ty = p.y + (ay / a) * far;
         }
       }
-      let max = Math.min(TOP_SPEED, PACE_M_S[paces[key] ?? 'sprint'] * this.moveFactor(key)) * speedScale;
+      let pace: Pace = paces[key] ?? 'sprint';
+      // DEFENDERS ALWAYS TRY: with the ball live, a defender a long way from where he has to be runs
+      // there, whatever the beat says. Nobody jogs back.
+      if (live && !live.dead && !man && key.startsWith(defending) && (pace === 'walk' || pace === 'jog') && Math.hypot(tx - p.x, ty - p.y) > LONG_WAY_M) pace = 'run';
+      let max = Math.min(TOP_SPEED, PACE_M_S[pace] * this.moveFactor(key)) * speedScale;
+      // Bouncing the ball he is a step slower than a man running without it: a chaser gains on him.
+      if (key === ballHolder && this.dribbling(key)) max = Math.min(max, DRIBBLE_TOP_M_S * this.moveFactor(key) * speedScale);
       const dx = tx - p.x;
       const dy = ty - p.y;
       const d = Math.hypot(dx, dy);
@@ -575,16 +658,32 @@ export class Motion {
         // Feet only go so fast sideways or backwards: past that, a player has to turn and run.
         const off = Math.abs(angleDiff(face, Math.atan2(dy, dx)));
         if (off > (2 * Math.PI) / 3) max = Math.min(max, (key === ballHolder && key !== live?.posting ? HOLDER_BACK_M_S : BACKPEDAL_M_S) * speedScale);
-        else if (off > Math.PI / 3) max = Math.min(max, SLIDE_M_S * speedScale);
+        else if (off > Math.PI / 3) max = Math.min(max, (live && !live.dead && key.startsWith(defending) ? DEF_SLIDE_M_S : SLIDE_M_S) * speedScale);
       }
       // Pulling up as he arrives, unless his spot is only on the way.
       const want = live?.through?.includes(key) ? Math.min(max, d * 6 * speedScale) : Math.min(max, Math.sqrt(2 * brake * d), d * 6 * speedScale);
       const v = this.vel[key];
-      let ax = (d > 0.001 ? (dx / d) * want - v.x : -v.x) / dt;
-      let ay = (d > 0.001 ? (dy / d) * want - v.y : -v.y) / dt;
+      // Wanted velocity: towards the spot, braking into it. A chaser's spot runs away from him, so he
+      // matches the man's speed and closes on top of that, never pulling up as if it stood still.
+      let wx = d > 0.001 ? (dx / d) * want : 0;
+      let wy = d > 0.001 ? (dy / d) * want : 0;
+      if (cp && chased) {
+        const cv = this.vel[chased] ?? { x: 0, y: 0 };
+        wx += cv.x;
+        wy += cv.y;
+        const w = Math.hypot(wx, wy);
+        if (w > max) {
+          wx *= max / w;
+          wy *= max / w;
+        }
+      }
+      let ax = (wx - v.x) / dt;
+      let ay = (wy - v.y) / dt;
       const a = Math.hypot(ax, ay);
       // With the ball in his hands he stops dead, in a jump stop, inside his two steps.
-      const grip = key === ballHolder && this.handle?.key === key && this.handle.mode !== 'dribbling' ? JUMP_STOP * speedScale * speedScale : accel;
+      // A defender who has to turn back the way he came plants and pushes off: harder than a first step.
+      const reversing = live && !live.dead && !man && key.startsWith(defending) && v.x * wx + v.y * wy < 0;
+      const grip = key === ballHolder && this.handle?.key === key && this.handle.mode !== 'dribbling' ? JUMP_STOP * speedScale * speedScale : reversing ? PLANT * speedScale * speedScale : accel;
       if (a > grip) {
         ax *= grip / a;
         ay *= grip / a;
@@ -721,9 +820,25 @@ export class Motion {
   private wantsHandsUp(key: string, beat: Beat, ball: Ball, u: number): boolean {
     const me = this.pos[key];
     const a = beat.ball;
-    if (beat.contest === key && a.kind === 'fromPlayer' && a.style !== 'throw') {
+    const team = (k: string) => k.slice(0, k.indexOf(':'));
+    if (a.kind === 'fromPlayer' && a.style !== 'throw' && a.style !== 'set') {
+      // A shot: every defender anywhere near goes up with a hand, the challenger and anyone else
+      // close enough to bother him. Late or not, he tries.
       const shooter = this.pos[a.from];
-      return !!shooter && u < SHOTS[a.style].release + 0.35 && Math.hypot(shooter.x - me.x, shooter.y - me.y) < CONTEST_M;
+      if (shooter && !isRef(key) && team(key) !== team(a.from) && u < SHOTS[a.style].release + 0.35) {
+        const d = Math.hypot(shooter.x - me.x, shooter.y - me.y);
+        if (d < (beat.contest === key ? Math.max(CONTEST_M, HAND_UP_M) : HAND_UP_M)) return true;
+      }
+    }
+    // A catch out on the floor: the defender nearest him closes out with his hands up.
+    const caught = a.kind === 'held' && !a.dribble ? a.holder : a.kind === 'pass' && this.passArrived(a) ? a.to : null;
+    if (caught && !beat.dead && !isRef(key) && !isRef(caught) && caught !== beat.outOfBounds && team(key) !== team(caught) && this.pos[caught]) {
+      const c = this.pos[caught];
+      const d = Math.hypot(c.x - me.x, c.y - me.y);
+      if (d < CLOSE_OUT_M) {
+        const nearest = Object.keys(this.pos).filter((k) => !isRef(k) && team(k) !== team(caught)).every((k) => k === key || Math.hypot(this.pos[k].x - c.x, this.pos[k].y - c.y) >= d);
+        if (nearest) return true;
+      }
     }
     return !!beat.reach?.includes(key) && ball.z > REACH_BALL_Z && Math.hypot(ball.x - me.x, ball.y - me.y) < REACH_BALL_M;
   }
@@ -796,10 +911,14 @@ export class Motion {
         // The ball handler turning to face where he is running may come further round, though never all the way.
         const holding = scene.action.kind === 'held' && scene.action.holder === key;
         const running = holding && Math.hypot(v.x, v.y) / speedScale > 1 && Math.abs(angleDiff(want, Math.atan2(hd.y, hd.x))) < Math.PI / 6;
+        // So may a defender turning to run to a spot well away: he has to get there, not turn half way and slide.
+        const goal = this.target[key];
+        const me = this.pos[key];
+        const toGoal = !isRef(key) && !key.startsWith(`${scene.offence}:`) && !scene.dead && !!goal && Math.hypot(goal.x - me.x, goal.y - me.y) > DEF_RUN_TO && Math.abs(angleDiff(want, Math.atan2(goal.y - me.y, goal.x - me.x))) < Math.PI / 6;
         // The last bit of a turn is always allowed: squaring up is not spinning, and the other way
         // round would be the long way.
         const left = Math.abs(angleDiff(now, want));
-        if (turn !== 0 && (!scene.dead || left > FINISH_TURN) && turned(Math.sign(turn)) + Math.abs(turn) > (running ? RUN_TURN_LIMIT : SPIN_LIMIT)) turn = 0;
+        if (turn !== 0 && (!scene.dead || left > FINISH_TURN) && turned(Math.sign(turn)) + Math.abs(turn) > (running || toGoal ? RUN_TURN_LIMIT : SPIN_LIMIT)) turn = 0;
         if (turn !== 0) log.push({ at: this.clock, turn });
         // Kept within one turn either way, so the angle never winds up.
         facing[key] = angleDiff(0, now + turn);
@@ -857,23 +976,22 @@ export class Motion {
       return { angle: facingNow + d - Math.sign(d) * reach, quick: false };
     }
 
-    // A shot, a rebound or a loose ball: everyone turns to it.
     const a = scene.action;
-    if (a.kind !== 'held' && a.kind !== 'pass') return { angle: toward(scene.ball), quick: false };
-
-    const holder = a.kind === 'held' ? a.holder : null;
-    const withBall = a.kind === 'held' ? a.holder : a.from;
-    const ballTeam = withBall.slice(0, withBall.indexOf(':') + 1);
     const v = this.vel[key];
     const speed = Math.hypot(v.x, v.y) / speedScale;
     const hd = this.heading[key] ?? v;
     const goal = this.target[key];
     const away = goal ? Math.hypot(goal.x - me.x, goal.y - me.y) : 0;
     // Where he is running; barely moving yet, where he is about to run.
-    const travel = Math.hypot(hd.x, hd.y) / speedScale > HEADING_FROM_M_S || !goal || away < 0.3 ? Math.atan2(hd.y, hd.x) : toward(goal);
+    // A long way off, it is where he has to get to: he squares himself to it rather than drifting
+    // sideways along the way he happens to be going.
+    // A defender with ground to make up turns and runs sooner than anyone: no backpedalling or
+    // sliding the whole way to where he has to be.
+    const defender = !isRef(key) && key.startsWith(defendingSide(scene.action, scene.offence)) && !scene.dead;
+    const travel = goal && (away > RUN_TO_SPOT_TO || (defender && away > DEF_RUN_FROM)) ? toward(goal) : Math.hypot(hd.x, hd.y) / speedScale > HEADING_FROM_M_S || !goal || away < 0.3 ? Math.atan2(hd.y, hd.x) : toward(goal);
     // From watching the play to looking where they run, gradually: when moving fast, or when the
     // spot is still a long way off (turn and sprint there, then face up). Never a sudden flip.
-    const run = Math.max(smoothstep(LOOK_RUN_FROM, LOOK_RUN_TO, speed), smoothstep(RUN_TO_SPOT_FROM, RUN_TO_SPOT_TO, away));
+    const run = Math.max(smoothstep(LOOK_RUN_FROM, LOOK_RUN_TO, speed), defender ? smoothstep(DEF_RUN_FROM, DEF_RUN_TO, away) : smoothstep(RUN_TO_SPOT_FROM, RUN_TO_SPOT_TO, away));
     const current = this.facing[key];
     const blend = (watch: number) => {
       let d = angleDiff(watch, travel);
@@ -885,6 +1003,18 @@ export class Motion {
       }
       return watch + d * run;
     };
+    // A shot, a rebound or a loose ball: everyone turns to it. Anyone with a long way to go (back
+    // down the floor after a score, say) turns and runs there, eyes over his shoulder: nobody
+    // backpedals the length of the court watching the ball drop through the net.
+    if (a.kind !== 'held' && a.kind !== 'pass') {
+      const far = defender ? smoothstep(DEF_RUN_FROM, DEF_RUN_TO, away) : smoothstep(FAR_FROM_SPOT_FROM, FAR_FROM_SPOT_TO, away);
+      if (far === 0 || isRef(key)) return { angle: toward(scene.ball), quick: false };
+      const d = angleDiff(toward(scene.ball), travel);
+      return { angle: toward(scene.ball) + d * far, quick: away > RUN_TO_SPOT_TO };
+    }
+    const holder = a.kind === 'held' ? a.holder : null;
+    const withBall = a.kind === 'held' ? a.holder : a.from;
+    const ballTeam = withBall.slice(0, withBall.indexOf(':') + 1);
     const seen = this.seen ?? scene.ball;
     // An official watches the ball, wherever he is going.
     if (isRef(key)) return { angle: blend(toward(seen)), quick: false };
@@ -898,7 +1028,8 @@ export class Motion {
     // Off the ball, bodies turn at an even pace: into the last steps, never spun round on arrival.
     if (key.startsWith(ballTeam)) return { angle: blend(toward(seen)), quick: false };
     // Defence. On the ball: square to the handler, sliding; beaten by more than a step, he turns and runs.
-    if (holder && this.pos[holder] && Math.hypot(this.pos[holder].x - me.x, this.pos[holder].y - me.y) < ON_BALL_M) {
+    // (Not someone only running past him on his way somewhere else: he keeps running.)
+    if (holder && this.pos[holder] && Math.hypot(this.pos[holder].x - me.x, this.pos[holder].y - me.y) < ON_BALL_M && (scene.guards[key] === holder || away < DEF_RUN_TO)) {
       // Only the man guarding the handler can be beaten; a zone holds its ground.
       const t = this.target[key];
       const guarding = scene.guards[key] === holder;
@@ -911,13 +1042,18 @@ export class Motion {
     }
     // Off the ball: see man and ball. A zone just watches the ball.
     const man = this.pos[scene.guards[key]];
-    return { angle: blend(toward(man ? { x: (man.x + seen.x) / 2, y: (man.y + seen.y) / 2 } : seen)), quick: false };
+    // With a long way to go he turns and sprints at once: a defender reacts, he does not drift round.
+    return { angle: blend(toward(man ? { x: (man.x + seen.x) / 2, y: (man.y + seen.y) / 2 } : seen)), quick: away > RUN_TO_SPOT_TO };
   }
 
   /** A new spot takes a moment to read: `delay` seconds before setting off for it. */
   private reactedAim(key: string, target: Pos, delay: number, dt: number): Pos {
     const known = this.latest[key];
-    if (!known || Math.hypot(known.x - target.x, known.y - target.y) > 0.6) this.waiting[key] = delay;
+    // One read per change of plan: a spot that moves again while he is still reading it does not
+    // start the clock over, or a defender would stand through two beats in a row.
+    if (!known || Math.hypot(known.x - target.x, known.y - target.y) > 0.6) {
+      if (!((this.waiting[key] ?? 0) > 0)) this.waiting[key] = delay;
+    }
     this.latest[key] = target;
     this.waiting[key] = (this.waiting[key] ?? 0) - dt;
     if (this.waiting[key] <= 0 || !this.aim[key]) this.aim[key] = target;

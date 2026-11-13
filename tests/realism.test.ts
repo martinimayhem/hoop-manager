@@ -11,7 +11,7 @@ import type { TimedEvent } from '../src/engine/types';
 import { COURT, HOOP_X, MID_Y } from '../src/engine/court';
 import { beatAt, isRef, type Script } from '../src/ui/court/animation';
 import { BODY_M } from '../src/ui/court/formations';
-import { angleDiff, type Motion } from '../src/ui/court/motion';
+import { SHOTS, angleDiff, type Motion } from '../src/ui/court/motion';
 import { project } from '../src/ui/court/render';
 import { LiveMatch } from '../src/ui/match/controller';
 
@@ -301,7 +301,7 @@ function watchBodies(seed: number, highlights: boolean): BodyWatch {
   const plans = [makePlan(HARBOR_HAMMERS, { offence: 'fastBreak', defence: 'man', tempo: 'fast' }), makePlan(SKYLINE_SPARKS, { offence: 'balanced', defence: 'zone', tempo: 'fast' })] as const;
   const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [plans[0], plans[1]], seed, ['ai', 'ai'], 'normal');
   m.highlights = highlights;
-  const inner = m as unknown as { script: Script | null; scriptEvents: TimedEvent[]; motion: Motion };
+  const inner = m as unknown as { script: Script | null; scriptEvents: TimedEvent[]; durations: number[]; t: number; motion: Motion };
   const w: BodyWatch = { frames: 0, closest: Infinity, openBreaks: 0, crossings: [] };
   let seen: Script | null = null;
   // The open-lane break being watched: its handler, the rim, and for each defender how far ahead
@@ -329,6 +329,8 @@ function watchBodies(seed: number, highlights: boolean): BodyWatch {
     const defenders = players.filter((k) => !k.startsWith(`${sc.offence}:`));
     w.frames++;
     for (const a of attackers) for (const d of defenders) w.closest = Math.min(w.closest, dist(pos[a], pos[d]));
+    // Once the shot is up the break is over: what follows is a rebound, not a run at the rim.
+    if (brk && sc.beats[beatAt(sc, inner.durations, inner.t).index].ball.kind === 'fromPlayer') brk = null;
     const h = brk && pos[brk.handler];
     if (!brk || !h) continue;
     const len = dist(h, brk.rim);
@@ -341,7 +343,10 @@ function watchBodies(seed: number, highlights: boolean): BodyWatch {
       const a = (brk.ahead[d] ??= { now: s, most: s });
       // Clearly between him and the rim at some point, and now level or behind him, having come
       // back across his line rather than round it.
-      if (a.most > BODY_M && a.now > 0 && s <= 0 && lat < BODY_M + 0.05) w.crossings.push(`seed ${seed} ${brk.handler} passed through by ${d}, ${lat.toFixed(2)} m off his line`);
+      if (a.most > BODY_M && a.now > 0 && s <= 0 && lat < BODY_M + 0.05) {
+        const bi = beatAt(sc, inner.durations, inner.t).index;
+        w.crossings.push(`seed ${seed} ${brk.handler} passed through by ${d}, ${lat.toFixed(2)} m off his line (q${sc.quarter} ${m.clock.toFixed(1)}s, beat ${bi} ${sc.beats[bi].ball.kind}${sc.beats[bi].chase?.[d] ? ', chasing' : ''})`);
+      }
       a.now = s;
       a.most = Math.max(a.most, s);
     }
@@ -410,5 +415,134 @@ describe('getting back', () => {
     expect(breaks).toBeGreaterThan(10);
     // Before: about two defenders a break took a few steps and stopped, 20 m from the play.
     expect(stayed).toEqual([]);
+  }, 600000);
+});
+
+// ---------------------------------------------------------------------------
+// Defenders always try. The engine decides what happens; the animation shows the defence trying and
+// failing, never not trying: no defender drifting while the ball is live, a chaser on every open-lane
+// break who is there, a step late, as the ball goes up, and a hand up at every shot.
+
+interface Effort {
+  /** Live-ball game seconds a defender spent far from his man and his spot, slower than his jog, past the first second. */
+  idle: string[];
+  /** Defender-seconds of live ball watched. */
+  defenderSeconds: number;
+  /** Every shot from the floor: how far the nearest defender was at the release, and whether his hand was up. */
+  shots: { open: boolean; d: number; up: boolean; who: string; at: string }[];
+}
+
+function watchEffort(seed: number, highlights: boolean): Effort {
+  const plans = [makePlan(HARBOR_HAMMERS, { offence: 'fastBreak', defence: 'man', tempo: 'fast' }), makePlan(SKYLINE_SPARKS, { offence: 'balanced', defence: 'zone', tempo: 'fast' })] as const;
+  const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [plans[0], plans[1]], seed, ['ai', 'ai'], 'normal');
+  m.highlights = highlights;
+  const inner = m as unknown as { script: Script | null; durations: number[]; t: number; motion: Motion };
+  const e: Effort = { idle: [], defenderSeconds: 0, shots: [] };
+  const slow: Record<string, number> = {};
+  const slowFrom: Record<string, string> = {};
+  let ballSide: string | null = null;
+  let seen: Script | null = null;
+  let shotBeat: object | null = null;
+  for (let i = 0; i < 2_000_000 && m.phase !== 'final'; i++) {
+    m.tick(DT);
+    if (m.phase === 'timeout' || m.phase === 'break') {
+      m.resume();
+      for (const k of Object.keys(slow)) delete slow[k];
+      continue;
+    }
+    const sc = inner.script;
+    const f = m.frame();
+    if (!sc || !f) continue;
+    if (sc !== seen) {
+      seen = sc;
+      ballSide = `${sc.offence}:`;
+    }
+    const { index, u } = beatAt(sc, inner.durations, inner.t);
+    const beat = sc.beats[index];
+    const mo = inner.motion;
+    const a = beat.ball;
+    // Whose ball it is: whoever last had it in his hands.
+    const hand = a.kind === 'held' ? a.holder : a.kind === 'pass' ? a.from : a.kind === 'fromPlayer' ? a.from : a.kind === 'toPlayer' ? a.to : null;
+    if (hand && !isRef(hand)) ballSide = hand.slice(0, 2);
+    // A basket dropping through the net: the side that scored defends next, so it is the one getting back.
+    if (a.kind === 'fixed' && a.from.z > 2.9 && a.to.z < 0.3 && Math.hypot(a.from.x - a.to.x, a.from.y - a.to.y) < 0.3 && ballSide) ballSide = ballSide === '0:' ? '1:' : '0:';
+    if (beat.dead || !ballSide) {
+      for (const k of Object.keys(slow)) delete slow[k];
+      continue;
+    }
+    const gameDt = DT * (f.timeScale ?? 1);
+    const holder = m.holderKey();
+    for (const k of Object.keys(mo.pos)) {
+      if (isRef(k) || k.startsWith(ballSide)) {
+        // On the ball side now: a stretch on defence ends here.
+        delete slow[k];
+        continue;
+      }
+      e.defenderSeconds += gameDt;
+      const v = mo.vel[k];
+      const speed = Math.hypot(v.x, v.y) / mo.scale;
+      // Slower than a jog: an ordinary jog, or a slow (or tired) player's own, with a fifth off for
+      // getting up to speed. A quick guard's jog is faster than most men's run: not the bar.
+      const jog = 4.6 * Math.min(1, mo.moveFactor(k)) * 0.8;
+      // His man: whom the beat has him guarding, or his man-to-man assignment. In a zone, or with the
+      // ball coming at him, the man with the ball is his man while he is on him.
+      const man = beat.marking?.[k] ?? sc.guards[k];
+      const spot = mo.target[k];
+      const onBall = holder && !isRef(holder) && mo.pos[holder] && dist(mo.pos[k], mo.pos[holder]) < 2;
+      // Bodies touching an attacker (boxing out, fighting through a screen or a crowd): he is in it,
+      // and the rule that nobody goes through an opponent holds him there.
+      const tiedUp = Object.keys(mo.pos).some((o) => o.startsWith(ballSide!) && dist(mo.pos[o], mo.pos[k]) < 1);
+      const near = (spot && dist(mo.pos[k], spot) < 2) || (man && mo.pos[man] && dist(mo.pos[k], mo.pos[man]) < 2) || onBall || tiedUp;
+      if (speed < jog && !near) {
+        if (!slow[k]) slowFrom[k] = `from ${m.clock.toFixed(1)}s beat ${index}`;
+        slow[k] = (slow[k] ?? 0) + gameDt;
+        if (slow[k] > 1 && slow[k] - gameDt <= 1) e.idle.push(`seed ${seed} q${sc.quarter} ${Math.round(m.clock)}s ${k} ${speed.toFixed(1)} m/s, ${spot ? dist(mo.pos[k], spot).toFixed(1) : '?'} m from his spot, facing ${spot ? Math.round(Math.abs(deg(angleDiff(mo.facing[k] ?? 0, Math.atan2(spot.y - mo.pos[k].y, spot.x - mo.pos[k].x))))) : '?'}° off it, ${a.kind} beat ${index} ${beat.phase}${beat.caption ? ` "${beat.caption}"` : ''}, ${slowFrom[k]}`);
+      } else slow[k] = 0;
+    }
+    // The moment the ball leaves the shooter's hands.
+    if (a.kind === 'fromPlayer' && a.style !== 'throw' && a.style !== 'set' && beat !== shotBeat && u >= SHOTS[a.style].release) {
+      shotBeat = beat;
+      const side = a.from.slice(0, 2);
+      const s = mo.pos[a.from];
+      const near = Object.keys(mo.pos)
+        .filter((k) => !isRef(k) && !k.startsWith(side))
+        .sort((x, y) => dist(mo.pos[x], s) - dist(mo.pos[y], s))[0];
+      e.shots.push({ open: !!beat.openBreak, d: dist(mo.pos[near], s), up: (f.reach?.[near] ?? 0) > 0.5, who: near, at: `seed ${seed} q${sc.quarter} ${Math.round(m.clock)}s ${a.style} by ${a.from}` });
+    }
+  }
+  expect(m.phase).toBe('final');
+  return e;
+}
+
+describe('defenders always try', () => {
+  const runs: Effort[] = [];
+  const all = () => {
+    if (runs.length === 0) for (const [seed, highlights] of [[1, false], [2, true], [3, true]] as const) runs.push(watchEffort(seed, highlights));
+    return runs;
+  };
+
+  it('while the ball is live no defender drifts: slower than a jog for over a second only when he is on his man or his spot', () => {
+    const r = all();
+    const seconds = r.reduce((s, e) => s + e.defenderSeconds, 0);
+    const idle = r.flatMap((e) => e.idle);
+    console.log(`defender-minutes ${(seconds / 60).toFixed(0)}, idle stretches ${idle.length}`, idle.slice(0, 12));
+    expect(seconds).toBeGreaterThan(600);
+    expect(idle).toEqual([]);
+  }, 600000);
+
+  it('on every open-lane break the nearest defender is within 2.5 m of the shooter as the ball goes up, hand up', () => {
+    const open = all().flatMap((e) => e.shots.filter((s) => s.open));
+    const bad = open.filter((s) => s.d > 2.5 || !s.up).map((s) => `${s.at}: ${s.who} ${s.d.toFixed(1)} m, hand ${s.up ? 'up' : 'down'}`);
+    console.log(`open-lane finishes ${open.length}`, bad.slice(0, 12));
+    expect(open.length).toBeGreaterThan(5);
+    expect(bad).toEqual([]);
+  }, 600000);
+
+  it('on every shot the nearest defender has a hand up, unless he is more than 4 m away', () => {
+    const shots = all().flatMap((e) => e.shots);
+    const bad = shots.filter((s) => s.d <= 4 && !s.up).map((s) => `${s.at}: ${s.who} ${s.d.toFixed(1)} m`);
+    console.log(`shots ${shots.length}, hand down within 4 m ${bad.length}`, bad.slice(0, 12));
+    expect(shots.length).toBeGreaterThan(100);
+    expect(bad).toEqual([]);
   }, 600000);
 });

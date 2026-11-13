@@ -838,10 +838,18 @@ describe('contesting and rebounding', () => {
   it('hands stay down for everyone else, and go up smoothly', () => {
     let last: Record<string, number> = {};
     let biggestStep = 0;
+    const team = (k: string) => k.slice(0, k.indexOf(':'));
     play(({ beat, m }) => {
+      const a = beat.ball;
       for (const [k, v] of Object.entries(m.reach)) {
         biggestStep = Math.max(biggestStep, Math.abs(v - (last[k] ?? 0)));
-        expect(beat.contest === k || !!beat.reach?.includes(k) || v < 1).toBe(true);
+        // Hands go up for: the challenger, rebounders, any defender near a shooter (a late contest:
+        // defenders always try), and the defender closing out on a man who has just caught it.
+        const shooter = a.kind === 'fromPlayer' && a.style !== 'throw' && a.style !== 'set' ? a.from : null;
+        const nearShot = !!shooter && team(k) !== team(shooter) && Math.hypot(m.pos[k].x - m.pos[shooter].x, m.pos[k].y - m.pos[shooter].y) < 4.8;
+        const caught = a.kind === 'held' ? a.holder : a.kind === 'pass' ? a.to : null;
+        const closeOut = !!caught && !isRef(caught) && team(k) !== team(caught) && !!m.pos[caught] && Math.hypot(m.pos[k].x - m.pos[caught].x, m.pos[k].y - m.pos[caught].y) < 2.7;
+        expect(beat.contest === k || !!beat.reach?.includes(k) || nearShot || closeOut || v < 1).toBe(true);
       }
       last = { ...m.reach };
     });

@@ -140,7 +140,10 @@ export function guardSpot(man: Pos, ball: Pos, onBall: boolean, pressing: boolea
   const spot = { x: man.x + (dx / toHoop) * gap, y: man.y + (dy / toHoop) * gap };
   // Get back, stop the ball, then find your man: with the ball coming up the floor ahead of his man,
   // a defender gets between the ball and the basket first, never left behind it, pressing or not.
-  const ahead = !onBall && ball.x < HOOP_X - THREE_ARC_M && man.x < ball.x ? Math.min(ball.x + 2, HOOP_X - 3) : 0;
+  // Faded in over the last two metres before his man draws level with the ball, so the spot never
+  // jumps back and forth as a trailer runs level with it.
+  const lead = Math.max(0, Math.min(1, (ball.x - man.x) / 2));
+  const ahead = !onBall && ball.x < HOOP_X - THREE_ARC_M && lead > 0 ? spot.x + (Math.max(spot.x, Math.min(ball.x + 2, HOOP_X - 3)) - spot.x) * lead : 0;
   if (pressing) return { x: Math.max(spot.x, ahead), y: spot.y };
   return { x: Math.max(spot.x, HALF_COURT_PICKUP_X, ahead), y: spot.y };
 }

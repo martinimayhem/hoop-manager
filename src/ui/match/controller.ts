@@ -535,6 +535,7 @@ export class LiveMatch {
         through: beat.through,
         action: beat.ball,
         openBreak: beat.openBreak,
+        chase: beat.chase,
         openFloor: beat.phase === 'bringUp' || !!beat.openBreak,
       });
     }
