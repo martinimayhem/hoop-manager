@@ -69,6 +69,12 @@ let maxMargin = 0, closeGames = 0;
 /** Shots per zone, and the late-clock and buzzer shots. */
 const zoneShots = new Map<ShotZone, { att: number; made: number }>();
 let lateClockShots = 0, buzzerShots = 0, shotClockViolations = 0, allShots = 0;
+/** Rebounds: off missed field goals (offensive or not), by the rebounder's position, long or short by the miss's zone, and offensive ones by attack. */
+let fgMissRebounds = 0, fgMissOreb = 0;
+const rebByPosition = new Map<string, number>();
+const longByZone = new Map<string, { long: number; all: number }>();
+let guardLongOffThrees = 0, guardShortOffThrees = 0;
+const orebByAttack = new Map<string, { oreb: number; teamGames: number }>();
 
 const pairs = Math.ceil(games / 2);
 const start = Date.now();
@@ -99,7 +105,28 @@ for (let pair = 0; pair < pairs; pair++) {
     const margin = Math.abs(box.teams[0].score - box.teams[1].score);
     maxMargin = Math.max(maxMargin, margin);
     if (margin <= 5) closeGames++;
+    const teamsInGame = [home, away];
+    let miss: string | null = null;
     for (const ev of state.events) {
+      if (ev.type === 'shot' && !ev.made) miss = ev.zone;
+      else if (ev.type === 'freeThrow' && !ev.made && !ev.technical) miss = 'ft';
+      else if (ev.type === 'rebound' && miss) {
+        const pos = teamsInGame[ev.side].players.find((p) => p.id === ev.playerId)?.position ?? '?';
+        rebByPosition.set(pos, (rebByPosition.get(pos) ?? 0) + 1);
+        const z = longByZone.get(miss) ?? { long: 0, all: 0 };
+        z.all++;
+        if (ev.land.long) z.long++;
+        longByZone.set(miss, z);
+        if (miss !== 'ft') {
+          fgMissRebounds++;
+          if (ev.offensive) fgMissOreb++;
+        }
+        if ((pos === 'PG' || pos === 'SG') && (miss === 'corner3' || miss === 'aboveBreak3')) {
+          if (ev.land.long) guardLongOffThrees++;
+          else guardShortOffThrees++;
+        }
+        miss = null;
+      }
       if (ev.type === 'turnover' && ev.cause === 'shotClock') shotClockViolations++;
       if (ev.type !== 'shot') continue;
       allShots++;
@@ -143,6 +170,10 @@ for (let pair = 0; pair < pairs; pair++) {
       tpm += tb.totals.tpm;
       tov += tb.totals.tov;
       oreb += tb.totals.oreb;
+      const att = orebByAttack.get(plan.offence) ?? { oreb: 0, teamGames: 0 };
+      att.oreb += tb.totals.oreb;
+      att.teamGames++;
+      orebByAttack.set(plan.offence, att);
       for (const line of tb.players) {
         if (line.starter) {
           starterSeconds += line.stats.seconds;
@@ -204,6 +235,14 @@ for (const zone of ZONES) {
   console.log(`  ${zone.padEnd(12)} ${pct(z.att / allShots).padStart(6)} ${pct(z.made / Math.max(1, z.att)).padStart(6)}   NBA ${pct(share).padStart(6)} ${pct(fg).padStart(6)}`);
 }
 console.log(`  Late-clock shots ${pct(lateClockShots / allShots)}   Buzzer shots ${(buzzerShots / played).toFixed(2)} a game   Shot-clock violations ${(shotClockViolations / teamGames).toFixed(2)} a team a game`);
+
+console.log('\nRebounds');
+console.log(`  Offensive rebounds ${pct(fgMissOreb / Math.max(1, fgMissRebounds))} of missed field goals   NBA about 24.5%`);
+const allReb = [...rebByPosition.values()].reduce((a, b) => a + b, 0);
+console.log(`  By position: ${['C', 'PF', 'SF', 'SG', 'PG'].map((p) => `${p} ${pct((rebByPosition.get(p) ?? 0) / Math.max(1, allReb))}`).join('   ')}`);
+console.log(`  Long (3 m+) off: ${['restricted', 'paint', 'mid', 'corner3', 'aboveBreak3', 'ft'].map((z) => { const v = longByZone.get(z); return `${z} ${pct(v ? v.long / v.all : 0)}`; }).join('   ')}`);
+console.log(`  Guards off missed threes: ${guardLongOffThrees} long, ${guardShortOffThrees} short`);
+console.log(`  Offensive rebounds a game by attack: ${OFFENSIVE_FOCI.map((o) => { const v = orebByAttack.get(o); return `${o} ${v ? (v.oreb / v.teamGames).toFixed(1) : '-'}`; }).join('   ')}`);
 
 console.log(`\nWin rate when the two sides chose different options (50% = no edge, flag outside ${pct(FLAG_LOW)}–${pct(FLAG_HIGH)})`);
 printTally('Offensive focus', byOffence, OFFENSIVE_FOCI);

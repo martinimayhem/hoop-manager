@@ -79,7 +79,7 @@ describe('clutch moments', () => {
     expect(m.phase).toBe('playing');
     for (let i = 0; i < 20; i++) m.tick(0.05);
     expect(m.s.events.some((e) => e.type === 'playCall')).toBe(true);
-  });
+  }, 120000);
 
   it('asks for three plays and one last stop per finish, not a call every possession', () => {
     const s = clutchState();

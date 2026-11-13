@@ -195,3 +195,89 @@ describe('double team', () => {
     expect(doubles).toBeGreaterThan(10);
   });
 });
+
+describe('rebounds: where the ball goes decides who gets it', () => {
+  /** Every rebound over many games, with the miss that led to it and the rebounder's position. */
+  const sample = (() => {
+    let rows: { offensive: boolean; long: boolean | undefined; zone: string; position: string; shooter: boolean; plan: string }[] | null = null;
+    return () => {
+      if (rows) return rows;
+      rows = [];
+      for (let seed = 0; seed < 200; seed++) {
+        const home = seed % 2 === 0 ? HARBOR_HAMMERS : SKYLINE_SPARKS;
+        const away = mirrorTeam(home, 'OPP');
+        const offence = (['inside', 'three', 'balanced', 'pickAndRoll', 'fastBreak'] as const)[seed % 5];
+        const r = simulateMatch(home, away, makePlan(home, { offence }), makePlan(away, {}), seed);
+        const teams = [home, away];
+        let miss: { zone: string; shooter: string } | null = null;
+        for (const ev of r.state.events) {
+          if (ev.type === 'shot' && !ev.made) miss = { zone: ev.zone, shooter: ev.shooterId };
+          else if (ev.type === 'freeThrow' && !ev.made && !ev.technical) miss = { zone: 'ft', shooter: ev.shooterId };
+          else if (ev.type === 'rebound' && miss) {
+            const p = teams[ev.side].players.find((x) => x.id === ev.playerId)!;
+            const land = (ev as { land?: { long: boolean } }).land;
+            rows.push({ offensive: ev.offensive, long: land?.long, zone: miss.zone, position: p.position, shooter: ev.offensive && ev.playerId === miss.shooter, plan: ev.side === 0 ? offence : 'balanced' });
+            miss = null;
+          }
+        }
+      }
+      return rows;
+    };
+  })();
+
+  it('every rebound says where it came down: long or short', () => {
+    const rows = sample();
+    expect(rows.length).toBeGreaterThan(10000);
+    expect(rows.filter((r) => r.long === undefined)).toEqual([]);
+  }, 300000);
+
+  it('about a quarter of misses are rebounded by the offence, as in the NBA', () => {
+    const rows = sample().filter((r) => r.zone !== 'ft');
+    const rate = rows.filter((r) => r.offensive).length / rows.length;
+    console.log(`offensive rebound rate ${(rate * 100).toFixed(1)}%`);
+    expect(rate).toBeGreaterThan(0.22);
+    expect(rate).toBeLessThan(0.28);
+  }, 300000);
+
+  it('centres and power forwards get clearly the most rebounds', () => {
+    const rows = sample();
+    const by = (pos: string) => rows.filter((r) => r.position === pos).length;
+    const counts = Object.fromEntries(['PG', 'SG', 'SF', 'PF', 'C'].map((p) => [p, by(p)]));
+    console.log(JSON.stringify(counts));
+    const wing = Math.max(counts.PG, counts.SG, counts.SF);
+    expect(counts.C).toBeGreaterThan(wing * 1.4);
+    expect(counts.PF).toBeGreaterThan(wing * 1.2);
+  }, 300000);
+
+  it('threes come off long, shots at the rim short; guards get the long ones', () => {
+    const rows = sample();
+    const longShare = (zones: string[]) => {
+      const z = rows.filter((r) => zones.includes(r.zone));
+      return z.filter((r) => r.long).length / z.length;
+    };
+    const threes = longShare(['corner3', 'aboveBreak3']);
+    const inside = longShare(['restricted', 'paint']);
+    const guardThrees = rows.filter((r) => (r.position === 'PG' || r.position === 'SG') && (r.zone === 'corner3' || r.zone === 'aboveBreak3'));
+    const guardLong = guardThrees.filter((r) => r.long).length;
+    console.log(JSON.stringify({ threesLong: threes.toFixed(2), insideLong: inside.toFixed(2), guardLongOffThrees: guardLong, guardShortOffThrees: guardThrees.length - guardLong }));
+    expect(threes).toBeGreaterThan(0.45);
+    expect(inside).toBeLessThan(0.2);
+    expect(guardLong).toBeGreaterThan(guardThrees.length - guardLong);
+  }, 300000);
+
+  it('the shooter rarely gets his own long miss', () => {
+    const rows = sample().filter((r) => r.long && r.offensive);
+    const own = rows.filter((r) => r.shooter).length / rows.length;
+    console.log(`own long misses ${(own * 100).toFixed(1)}% of long offensive rebounds`);
+    expect(own).toBeLessThan(0.12);
+  }, 300000);
+
+  it('an Inside attack gets more offensive rebounds than a Three attack', () => {
+    // The home side plays each attack in 40 of the 200 games; its offensive rebounds by attack.
+    const rows = sample().filter((r) => r.offensive);
+    const inside = rows.filter((r) => r.plan === 'inside').length;
+    const three = rows.filter((r) => r.plan === 'three').length;
+    console.log(JSON.stringify({ insideOreb: inside, threeOreb: three }));
+    expect(inside).toBeGreaterThan(three);
+  }, 300000);
+});

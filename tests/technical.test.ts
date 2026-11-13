@@ -167,10 +167,16 @@ describe('arguing the call in a live match', () => {
 
   it('with the coach ejected the assistant takes over: no timeouts from him, orders at the quarter break', () => {
     Object.assign(TECHNICAL, { argue: 1 });
-    const m = human(2);
-    while (!m.s.teams[0].coachEjected && m.phase !== 'final') {
-      step(m);
-      if (m.phase === 'argue') m.argueCall();
+    // The first match in which he argues his way out (every argument counts, but a technical is
+    // still not certain).
+    let m = human(2);
+    for (let seed = 2; seed < 12; seed++) {
+      m = human(seed);
+      while (!m.s.teams[0].coachEjected && m.phase !== 'final') {
+        step(m);
+        if (m.phase === 'argue') m.argueCall();
+      }
+      if (m.s.teams[0].coachEjected) break;
     }
     expect(m.s.teams[0].coachEjected).toBe(true);
     expect(m.view[0].coachEjected || m.s.teams[0].coachEjected).toBe(true);

@@ -2,7 +2,7 @@
 // tuning happens in one place. Values are additive probabilities unless noted.
 
 import type { ShotZone } from './court';
-import type { DefenceScheme, GamePlan, OffensiveFocus, ShotType, Tempo } from './types';
+import type { DefenceScheme, GamePlan, OffensiveFocus, Position, ShotType, Tempo } from './types';
 
 export type HalfCourtPlay = 'post' | 'drive' | 'pnr' | 'mid' | 'three';
 
@@ -303,6 +303,36 @@ export function temperOf(p: { id: string; attrs: { tactics: number } }): number 
   return (0.3 + 2.2 * t * t) * calm;
 }
 
+/**
+ * Rebounds: where a miss comes down decides who can get it. Long misses (3 m and more from the rim)
+ * come off threes and go to whoever is out on the perimeter; short ones stay with the bigs inside.
+ */
+export const REBOUND = {
+  /** Base chance the offence gets a missed field goal (before ratings and plans): NBA about 24-25%. */
+  offBase: 0.225,
+  /** And a missed last free throw: the defence has the inside spots on the lane. */
+  offBaseFreeThrow: 0.14,
+  /** By where the miss came from: misses at the rim fall to the crashers, long ones to the defence. */
+  offByZone: { restricted: 0.04, paint: 0.02, mid: -0.01, corner3: -0.02, aboveBreak3: -0.02, ft: 0 } as Record<ShotZone | 'ft', number>,
+  /** Share of misses that come off long, by where the shot was taken; a blocked shot flies anywhere. */
+  longShare: { restricted: 0.06, paint: 0.12, mid: 0.3, corner3: 0.6, aboveBreak3: 0.6, ft: 0.03 } as Record<ShotZone | 'ft', number>,
+  longShareBlocked: 0.35,
+  /** How far out it comes down (metres from the rim): short, long, and long off a three. */
+  shortM: [1, 2.4] as [number, number],
+  longM: [3, 4.6] as [number, number],
+  longThreeM: [3.4, 5.4] as [number, number],
+  /** Who is there for it, by position: [short, long]. Bigs live near the rim, guards out on the floor. */
+  position: { C: [1, 0.45], PF: [0.85, 0.55], SF: [0.45, 0.75], SG: [0.25, 0.85], PG: [0.2, 0.8] } as Record<Position, [number, number]>,
+  /** Off a missed free throw only the players on the lane are in it: the bigs, nearly always. */
+  freeThrowPosition: { C: 1, PF: 1, SF: 0.4, SG: 0.06, PG: 0.04 } as Record<Position, number>,
+  /** The shooter after his own miss: a long one is gone before he can follow it; a short one he can. */
+  shooterLong: 0.2,
+  shooterShort: 0.9,
+  /** An Inside attack sends the bigs to crash; Fast Break and Three send the guards back. */
+  insideCrash: 1.25,
+  leakOut: 0.6,
+};
+
 /** Offensive rebound modifiers. */
 export function offRebPlanMod(off: GamePlan, def: GamePlan): number {
   let m = 0;
@@ -310,7 +340,7 @@ export function offRebPlanMod(off: GamePlan, def: GamePlan): number {
   if (def.defence === 'press') m += 0.01;
   if (off.offence === 'inside') m += 0.03;
   if (off.offence === 'fastBreak') m -= 0.03; // wings leak out instead of crashing
-  if (off.offence === 'three') m += 0.01; // long rebounds
+  // (Three: its long rebounds come from where its shots are taken: REBOUND.longShare.)
   if (off.tempo === 'fast') m -= 0.01;
   return m;
 }

@@ -3,6 +3,13 @@
 import type { CourtSide, ShotZone } from './court';
 
 export type Position = 'PG' | 'SG' | 'SF' | 'PF' | 'C';
+
+/** Where a rebound comes down: metres out from the rim and across from the middle; long = 3 m and more. */
+export interface ReboundLanding {
+  back: number;
+  across: number;
+  long: boolean;
+}
 export const POSITIONS: readonly Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
 
 /** All ratings on a 1–99 scale. Height and weight live on the player as real values. */
@@ -178,7 +185,11 @@ export type MatchEvent =
       dunk?: boolean;
     }
   /** After a defensive rebound, `back` is how many of the other side got back in time: 0 to 3. */
-  | { type: 'rebound'; side: Side; playerId: string; offensive: boolean; back?: number }
+  /**
+   * `land`: where the miss came down, as the engine has it: `back` metres out from the rim and
+   * `across` from the middle (as `fromHoop` in court.ts), and whether it was a long rebound.
+   */
+  | { type: 'rebound'; side: Side; playerId: string; offensive: boolean; back?: number; land: ReboundLanding }
   /** After a steal, `back` is how many of the side that lost it got back in time: 0 to 3. */
   | { type: 'turnover'; side: Side; playerId: string; cause: TurnoverCause; stealerId?: string; back?: number }
   | { type: 'foul'; side: Side; playerId: string; onId: string; shooting: boolean; bonus: boolean }

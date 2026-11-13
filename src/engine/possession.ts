@@ -35,6 +35,7 @@ import {
   BALL_MOVEMENT,
   nonShootingFoulRate,
   offRebPlanMod,
+  REBOUND,
   playWeights,
   pressBreakChance,
   pressTurnoverChance,
@@ -44,7 +45,7 @@ import {
   turnoverPlanMod,
   type HalfCourtPlay,
 } from './tactics';
-import { DEFENDERS_BACK, type MatchState, type OffenceCall, type PossessionCalls, type ShotType, type Side, type TransitionPlan, type TransitionSituation, type TurnoverCause } from './types';
+import { DEFENDERS_BACK, type MatchState, type ReboundLanding, type OffenceCall, type PossessionCalls, type ShotType, type Side, type TransitionPlan, type TransitionSituation, type TurnoverCause } from './types';
 
 const FOUL_LIMIT = 6;
 const BONUS_FOULS = 5;
@@ -707,7 +708,7 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
     pstate(s, c.def, chaser.chaserId).stats.blk++;
     s.momentum = clamp(s.momentum + (c.def === 0 ? 0.05 : -0.05), -1, 1);
     emit(s, { type: 'shot', side: c.off, shooterId: shooter, shotType: type, zone, courtSide, points, made: false, blockerId: chaser.chaserId, chaseDown: true, ...clockFlags(c) });
-    rebound(c, false);
+    rebound(c, { zone, shooter, blocked: true });
     return;
   }
 
@@ -764,7 +765,7 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
     s.momentum = clamp(s.momentum + (c.def === 0 ? 0.03 : -0.03), -1, 1);
   }
   emit(s, { type: 'shot', side: c.off, shooterId: shooter, shotType: type, zone, courtSide, points, made: false, blockerId, ...clockFlags(c) });
-  rebound(c, false);
+  rebound(c, { zone, shooter, blocked: !!blockerId });
 }
 
 function clockFlags(c: Ctx): { lateClock?: true; buzzer?: true } {
@@ -911,31 +912,62 @@ function freeThrows(c: Ctx, shooter: string, count: number): void {
     emit(s, { type: 'freeThrow', side: c.off, shooterId: shooter, made: lastMade, attempt: i, of: count });
   }
   if (lastMade) c.done = true;
-  else rebound(c, true);
+  else rebound(c, { zone: 'ft', shooter, blocked: false });
 }
 
-function rebound(c: Ctx, afterFreeThrow: boolean): void {
+/** The miss a rebound comes off: where it was taken from, by whom, and whether it was blocked. */
+interface Miss {
+  zone: ShotZone | 'ft';
+  shooter: string;
+  blocked: boolean;
+}
+
+/**
+ * Who gets a miss. First which side: the defence has the inside position (boxing out), so most
+ * misses are theirs; ratings, plans and where the shot came from move it. Then where it comes down,
+ * long or short, by the shot: threes come off long, misses at the rim stay short. Then who of that
+ * side: rebounding rating, times how likely he is to be there for a ball landing there (bigs near the
+ * rim, guards out on the floor), the shooter rarely following his own long miss, and the attack
+ * (Inside sends the bigs to crash, Fast Break and Three send the guards back).
+ */
+function rebound(c: Ctx, miss: Miss): void {
   const s = c.s;
   const offPlan = s.teams[c.off].plan;
   const defPlan = s.teams[c.def].plan;
+  const afterFreeThrow = miss.zone === 'ft';
   const edge = (teamTop(s, c.off, 'rebounding') - teamTop(s, c.def, 'rebounding')) / 100;
-  let p = (afterFreeThrow ? 0.14 : 0.26) + 0.6 * edge + offRebPlanMod(offPlan, defPlan);
+  let p = (afterFreeThrow ? REBOUND.offBaseFreeThrow : REBOUND.offBase) + REBOUND.offByZone[miss.zone] + 0.6 * edge + offRebPlanMod(offPlan, defPlan);
   if (defPlan.keyMatchup.kind === 'double') p += DOUBLE_TEAM.offRebMod;
   const offensive = chance(s.rng, clamp(p, 0.06, 0.5));
   const side = offensive ? c.off : c.def;
-  const rebounder = weighted(s.rng, s.teams[side].lineup, (id) => Math.pow(eff(s, side, id, 'rebounding') / 50, 2.2));
+  // Where it comes down.
+  const long = chance(s.rng, miss.blocked ? REBOUND.longShareBlocked : REBOUND.longShare[miss.zone]);
+  const [near, far] = !long ? REBOUND.shortM : miss.zone === 'corner3' || miss.zone === 'aboveBreak3' ? REBOUND.longThreeM : REBOUND.longM;
+  const out = range(s.rng, near, far);
+  // Anywhere round the front of the rim, never behind the board.
+  const angle = range(s.rng, -1.3, 1.3);
+  const land: ReboundLanding = { back: Math.max(0.6, out * Math.cos(angle)), across: out * Math.sin(angle), long };
+  const plan = s.teams[side].plan;
+  const rebounder = weighted(s.rng, s.teams[side].lineup, (id) => {
+    const pos = playerOf(s, side, id).position;
+    let w = Math.pow(eff(s, side, id, 'rebounding') / 50, 2.2) * (afterFreeThrow ? REBOUND.freeThrowPosition[pos] : REBOUND.position[pos][long ? 1 : 0]);
+    if (offensive && id === miss.shooter) w *= long ? REBOUND.shooterLong : REBOUND.shooterShort;
+    if (offensive && plan.offence === 'inside' && (pos === 'C' || pos === 'PF')) w *= REBOUND.insideCrash;
+    if (offensive && (plan.offence === 'fastBreak' || plan.offence === 'three') && (pos === 'PG' || pos === 'SG')) w *= REBOUND.leakOut;
+    return w;
+  });
   const st = pstate(s, side, rebounder).stats;
   if (offensive) st.oreb++;
   else st.dreb++;
   if (!offensive) {
     s.nextTransition = planTransition(s, c.def, 'rebound');
-    emit(s, { type: 'rebound', side, playerId: rebounder, offensive, back: DEFENDERS_BACK[s.nextTransition.situation] });
+    emit(s, { type: 'rebound', side, playerId: rebounder, offensive, back: DEFENDERS_BACK[s.nextTransition.situation], land });
     s.possession = c.def;
     s.transition = 'rebound';
     c.done = true;
     return;
   }
-  emit(s, { type: 'rebound', side, playerId: rebounder, offensive });
+  emit(s, { type: 'rebound', side, playerId: rebounder, offensive, land });
 
   c.secondChance = true;
   c.fastBreak = false;
