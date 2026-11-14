@@ -144,6 +144,10 @@ export interface Fx {
   side?: Side;
   /** A free throw: a smaller moment than a basket from the field. */
   small?: boolean;
+  /** A shot at the buzzer. */
+  buzzer?: boolean;
+  /** For a score: the run it makes, points this side has scored unanswered. */
+  run?: number;
 }
 
 /** A clutch possession waiting for the humans' calls. The defence chooses first. */
@@ -1061,15 +1065,27 @@ export class LiveMatch {
     this.bump();
   }
 
+  /** Points scored unanswered, for the crowd: whose run it is and how many. */
+  private run = { side: -1 as number, points: 0 };
+  private runAfter(side: Side, points: number): number {
+    this.run = this.run.side === side ? { side, points: this.run.points + points } : { side, points };
+    return this.run.points;
+  }
+
+  /** Who has the ball in the possession being shown (null between possessions). */
+  offence(): Side | null {
+    return this.script?.offence ?? null;
+  }
+
   /** Sound cues for an event as it appears on screen. */
   private cue(ev: TimedEvent): void {
     const fx = this.fx;
     switch (ev.type) {
       case 'shot':
-        fx.push({ kind: ev.made ? (ev.dunk ? 'dunk' : ev.shotType === 'three' ? 'three' : 'swish') : ev.blockerId ? 'block' : 'clank', side: ev.side });
+        fx.push({ kind: ev.made ? (ev.dunk ? 'dunk' : ev.shotType === 'three' ? 'three' : 'swish') : ev.blockerId ? 'block' : 'clank', side: ev.side, buzzer: ev.made && !!ev.buzzer, run: ev.made ? this.runAfter(ev.side, ev.shotType === 'three' ? 3 : 2) : undefined });
         break;
       case 'freeThrow':
-        fx.push({ kind: ev.made ? 'swish' : 'clank', side: ev.side, small: true });
+        fx.push({ kind: ev.made ? 'swish' : 'clank', side: ev.side, small: true, run: ev.made ? this.runAfter(ev.side, 1) : undefined });
         break;
       case 'foul':
       case 'technical':

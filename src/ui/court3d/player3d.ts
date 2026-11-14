@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RIM_HEIGHT, type BallAction, type Frame } from '../court/animation';
 import { SHOTS } from '../court/motion';
 
@@ -108,14 +109,18 @@ const PALM_THICK = 0.022;
 const CUP = 0.26;
 const RELAXED_CURL = 0.35;
 /**
- * The model's upper arm is short (0.138 of his height, measured; a real one 0.186) and its forearm
- * about right (0.134; real 0.146). Each is made longer by its own factor, along its length only (the
- * elbow and the wrist move out, the skin stretches to meet them; thickness and hands as they are):
- * upper arm 0.172, forearm 0.141, shoulder to fingertip 0.43 of his height. At Anthony Davis's 2.08 m
- * that is a 2.27 m wingspan (his is 2.29 m).
+ * Proportions, measured on the model and set to NBA players' (wingspan about 1.03 of height; the
+ * players the user gave range 0.95 to 1.08). The model as it comes measures 1.07, with long hands
+ * (wrist to fingertip 0.128 of height; real about 0.11) and broad shoulders. So: the arms at their own
+ * length, the hands a little smaller, the shoulder joints a little closer in and the upper arm a
+ * little slimmer (thickness only). Result: wingspan 1.03 of his height.
  */
-const UPPER_ARM_LENGTH = 1.25;
-const FOREARM_LENGTH = 1.05;
+const UPPER_ARM_LENGTH = 1.0;
+const FOREARM_LENGTH = 1.0;
+const HAND_SCALE = 0.92;
+/** The shoulder joint's offset from the collarbone, and the upper arm's thickness. */
+const SHOULDER_IN = 0.9;
+const UPPER_ARM_THICK = 0.9;
 /** Physics of the ball (CLAUDE.md, Reference values). */
 const GRAVITY = 9.81;
 const RESTITUTION = 0.8;
@@ -390,6 +395,45 @@ function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THRE
   return m;
 }
 
+/**
+ * What a player's body is set for: 'onBall' guarding the man with the ball (the full defensive
+ * stance), 'ready' for a pass or loose ball in the air near him, 'rebound' near the rim with a shot
+ * up, or 'none'.
+ */
+type Posture = 'onBall' | 'ready' | 'rebound' | 'none';
+
+function postureFor(key: string, frame: Frame, action: BallAction | null, holder: string | null): Posture {
+  const me = frame.players[key];
+  if (!me || key.startsWith('ref')) return 'none';
+  const side = key.slice(0, key.indexOf(':'));
+  const ball = frame.ball;
+  const d = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+  if (holder && frame.players[holder] && action?.kind === 'held') {
+    if (holder.startsWith(`${side}:`)) return 'none';
+    // On the ball: the nearest of his side to the handler, and close to him.
+    const h = frame.players[holder];
+    const mine = d(me, h);
+    if (mine > 3) return 'none';
+    for (const [k, p] of Object.entries(frame.players)) if (k !== key && k.startsWith(`${side}:`) && d(p, h) < mine) return 'none';
+    return 'onBall';
+  }
+  if (!action || holder) return 'none';
+  // A jump shot or hook in the air: the bigs close to the rim box out (low, forearms up, hands at the
+  // chest), ready for the rebound. Not for a layup or a dunk (there is no rebound to wait for), and
+  // nobody reaches up yet: hands go up only for those the ball comes down near (frame.reach).
+  if (action.kind === 'fromPlayer') {
+    if (action.from === key || (action.style !== 'jumper' && action.style !== 'hook' && action.style !== 'set')) return 'none';
+    return d(me, action.to) < 4 ? 'rebound' : 'none';
+  }
+  // A pass in the air: an opponent close to it, at a height he could catch or cut it off, gets
+  // ready for it. Nothing for a ball dropping out of the net, rolling to the inbounder or loose on
+  // the floor (a 'fixed' or 'toPlayer' ball): that is a dead ball, or one he just picks up.
+  if (action.kind === 'pass' && action.from !== key && action.to !== key && !action.from.startsWith(`${side}:`)) {
+    if (ball.z > 0.8 && ball.z < 2.6 && d(me, ball) < 3) return 'ready';
+  }
+  return 'none';
+}
+
 export class Player3D {
   readonly root = new THREE.Group();
   private mixer: THREE.AnimationMixer;
@@ -418,6 +462,8 @@ export class Player3D {
   private ballShown: THREE.Vector3 | null = null;
   private ballBack = 1;
   private stance = 0;
+  /** What his body is set for this frame (see postureFor). */
+  private posture: Posture = 'none';
   /** Each finger bone's bind (T-pose) rotation: straight fingers, an open hand. */
   private fingers: Record<'l' | 'r', { bone: THREE.Bone; open: THREE.Quaternion; axis: THREE.Vector3; thumb: boolean }[]> = { l: [], r: [] };
   /** How far each hand's fingers curl round (radians a joint): cupped on the ball, relaxed off it. */
@@ -536,16 +582,17 @@ export class Player3D {
     // Longer arms, along their length only: the skin of the upper arm and forearm is stretched
     // along the bone (not scaled up), and the elbow and wrist joints are moved out to match (each
     // frame, after the clips have posed them).
-    const stretchAlong = (axis: THREE.Vector3, k: number) => {
+    /** k along the bone, `thick` across it. */
+    const stretchAlong = (axis: THREE.Vector3, k: number, thick = 1) => {
       const a = axis.clone().normalize();
       const m = new THREE.Matrix4();
-      const e = (i: number, j: number) => (i === j ? 1 : 0) + (k - 1) * [a.x, a.y, a.z][i] * [a.x, a.y, a.z][j];
+      const e = (i: number, j: number) => (i === j ? thick : 0) + (k - thick) * [a.x, a.y, a.z][i] * [a.x, a.y, a.z][j];
       m.set(e(0, 0), e(0, 1), e(0, 2), 0, e(1, 0), e(1, 1), e(1, 2), 0, e(2, 0), e(2, 1), e(2, 2), 0, 0, 0, 0, 1);
       return m;
     };
     const stretch = new Map<THREE.Bone, THREE.Matrix4>();
     for (const sd of ['l', 'r'] as const) {
-      stretch.set(this.bones[`upperarm_${sd}`], stretchAlong(this.bones[`lowerarm_${sd}`].position, UPPER_ARM_LENGTH));
+      stretch.set(this.bones[`upperarm_${sd}`], stretchAlong(this.bones[`lowerarm_${sd}`].position, UPPER_ARM_LENGTH, UPPER_ARM_THICK));
       stretch.set(this.bones[`lowerarm_${sd}`], stretchAlong(this.bones[`hand_${sd}`].position, FOREARM_LENGTH));
     }
     model.traverse((o) => {
@@ -575,7 +622,7 @@ export class Player3D {
       this.actions[clip.name] = a;
     }
     // The middle of the palm: a little past half way from the wrist to the knuckles.
-    this.palmLen = this.bones.hand_r.getWorldPosition(new THREE.Vector3()).distanceTo(this.bones.middle_01_r.getWorldPosition(new THREE.Vector3())) * 0.6;
+    this.palmLen = this.bones.hand_r.getWorldPosition(new THREE.Vector3()).distanceTo(this.bones.middle_01_r.getWorldPosition(new THREE.Vector3())) * 0.6 * HAND_SCALE;
     const arm = (s: 'l' | 'r', side: 1 | -1): Arm => ({ upper: this.bones[`upperarm_${s}`], lower: this.bones[`lowerarm_${s}`], hand: this.bones[`hand_${s}`], side });
     this.arms = { l: arm('l', -1), r: arm('r', 1) };
     const leg = (s: 'l' | 'r', side: 1 | -1): Arm => ({ upper: this.bones[`thigh_${s}`], lower: this.bones[`calf_${s}`], hand: this.bones[`foot_${s}`], side });
@@ -646,6 +693,25 @@ export class Player3D {
       laces.rotation.x = Math.atan2(slope.z, slope.y);
       // A stripe along each side.
       for (const side of [-1, 1]) part(new THREE.BoxGeometry(0.006 * k, 0.014 * k, len * 0.5), accent, side * (wide / 2 + 0.001 * k), 0.06 * k, mid + 0.03 * k);
+      // One mesh per shoe (one draw call, not a dozen): the parts merged, each in its own colour.
+      const merged = mergeGeometries(
+        shoe.children.map((child) => {
+          const m = child as THREE.Mesh;
+          m.updateMatrix();
+          const g = m.geometry.clone().applyMatrix4(m.matrix);
+          g.deleteAttribute('uv');
+          const col = (m.material as THREE.MeshLambertMaterial).color;
+          const n = g.getAttribute('position').count;
+          const c = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) col.toArray(c, i * 3);
+          g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+          return g.index ? g.toNonIndexed() : g;
+        }),
+      )!;
+      shoe.clear();
+      const one = new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide }));
+      one.castShadow = true;
+      shoe.add(one);
       // Placed under his ankle on the floor, pointing along his foot.
       shoe.position.set(ankle.x, 0, ankle.z);
       shoe.rotation.y = Math.atan2(along.x, along.z);
@@ -691,7 +757,12 @@ export class Player3D {
     const aim = shot ?? coming;
     if (aim) this.facing = Math.atan2(aim.to.y - p.y, aim.to.x - p.x);
     const lift = frame.lift?.[key] ?? 0;
-    const stance = frame.stance?.[key] ?? 0;
+    // How he stands depends on what the ball is doing (frame.stance only says how low he may go):
+    // guarding the man with the ball, the full stance (low, arms out); with the ball in the air near
+    // him, ready for it (a pass to catch or cut off) or for the rebound (a shot); otherwise at most a
+    // light crouch.
+    this.posture = postureFor(key, frame, action, holder);
+    const stance = this.posture === 'onBall' ? frame.stance?.[key] ?? 0 : this.posture === 'ready' || this.posture === 'rebound' ? 0.3 : Math.min(0.35, frame.stance?.[key] ?? 0);
     // A dunk: the frame has him take off short of the rim, so he is carried in to it as he rises,
     // until his hands are over it at the top; after the dunk the offset eases away as he lands.
     if (shot && shot.style === 'dunk') {
@@ -778,6 +849,8 @@ export class Player3D {
     for (const sd of ['l', 'r'] as const) {
       this.bones[`lowerarm_${sd}`].position.multiplyScalar(UPPER_ARM_LENGTH);
       this.bones[`hand_${sd}`].position.multiplyScalar(FOREARM_LENGTH);
+      this.bones[`upperarm_${sd}`].position.multiplyScalar(SHOULDER_IN);
+      this.bones[`hand_${sd}`].scale.multiplyScalar(HAND_SCALE);
     }
     this.root.updateMatrixWorld(true);
 
@@ -830,7 +903,7 @@ export class Player3D {
       const headAt = this.bones.Head.getWorldPosition(new THREE.Vector3());
       let toward: THREE.Vector3;
       if (aim) toward = toScene(aim.to.x, aim.to.y, aim.to.z ?? RIM_HEIGHT).sub(headAt);
-      else if (reaching && air > 0) toward = toScene(frame.ball.x, frame.ball.y, frame.ball.z).sub(headAt);
+      else if ((reaching && air > 0) || this.posture === 'ready' || this.posture === 'rebound') toward = toScene(frame.ball.x, frame.ball.y, frame.ball.z).sub(headAt);
       else {
         const l = frame.look?.[key] ?? this.facing;
         toward = new THREE.Vector3(Math.cos(l), 0, Math.sin(l));
@@ -1216,9 +1289,8 @@ export class Player3D {
         if (this.hangT < DUNK_HANG_S && shoulder.distanceTo(grip) < armLen * 0.98) {
           onRim++;
           palmOn(arm, grip.clone().add(new THREE.Vector3(0, -BALL_R, 0)), up.clone(), toRim.clone());
-        } else {
-          reachTo(arm, shoulder.clone().addScaledVector(toRim, 0.25).add(new THREE.Vector3(0, -0.2, 0)).addScaledVector(across, arm.side * 0.15), 0.6);
         }
+        // Let go: his arms come down by his sides as the clip has them (not aimed back at the rim).
       }
       if (this.hangT > DUNK_HANG_S + 0.6) this.dunkRim = null;
       return onRim ? `dunk: hands on the rim (${onRim})` : 'dunk: let go, coming down';
@@ -1463,8 +1535,39 @@ export class Player3D {
       twoHands(meet, k, dir(ball.clone().sub(chest).setY(0)));
     } else {
       const handsUp = frame.reach?.[key] ?? 0;
-      if (handsUp <= 0.02 && this.stance > 0.25) {
-        // Defensive stance: hands out wide at the waist, palms forward, ready to deflect.
+      const toBall = ball.clone().sub(chest);
+      if (handsUp <= 0.02 && (this.posture === 'ready' || this.posture === 'rebound')) {
+        // Ready for the ball in the air. A pass: hands up in front at the chest, palms to the ball,
+        // to catch or cut it off. A shot: hands up by the shoulders, elbows out, for the rebound.
+        const reb = this.posture === 'rebound';
+        const facingBall: number[] = [];
+        openBoth();
+        const look = toBall.clone().setY(0);
+        if (look.lengthSq() < 1e-4) look.copy(fwd);
+        look.normalize();
+        const across = new THREE.Vector3().crossVectors(look, UP).normalize();
+        for (const arm of [this.arms.l, this.arms.r]) {
+          const S = arm.upper.getWorldPosition(new THREE.Vector3());
+          // Boxing out for a rebound: forearms up, hands at the chest just wider than the shoulders,
+          // elbows out. A pass: hands out in front of the chest.
+          const t = reb
+            ? S.clone().addScaledVector(across, arm.side * 0.22).addScaledVector(look, 0.28).add(new THREE.Vector3(0, -0.12, 0))
+            : chest.clone().addScaledVector(look, 0.42).addScaledVector(across, arm.side * 0.17).add(new THREE.Vector3(0, -0.02, 0));
+          const elbow = S.clone().addScaledVector(across, arm.side * 0.7).addScaledVector(look, reb ? 0 : 0.2).add(new THREE.Vector3(0, reb ? -0.4 : -0.5, 0));
+          reachTo(arm, t, 0.9, elbow);
+          // Each palm faces the ball itself (up at it when it is high), ready to grab it; the fingers
+          // point up across the palm, a little out to his side.
+          const palm = ball.clone().sub(this.palmInfo(sideOf(arm)).centre).normalize();
+          const fingers = UP.clone().addScaledVector(across, arm.side * 0.2);
+          fingers.addScaledVector(palm, -fingers.dot(palm));
+          if (fingers.lengthSq() < 1e-3) fingers.copy(look).addScaledVector(palm, -look.dot(palm));
+          this.orient(sideOf(arm), palm, fingers.normalize(), 0.95, WRIST_ON_BALL);
+          // How squarely the palm faces the ball (1 = straight at it), for the readout.
+          facingBall.push(this.palmInfo(sideOf(arm)).normal.dot(ball.clone().sub(this.palmInfo(sideOf(arm)).centre).normalize()));
+        }
+        arms = `${reb ? 'boxing out' : 'ready for the ball'} (palms to ball ${facingBall.map((v) => v.toFixed(2)).join(' ')})`;
+      } else if (handsUp <= 0.02 && this.posture === 'onBall' && this.stance > 0.25) {
+        // Defensive stance on the ball: hands out wide at the waist, palms forward, ready to deflect.
         arms = 'stance: hands out';
         openBoth();
         for (const arm of [this.arms.l, this.arms.r]) {

@@ -1,3 +1,4 @@
+import { VIEW_3D_KEY } from './MainMenu';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { buildBoxScore } from '../../engine/stats';
 import { defenceOptions, estimate, offenceOptions } from '../../game/clutch';
@@ -18,13 +19,13 @@ import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, peri
 import { ARGUE_SECONDS, HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
 
 const TIMEOUT_KEYS = ['q', 'p'] as const;
-/** Where the 3D view (beta) choice is remembered in this browser. */
-const VIEW_3D_KEY = 'hm.view3d';
 /** What the match screen needs of the 3D scene; the scene itself loads only when the view is turned on. */
 interface Scene3DLike {
   render(frame: ReturnType<LiveMatch['frame']>, action: ReturnType<LiveMatch['currentAction']>, holder: string | null, dt: number, next: ReturnType<LiveMatch['upcomingAction']>): void;
   resize(w: number, h: number): void;
   setClocks(game: number, shot: number | null): void;
+  setBoard(names: [string, string], score: [number, number], offence: 0 | 1 | null): void;
+  react(fx: ReturnType<LiveMatch['drainFx']>): void;
   dispose(): void;
 }
 
@@ -79,15 +80,9 @@ export function MatchScreen({
   /** Paused because the player switched away; they continue from the overlay. */
   const [away, setAway] = useState(false);
 
-  // The 3D view (beta): off by default, remembered in this browser. Its code and models load the
-  // first time it is turned on; if it cannot start, the court stays 2D.
-  const [view3d, setView3d] = useState(() => {
-    try {
-      return localStorage.getItem(VIEW_3D_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
+  // The court view chosen on the main menu (2D or 3D), switchable here; remembered in this browser.
+  // The 3D code and models load the first time it is on; if it cannot start, the court stays 2D.
+  const [view3d, setView3d] = useState(() => setup.view === '3d');
   const [view3dState, setView3dState] = useState<'off' | 'loading' | 'ready' | string>('off');
   const canvas3dRef = useRef<HTMLCanvasElement>(null);
   const scene3dRef = useRef<Scene3DLike | null>(null);
@@ -181,10 +176,12 @@ export function MatchScreen({
       sound.play(fx);
       sound.setCrowd(m.crowdLevel());
       rendererRef.current!.react(fx, now / 1000);
+      scene3dRef.current?.react(fx);
       const scene3d = view3dRef.current ? scene3dRef.current : null;
       if (scene3d) {
         // The rigs play at match time: slow motion slows their legs too.
         scene3d.setClocks(m.clock, m.shotClock());
+        scene3d.setBoard([teams[0].name, teams[1].name], m.score, m.offence());
         scene3d.render(m.frame(), m.currentAction(), m.holderKey(), dt * (m.frame()?.timeScale ?? 1), m.upcomingAction());
         if (badgeRef.current) badgeRef.current.hidden = !m.isFastForwarding();
       }
@@ -294,7 +291,7 @@ export function MatchScreen({
             »
           </div>
           <canvas ref={canvasRef} className="court" width={CANVAS_W} height={CANVAS_H} hidden={view3d && view3dState === 'ready'} />
-          <canvas ref={canvas3dRef} className="court court-3d" hidden={!(view3d && view3dState === 'ready')} title="Drag to turn the court, scroll or pinch to zoom, right-drag to move it; double-click to go back to the standard view." />
+          <canvas ref={canvas3dRef} className="court court-3d" hidden={!(view3d && view3dState === 'ready')} title="TV camera follows the play. Drag to turn, scroll or pinch to zoom, arrow keys to walk (Shift: faster), right-drag to move; double-click to give the camera back to the TV director." />
           {view3d && view3dState === 'loading' && <div className="court-3d-note">Loading 3D…</div>}
           {/* The commentary is in the play-by-play above; the court's empty corners carry the player of the game and the assistant. */}
           <CourtOverlays m={m} humanSides={humanSides} />

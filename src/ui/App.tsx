@@ -16,6 +16,8 @@ export interface Setup {
   draft: 'free' | 'snake' | 'quick';
   names: [string, string];
   speed: Speed;
+  /** How the court is shown in the match: the 2D court or the 3D view. Switchable during the match too. */
+  view: '2d' | '3d';
 }
 
 type Screen =

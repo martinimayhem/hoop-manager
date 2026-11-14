@@ -83,6 +83,8 @@ export function Capture() {
         say('loading 3D models');
         const assets = await loadAssets();
         scene = new Scene3D(c3.current!, assets, (k) => lookFor3d(m, k));
+        // The director steps at the match's own pace here (DT a frame), not the page's clock.
+        scene.directorDt = DT;
         scene.resize(W, H);
       }
       let sim = 0;
@@ -93,7 +95,9 @@ export function Capture() {
         if (m.phase === 'clutch') while (m.clutch) m.submitClutch(m.clutch.pending[0], null);
         const g = DT * (m.frame()?.timeScale ?? 1);
         sim += g;
-        renderer2d.react(m.drainFx(), sim);
+        const fx = m.drainFx();
+        renderer2d.react(fx, sim);
+        scene?.react(fx);
         if (draw3d && scene) scene.render(m.frame(), m.currentAction(), m.holderKey(), g, m.upcomingAction());
       };
       const before = (clock: number) => m.quarter < quarter || (m.quarter === quarter && m.clock > clock);
@@ -158,6 +162,7 @@ export function Capture() {
             scene.devCamera = { from: new THREE.Vector3(b.x - 5.2, 4.2, b.z + 6.8), to: new THREE.Vector3(b.x, 1.2, b.z) };
           }
           scene.setClocks(m.clock, m.shotClock());
+          scene.setBoard([HARBOR_HAMMERS.name, SKYLINE_SPARKS.name], m.score, m.offence());
           scene.render(m.frame(), m.currentAction(), m.holderKey(), 0, m.upcomingAction());
           ctx.clearRect(0, 0, W, H + BANNER);
           ctx.drawImage(c3.current!, 0, BANNER, W, H);

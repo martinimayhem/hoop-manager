@@ -20,7 +20,10 @@ import {
   RESTRICTED_M,
   THREE_ARC_M,
 } from '../../engine/court';
-import { RIM_HEIGHT, type BallAction, type Frame } from '../court/animation';
+import { RIM_HEIGHT, isRef, type BallAction, type Frame } from '../court/animation';
+import type { Fx } from '../match/controller';
+import { Arena } from './arena';
+import { Director } from './director';
 import {
   BASELINE_HASH,
   BOARD_BOTTOM,
@@ -71,14 +74,10 @@ export function loadAssets(): Promise<Assets> {
 const APRON = 2.2;
 /** Texture pixels per metre. */
 const PX = 96;
-/** Stands: rows, row depth and rise (m), and how far back from the court they start. */
-const ROWS = 9;
-const ROW_D = 0.85;
-const ROW_H = 0.42;
-const STANDS_FROM = 3;
 
 /** Behind a board, away from the court: +x at the right-hand end (end 1), -x at the other. */
 const backOf = (end: 1 | -1): 1 | -1 => (end === 1 ? 1 : -1);
+
 
 export class Scene3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -87,17 +86,81 @@ export class Scene3D {
   private ball: THREE.Mesh;
   private ballShadow: THREE.Mesh;
   private players: Record<string, Player3D> = {};
-  private crowd: { mesh: THREE.InstancedMesh; base: THREE.Matrix4[]; phase: number[] }[] = [];
+  /** The arena round the court: the bowl, courtside, the ribbon board and the crowd. */
+  readonly arena: Arena;
+  /** Frame time, smoothed (ms), for the performance readout. */
+  frameMs = 0;
+  /** The yellow ring on the floor under whoever has the ball (as on the 2D court). */
+  private holderRing!: THREE.Mesh;
+  /** The two nets, and when the ball last went through or hit the rim at each. */
+  private nets: { mesh: THREE.Mesh; hoopX: number; kick: { at: number; strength: number; dx: number; dz: number } | null }[] = [];
+  private lastBall: THREE.Vector3 | null = null;
   private time = 0;
   /** Dev: a close-up camera that follows one player, to judge hands and feet: from behind, or side on. */
   closeUp: boolean | 'side' = false;
   /** Dev: the player the close-up and the readout follow. */
   focus = '';
+  /** Dev: a fixed step (seconds) for the director per drawn frame instead of the real clock (for captures). */
+  directorDt: number | null = null;
   /** Dev: a fixed camera (overrides the others), and only these players drawn (null: everyone). */
   devCamera: { from: THREE.Vector3; to: THREE.Vector3 } | null = null;
   only: Set<string> | null = null;
   private wideAt = new THREE.Vector3();
   private wideLook = new THREE.Vector3();
+  /** The TV director: on until the viewer takes the camera (drag, zoom, arrows); double-click gives it back. */
+  readonly director = new Director();
+  directing = true;
+  private lastReal = 0;
+  /** Arrow keys held (walking the camera over the court), and when the view last drew. */
+  private keys = new Set<string>();
+  private lastDrawn = 0;
+  private lastWalk = 0;
+  private onKey = (e: KeyboardEvent) => {
+    if (!e.key.startsWith('Arrow') && e.key !== 'Shift') return;
+    if (e.type === 'keyup') {
+      this.keys.delete(e.key);
+      return;
+    }
+    // Only while the 3D view is on screen, and never taking the arrows from a field or a dropdown.
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (performance.now() - this.lastDrawn > 500 || this.devCamera || this.closeUp) return;
+    this.keys.add(e.key);
+    if (this.directing && e.key.startsWith('Arrow')) {
+      this.directing = false;
+      this.controls.target.copy(this.director.target);
+    }
+    if (e.key.startsWith('Arrow')) e.preventDefault();
+  };
+  private clearKeys = () => this.keys.clear();
+
+  /** Walks the camera (and the point it turns round) over the court: forward, back, left, right. */
+  private walk(): void {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.lastWalk || now)) / 1000);
+    this.lastWalk = now;
+    this.lastDrawn = now;
+    const f = (this.keys.has('ArrowUp') ? 1 : 0) - (this.keys.has('ArrowDown') ? 1 : 0);
+    const r = (this.keys.has('ArrowRight') ? 1 : 0) - (this.keys.has('ArrowLeft') ? 1 : 0);
+    if (!f && !r) return;
+    // Along the floor in the direction the camera looks, and across it.
+    const fwd = this.controls.target.clone().sub(this.camera.position).setY(0);
+    if (fwd.lengthSq() < 1e-6) return;
+    fwd.normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0));
+    const speed = (this.keys.has('Shift') ? 22 : 9) * dt;
+    const move = fwd.multiplyScalar(f * speed).addScaledVector(right, r * speed);
+    // The point it turns round stays over the court (and its surrounds); the camera keeps its offset.
+    const t = this.controls.target;
+    const lo = toScene(-6, -6);
+    const hi = toScene(COURT.w + 6, COURT.h + 6);
+    const next = t.clone().add(move);
+    next.set(Math.max(lo.x, Math.min(hi.x, next.x)), next.y, Math.max(lo.z, Math.min(hi.z, next.z)));
+    const actual = next.sub(t);
+    t.add(actual);
+    this.camera.position.add(actual);
+  }
+
   /** The clock displays on the hoops: drawn again only when what they show changes. */
   private clockFaces: { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; shown: string }[] = [];
   /** The match view's camera can be turned round the court, zoomed and panned (drag, wheel or pinch, right-drag); double-click puts it back. */
@@ -112,8 +175,9 @@ export class Scene3D {
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.scene.background = new THREE.Color(0x101820);
-    this.scene.fog = new THREE.Fog(0x101820, 45, 80);
+    // A dark arena: the court is the bright thing in it.
+    this.scene.background = new THREE.Color(0x07090d);
+    this.scene.fog = new THREE.Fog(0x07090d, 55, 110);
 
     // Fixed, over the near corner, looking at the middle of the court: like the 2D view.
     this.camera = new THREE.PerspectiveCamera(30, 2, 1, 200);
@@ -135,9 +199,24 @@ export class Scene3D {
     this.controls.update();
     this.controls.saveState();
     canvas.addEventListener('dblclick', () => this.resetView());
+    // The viewer takes over the moment they drag or zoom: orbit from where the director had it.
+    this.controls.addEventListener('start', () => {
+      if (!this.directing) return;
+      this.directing = false;
+      this.controls.target.copy(this.director.target);
+    });
+    window.addEventListener('keydown', this.onKey);
+    window.addEventListener('keyup', this.onKey);
+    window.addEventListener('blur', this.clearKeys);
 
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x9a7a5a, 1.7));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+    // Dim fill for the whole arena; the court gets the key light from above (soft shadows under the
+    // players) and a spotlight pool on top, which the stands are outside of.
+    this.scene.add(new THREE.HemisphereLight(0xc8d4ff, 0x2a2018, 0.75));
+    const pool = new THREE.SpotLight(0xfff4e0, 2.2, 0, 0.62, 0.55, 0);
+    pool.position.copy(centre).add(new THREE.Vector3(0, 26, 0));
+    pool.target.position.copy(centre);
+    this.scene.add(pool, pool.target);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.35);
     sun.position.set(centre.x - 6, 30, centre.z + 10);
     sun.target.position.copy(centre);
     sun.castShadow = true;
@@ -147,7 +226,14 @@ export class Scene3D {
 
     this.buildFloor();
     this.buildHoops();
-    this.buildStands();
+    this.holderRing = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.56, 40), new THREE.MeshBasicMaterial({ color: 0xffe57a, transparent: true, opacity: 0.9, depthWrite: false }));
+    this.holderRing.rotation.x = -Math.PI / 2;
+    this.holderRing.visible = false;
+    this.scene.add(this.holderRing);
+    this.arena = new Arena();
+    // Dev: the scene on the window, to read draw calls and frame time from a test browser.
+    if (import.meta.env.DEV) (window as unknown as { __scene3d?: Scene3D }).__scene3d = this;
+    this.scene.add(this.arena.group);
     this.ball = new THREE.Mesh(new THREE.IcosahedronGeometry(BALL_R, 1), new THREE.MeshLambertMaterial({ color: 0xe0661f, flatShading: true }));
     this.ball.castShadow = true;
     this.scene.add(this.ball);
@@ -175,6 +261,7 @@ export class Scene3D {
 
   /** `dt`: match seconds since the last frame. */
   render(frame: Frame | null, action: BallAction | null, holder: string | null, dt: number, next: Upcoming | null = null): void {
+    const started = performance.now();
     this.time += dt;
     if (frame) {
       // Everyone on the floor (and the officials) as a rig; anyone who has left it is hidden.
@@ -201,7 +288,12 @@ export class Scene3D {
       this.ballShadow.position.set(shown.x, 0.012, shown.z);
       if (this.only) for (const [k, rig] of Object.entries(this.players)) if (!this.only.has(k)) rig.root.visible = false;
     }
-    this.animateCrowd();
+    this.arena.update(dt, this.camera);
+    // Under the man with the ball, on the floor (it stays there when he jumps).
+    const holderRig = holder && !isRef(holder) && frame?.players[holder] ? this.players[holder] : null;
+    this.holderRing.visible = !!holderRig && holderRig.root.visible;
+    if (holderRig) this.holderRing.position.set(holderRig.root.position.x, 0.015, holderRig.root.position.z);
+    if (frame) this.updateNets(toScene(frame.ball.x, frame.ball.y, frame.ball.z));
     const rig = this.players[this.focus];
     if (this.devCamera) {
       this.camera.position.copy(this.devCamera.from);
@@ -220,16 +312,29 @@ export class Scene3D {
       const p = rig.root.position;
       this.camera.position.set(p.x - 2.9, 2.2 + p.y, p.z + 3.8);
       this.camera.lookAt(p.x, 1.1 + p.y, p.z);
+    } else if (this.directing) {
+      // The TV director's camera. It moves at real (screen) time: a slow-motion replay or fast
+      // forward does not make it crawl or rush, though it keeps up a little faster when the game does.
+      const nowReal = performance.now();
+      const real = this.lastReal ? Math.min(0.1, (nowReal - this.lastReal) / 1000) : 0;
+      this.lastReal = nowReal;
+      const ts = frame?.timeScale ?? 1;
+      const step = dt <= 0 ? 0 : (this.directorDt ?? real) * Math.min(2, Math.sqrt(Math.max(1, ts)));
+      this.director.update(this.camera, frame, step);
+      this.lastDrawn = nowReal;
     } else {
-      // The match view: where the viewer has turned it. The point it turns round stays over the court.
+      // The match view: where the viewer has turned, zoomed and walked it. The point it turns round
+      // stays over the court and its surrounds.
+      this.walk();
       const t = this.controls.target;
-      const lo = toScene(-2, -2);
-      const hi = toScene(COURT.w + 2, COURT.h + 2);
+      const lo = toScene(-6, -6);
+      const hi = toScene(COURT.w + 6, COURT.h + 6);
       t.set(Math.max(lo.x, Math.min(hi.x, t.x)), Math.max(0, Math.min(4, t.y)), Math.max(lo.z, Math.min(hi.z, t.z)));
       this.controls.update();
     }
     this.controls.enabled = !this.devCamera && !this.closeUp;
     this.renderer.render(this.scene, this.camera);
+    this.frameMs += (performance.now() - started - this.frameMs) * 0.05;
   }
 
   /** Dev: forget every rig (a fresh start, as for a new match). */
@@ -240,10 +345,15 @@ export class Scene3D {
 
   /** Back to the standard view over the near corner. */
   resetView(): void {
+    // Back to the TV director.
+    this.directing = true;
     this.controls.reset();
   }
 
   dispose(): void {
+    window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('keyup', this.onKey);
+    window.removeEventListener('blur', this.clearKeys);
     this.controls.dispose();
     this.renderer.dispose();
   }
@@ -583,6 +693,7 @@ export class Scene3D {
       bracket.position.copy(toScene(faceX - back * (RIM_GAP / 2), MID_Y, RIM_HEIGHT - 0.03));
       const net = new THREE.Mesh(new THREE.CylinderGeometry(RIM_INNER_R, RIM_INNER_R * 0.62, NET_LEN, 12, 3, true), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.8 }));
       net.position.copy(toScene(hoop, MID_Y, RIM_HEIGHT - NET_LEN / 2));
+      this.nets.push({ mesh: net, hoopX: hoop, kick: null });
       this.scene.add(bracket);
       for (const m of [board, square, rim, net]) {
         m.castShadow = m !== net;
@@ -592,81 +703,66 @@ export class Scene3D {
   }
 
   /**
-   * Low-poly stands along the far side and behind the far basket (the camera's side stays open, as in 2D), a crowd of blocky figures in them: shirts in the
-   * two teams' colours (more home than away) and plain colours, every one a little different.
+   * The crowd hears what happened: a dunk, a made three, a buzzer-beater or a big run brings the
+   * scoring team's fans to their feet (rippling round from that end); a basket gets the keen ones
+   * up. The ribbon board shouts it too.
    */
-  private buildStands(): void {
-    const step = new THREE.MeshLambertMaterial({ color: 0x24313f, flatShading: true });
-    const seat = new THREE.MeshLambertMaterial({ color: 0x1b2632, flatShading: true });
-    type Block = { x0: number; x1: number; y0: number; y1: number; dir: [number, number] };
-    // In court metres: where each stand starts, its length, and which way the rows go back.
-    const blocks: Block[] = [
-      { x0: -1, x1: COURT.w + 1, y0: -STANDS_FROM, y1: -STANDS_FROM, dir: [0, -1] },
-      { x0: COURT.w + STANDS_FROM + 0.8, x1: COURT.w + STANDS_FROM + 0.8, y0: -1.5, y1: COURT.h + 1.5, dir: [1, 0] },
-    ];
-    const seats: { x: number; y: number; z: number; facing: number }[] = [];
-    for (const b of blocks) {
-      const along = b.dir[0] === 0 ? b.x1 - b.x0 : b.y1 - b.y0;
-      for (let r = 0; r < ROWS; r++) {
-        const back = r * ROW_D;
-        const cx = b.dir[0] === 0 ? (b.x0 + b.x1) / 2 : b.x0 + b.dir[0] * (back + ROW_D / 2);
-        const cy = b.dir[0] === 0 ? b.y0 + b.dir[1] * (back + ROW_D / 2) : (b.y0 + b.y1) / 2;
-        const top = (r + 1) * ROW_H;
-        const tier = new THREE.Mesh(b.dir[0] === 0 ? new THREE.BoxGeometry(along, top, ROW_D) : new THREE.BoxGeometry(ROW_D, top, along), r % 2 ? seat : step);
-        tier.position.copy(toScene(cx, cy, top / 2));
-        tier.receiveShadow = true;
-        this.scene.add(tier);
-        for (let a = 0.35; a < along - 0.2; a += 0.55) {
-          const x = b.dir[0] === 0 ? b.x0 + a : cx;
-          const y = b.dir[0] === 0 ? cy : b.y0 + a;
-          seats.push({ x, y, z: top, facing: Math.atan2(-b.dir[1], -b.dir[0]) });
-        }
-      }
+  react(fx: Fx[]): void {
+    for (const f of fx) {
+      if (f.side === undefined) continue;
+      // Where it happened: the basket nearest the ball.
+      const atX = this.lastBall && this.lastBall.x < COURT.w / 2 ? 0 : COURT.w;
+      const team = f.side;
+      // The away end is fewer and quieter.
+      const k = team === 0 ? 1 : 0.8;
+      if (f.buzzer && (f.kind === 'swish' || f.kind === 'three' || f.kind === 'dunk')) {
+        this.arena.cheer(team, 1 * k, atX);
+        this.arena.flash('AT THE BUZZER!', TEAM_COLOURS[team].fill);
+      } else if (f.kind === 'dunk') {
+        this.arena.cheer(team, 1 * k, atX);
+        this.arena.flash('SLAM DUNK!', TEAM_COLOURS[team].fill);
+      } else if (f.kind === 'three') {
+        this.arena.cheer(team, 0.95 * k, atX);
+        this.arena.flash('THREE!', TEAM_COLOURS[team].fill);
+      } else if ((f.run ?? 0) >= 8) {
+        this.arena.cheer(team, 0.9 * k, atX);
+        this.arena.flash(`${f.run}-0 RUN!`, TEAM_COLOURS[team].fill);
+      } else if (f.kind === 'swish' && !f.small) this.arena.cheer(team, 0.45 * k, atX);
+      else if (f.kind === 'block' || f.kind === 'steal') this.arena.cheer(team === 0 ? 1 : 0, 0.55, atX);
+      else if (f.kind === 'gameEnd') this.arena.cheer(team, 1, COURT.w / 2);
     }
-    let seed = 11;
-    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const shirts = [TEAM_COLOURS[0].fill, TEAM_COLOURS[0].fill, TEAM_COLOURS[0].fill, TEAM_COLOURS[1].fill, '#f2f2f2', '#2a2a2a', '#9aa4b0'];
-    const skins = ['#f1c7a5', '#d9a07a', '#b07850', '#8a5a3a', '#6b4429', '#e8b894'];
-    const filled = seats.filter(() => rand() < 0.82);
-    const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(0.36, 0.5, 0.24), new THREE.MeshLambertMaterial({ flatShading: true }), filled.length);
-    const heads = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.12, 0), new THREE.MeshLambertMaterial({ flatShading: true }), filled.length);
-    const bodyBase: THREE.Matrix4[] = [];
-    const headBase: THREE.Matrix4[] = [];
-    const phase: number[] = [];
-    filled.forEach((s, i) => {
-      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -s.facing + Math.PI / 2);
-      const k = 0.9 + rand() * 0.25;
-      const size = new THREE.Vector3(k, k, k);
-      const body = new THREE.Matrix4().compose(toScene(s.x, s.y, s.z + 0.25 * k), q, size);
-      const head = new THREE.Matrix4().compose(toScene(s.x, s.y, s.z + 0.62 * k), q, size);
-      bodies.setMatrixAt(i, body);
-      heads.setMatrixAt(i, head);
-      bodies.setColorAt(i, new THREE.Color(shirts[Math.floor(rand() * shirts.length)]));
-      heads.setColorAt(i, new THREE.Color(skins[Math.floor(rand() * skins.length)]));
-      bodyBase.push(body);
-      headBase.push(head);
-      phase.push(rand() * Math.PI * 2);
-    });
-    for (const m of [bodies, heads]) {
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      this.scene.add(m);
-    }
-    this.crowd = [
-      { mesh: bodies, base: bodyBase, phase },
-      { mesh: heads, base: headBase, phase },
-    ];
   }
 
-  /** The crowd shifts and bobs a little, each at his own rhythm. */
-  private animateCrowd(): void {
-    const m = new THREE.Matrix4();
-    for (const c of this.crowd) {
-      for (let i = 0; i < c.base.length; i++) {
-        m.copy(c.base[i]);
-        m.elements[13] += Math.max(0, Math.sin(this.time * 2.2 + c.phase[i])) * 0.05;
-        c.mesh.setMatrixAt(i, m);
+  /** The ribbon board: team names, score, and DEFENCE! when the home side defends. */
+  setBoard(names: [string, string], score: [number, number], offence: 0 | 1 | null): void {
+    this.arena.setBoard(names, score, offence === null ? null : offence === 0 ? 1 : 0);
+  }
+
+  /** A net kicks when the ball drops through its ring, and shivers when the ball hits the iron (as in 2D). */
+  private updateNets(ball: THREE.Vector3): void {
+    const prev = this.lastBall;
+    this.lastBall = ball.clone();
+    const now = this.time;
+    for (const n of this.nets) {
+      const off = Math.hypot(ball.x - n.hoopX, ball.z - MID_Y);
+      if (prev && !(n.kick && now - n.kick.at < 0.6)) {
+        let strength = 0;
+        if (ball.y < prev.y && off < RIM_R * 0.9 && ball.y < RIM_HEIGHT && ball.y > RIM_HEIGHT - 0.5) strength = 1;
+        else if (Math.abs(off - RIM_R) < 0.12 && Math.abs(ball.y - RIM_HEIGHT) < 0.2) strength = 0.35;
+        if (strength > 0) {
+          const d = new THREE.Vector2(ball.x - prev.x, ball.z - prev.z);
+          if (d.lengthSq() > 1e-8) d.normalize();
+          n.kick = { at: now, strength, dx: d.x, dz: d.y };
+        }
       }
-      c.mesh.instanceMatrix.needsUpdate = true;
+      // Stretched down and swung the way the ball went, settling over a second.
+      const k = n.kick;
+      const t = k ? now - k.at : 99;
+      const e = k ? k.strength * Math.exp(-t * 4) : 0;
+      n.mesh.scale.set(1 - 0.15 * e, 1 + 0.45 * e, 1 - 0.15 * e);
+      const swing = e * Math.sin(t * 14) * 0.35;
+      n.mesh.rotation.set(k ? k.dz * swing : 0, 0, k ? -k.dx * swing : 0);
+      n.mesh.position.y = RIM_HEIGHT - (NET_LEN * n.mesh.scale.y) / 2;
     }
   }
 }
