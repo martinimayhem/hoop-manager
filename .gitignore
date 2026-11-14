@@ -150,3 +150,6 @@ vite.config.ts.timestamp-*
 
 # Frames captured by npm run frames
 frames/
+
+# Real NBA tracking data downloaded by npm run sportvu (not ours to commit)
+data/sportvu/

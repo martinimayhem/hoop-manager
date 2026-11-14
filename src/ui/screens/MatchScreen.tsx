@@ -24,6 +24,7 @@ const VIEW_3D_KEY = 'hm.view3d';
 interface Scene3DLike {
   render(frame: ReturnType<LiveMatch['frame']>, action: ReturnType<LiveMatch['currentAction']>, holder: string | null, dt: number, next: ReturnType<LiveMatch['upcomingAction']>): void;
   resize(w: number, h: number): void;
+  setClocks(game: number, shot: number | null): void;
   dispose(): void;
 }
 
@@ -183,6 +184,7 @@ export function MatchScreen({
       const scene3d = view3dRef.current ? scene3dRef.current : null;
       if (scene3d) {
         // The rigs play at match time: slow motion slows their legs too.
+        scene3d.setClocks(m.clock, m.shotClock());
         scene3d.render(m.frame(), m.currentAction(), m.holderKey(), dt * (m.frame()?.timeScale ?? 1), m.upcomingAction());
         if (badgeRef.current) badgeRef.current.hidden = !m.isFastForwarding();
       }
@@ -292,7 +294,7 @@ export function MatchScreen({
             »
           </div>
           <canvas ref={canvasRef} className="court" width={CANVAS_W} height={CANVAS_H} hidden={view3d && view3dState === 'ready'} />
-          <canvas ref={canvas3dRef} className="court court-3d" hidden={!(view3d && view3dState === 'ready')} />
+          <canvas ref={canvas3dRef} className="court court-3d" hidden={!(view3d && view3dState === 'ready')} title="Drag to turn the court, scroll or pinch to zoom, right-drag to move it; double-click to go back to the standard view." />
           {view3d && view3dState === 'loading' && <div className="court-3d-note">Loading 3D…</div>}
           {/* The commentary is in the play-by-play above; the court's empty corners carry the player of the game and the assistant. */}
           <CourtOverlays m={m} humanSides={humanSides} />

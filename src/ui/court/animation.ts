@@ -1034,15 +1034,21 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
 
   /** The opening jump: the centres in the circle, the rest round it, and an official tosses it up. */
   const tipOff = () => {
+    // Everyone stands where the rule puts him: the offence is not spread and nobody is put on his man.
+    spacing = false;
+    autoDefence = false;
     const mid: Pos = { x: COURT.w / 2, y: MID_Y };
     const ring = (deg: number, r = 2.5): Pos => ({ x: mid.x + Math.cos((deg * Math.PI) / 180) * r, y: mid.y + Math.sin((deg * Math.PI) / 180) * r });
     const defKeys = defIds.map(kDef);
     const centres = [offKeys[offKeys.length - 1], defKeys[defKeys.length - 1]];
-    at[centres[0]] = { x: mid.x - 0.45, y: MID_Y };
-    at[centres[1]] = { x: mid.x + 0.45, y: MID_Y };
-    offKeys.slice(0, -1).forEach((k, j) => (at[k] = ring([135, 225, 60, 300][j])));
-    const defRing = [ring(90), ring(270), ring(180, 2.05), { x: mid.x + 5.5, y: MID_Y }];
-    defKeys.slice(0, -1).forEach((k, j) => (at[k] = defRing[j]));
+    // NBA Rule No. 6: the two jumpers in the centre circle, each in the half farthest from his own
+    // basket (the offence attacks to the right here); the other eight outside the restraining circle
+    // (6 ft), in alternating spots round it.
+    at[centres[0]] = { x: mid.x + 0.45, y: MID_Y };
+    at[centres[1]] = { x: mid.x - 0.45, y: MID_Y };
+    const around = 2.6;
+    offKeys.slice(0, -1).forEach((k, j) => (at[k] = ring([202.5, 112.5, 292.5, 22.5][j], around)));
+    defKeys.slice(0, -1).forEach((k, j) => (at[k] = ring([157.5, 247.5, 67.5, 337.5][j], around)));
     refSpot = { [trail]: { x: mid.x, y: MID_Y - 1.2 }, [lead]: { x: mid.x + 4, y: TRAIL_Y }, [centre]: { x: mid.x - 2.5, y: CENTRE_Y } };
     holder = trail;
     deadBeat = true;

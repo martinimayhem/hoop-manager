@@ -14,7 +14,9 @@ const NO_HAIR = new Set(['bald', 'shaved']);
 export function lookFor3d(m: LiveMatch, key: string): PlayerLook | null {
   if (isRef(key)) {
     const look = lookOf({ id: key, heightCm: 184, weightKg: 84 }).sprite;
-    return { heightM: 1.84, girth: 1, skin: look.skin, hair: NO_HAIR.has(look.hairstyle) ? null : look.hairColour, jersey: '#d8d8d2', jerseyText: '#000000', shorts: '#1d1d1f', number: '', official: true };
+    // Each official's number on his back, as in the reference.
+    const number = String([27, 14, 36][Number(key.slice(key.indexOf(':') + 1)) % 3] ?? 27);
+    return { heightM: 1.84, girth: 1, skin: look.skin, hair: NO_HAIR.has(look.hairstyle) ? null : look.hairColour, jersey: '#949494', jerseyText: '#111111', shorts: '#111111', number, official: true };
   }
   const side = Number(key.slice(0, key.indexOf(':'))) as Side;
   const id = key.slice(key.indexOf(':') + 1);
@@ -28,7 +30,8 @@ export function lookFor3d(m: LiveMatch, key: string): PlayerLook | null {
     hair: NO_HAIR.has(look.hairstyle) ? null : look.hairColour,
     jersey: TEAM_COLOURS[side].fill,
     jerseyText: TEAM_COLOURS[side].text,
-    shorts: TEAM_COLOURS[side].fill,
+    // The shorts in the team's second colour (trimmed in the first), so they stand apart from the jersey.
+    shorts: TEAM_COLOURS[side].text,
     number: String(p.number),
   };
 }

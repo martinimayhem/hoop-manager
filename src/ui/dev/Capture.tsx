@@ -68,6 +68,8 @@ export function Capture() {
       const zoom = q.has('zoom') && q.get('zoom') !== 'false';
       // Following one player (e.g. 0:ham-8): the 3D camera side on to him (to the rim when he shoots), close.
       const follow = q.get('follow');
+      // A fixed camera: 'x,y,z,tx,ty,tz' in court metres (x along, y across, z up), from and looking at.
+      const cam = q.get('cam')?.split(',').map(Number);
       // How long the 3D rigs are drawn before the first frame (their dribble, feet and so on depend on it).
       const warm = Number(q.get('warm')) || WARM_S;
       const want2d = view === '2d' || view === 'both';
@@ -145,7 +147,9 @@ export function Capture() {
           state.frames.push({ name: `${tag}-2d.png`, png: o.toDataURL('image/png') });
         }
         if (want3d && scene) {
-          if (follow) {
+          if (cam && cam.length === 6) {
+            scene.devCamera = { from: toScene(cam[0], cam[1], cam[2]), to: toScene(cam[3], cam[4], cam[5]) };
+          } else if (follow) {
             scene.devCamera = null;
             scene.focus = follow;
             scene.closeUp = 'side';
@@ -153,6 +157,7 @@ export function Capture() {
             const b = toScene(ball.x, ball.y, 0);
             scene.devCamera = { from: new THREE.Vector3(b.x - 5.2, 4.2, b.z + 6.8), to: new THREE.Vector3(b.x, 1.2, b.z) };
           }
+          scene.setClocks(m.clock, m.shotClock());
           scene.render(m.frame(), m.currentAction(), m.holderKey(), 0, m.upcomingAction());
           ctx.clearRect(0, 0, W, H + BANNER);
           ctx.drawImage(c3.current!, 0, BANNER, W, H);

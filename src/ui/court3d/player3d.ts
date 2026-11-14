@@ -108,12 +108,14 @@ const PALM_THICK = 0.022;
 const CUP = 0.26;
 const RELAXED_CURL = 0.35;
 /**
- * The model's arms are short for a basketball player (shoulder to wrist 0.27 of his height, measured;
- * a real one about 0.33). They are made this much longer, along their length only: the elbow and the
- * wrist move out and the upper arm and forearm stretch to meet them; their thickness and the hands
- * stay as they are.
+ * The model's upper arm is short (0.138 of his height, measured; a real one 0.186) and its forearm
+ * about right (0.134; real 0.146). Each is made longer by its own factor, along its length only (the
+ * elbow and the wrist move out, the skin stretches to meet them; thickness and hands as they are):
+ * upper arm 0.172, forearm 0.141, shoulder to fingertip 0.43 of his height. At Anthony Davis's 2.08 m
+ * that is a 2.27 m wingspan (his is 2.29 m).
  */
-const ARM_LENGTH = 1.2;
+const UPPER_ARM_LENGTH = 1.25;
+const FOREARM_LENGTH = 1.05;
 /** Physics of the ball (CLAUDE.md, Reference values). */
 const GRAVITY = 9.81;
 const RESTITUTION = 0.8;
@@ -221,9 +223,42 @@ function reach(arm: Arm, target: THREE.Vector3, pole: THREE.Vector3, weight: num
 
 /**
  * Flat-shaded colours by body region, picked from where each vertex sits in the bind pose: skin, a
- * sleeveless jersey with the number on the chest and back, shorts, shoes. An official gets a grey
- * shirt with black stripes and black trousers.
+ * basketball kit and shoes. The kit: a loose sleeveless jersey, its wide straps over the top of the
+ * shoulders, trimmed at the neck and armholes, the number on the chest and back; loose shorts to just
+ * above the knee, with a waistband and a hem. "Loose": the kit's surface stands off the body (pushed
+ * out along the normal in the vertex shader, the shorts flaring to the hem), so it moves with him.
+ * An official gets a grey shirt with black stripes and black trousers.
  */
+/**
+ * The jersey, by where a point sits in the bind pose (hy: height share, side: distance from the
+ * middle, share of height; front: on his chest side). As in the reference: a loose tank top, hem at
+ * the waist, just over the shorts' waistband (the shorts come up to the waist: the seat is in them), armholes cut to the chest, straps over the top of the
+ * shoulders by the neck, a high scoop neck in front (just under the collarbones) and a high round
+ * one at the back. 0 not the jersey, 1 the jersey, 2 its trim.
+ */
+const JERSEY_GLSL = `
+// An official's shirt, as in the reference: short raglan sleeves to above the elbow, a crew neck,
+// hem at the waist. (The bind pose is a T: the arms lie along x at shoulder height.)
+bool refShirtBody(float hy, float side) { return hy > 0.585 && hy < 0.87 && side < 0.105 && !(side < 0.04 && hy > 0.838); }
+bool refSleeve(float hy, float side) { return hy > 0.765 && hy < 0.865 && side >= 0.09 && side < 0.2; }
+bool refTrousers(float hy, float side) { return hy > 0.06 && hy <= 0.6 && side < 0.12; }
+// Shoes reach this high (share of height): high-tops, over the ankle.
+const float SHOE_TOP = 0.088;
+int jerseyAt(float hy, float side, bool front) {
+  if (hy < 0.585 || hy > 0.865 || side > 0.105) return 0;
+  // The neck: a high scoop in front, just under the collarbones; round at the back, at its base.
+  bool scoop = front && side < 0.04 && hy > 0.83 + side * 0.3;
+  bool neckHole = !front && side < 0.04 && hy > 0.845;
+  if (scoop || neckHole) return 0;
+  bool scoopTrim = front && side < 0.046 && hy > 0.823 + side * 0.3;
+  bool backTrim = !front && side < 0.046 && hy > 0.838;
+  // Body below the armholes; above them only the straps, by the neck.
+  if (side > 0.08 && hy > 0.71) return 0;
+  bool armTrim = (side > 0.072 && hy > 0.71) || (side > 0.08 && hy > 0.70);
+  if (scoopTrim || backTrim || armTrim) return 2;
+  return 1;
+}`;
+
 function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THREE.Material {
   const m = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
   const h = bounds.max.y - bounds.min.y;
@@ -232,6 +267,7 @@ function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THRE
     shader.uniforms.uSkin = { value: new THREE.Color(look.skin) };
     shader.uniforms.uJersey = { value: new THREE.Color(official ? '#d8d8d2' : look.jersey) };
     shader.uniforms.uShorts = { value: new THREE.Color(official ? '#1d1d1f' : look.shorts) };
+    shader.uniforms.uTrim = { value: new THREE.Color(look.jerseyText || '#ffffff') };
     shader.uniforms.uFloor = { value: bounds.min.y };
     shader.uniforms.uHeight = { value: h };
     shader.uniforms.uFront = { value: front };
@@ -239,12 +275,42 @@ function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THRE
     shader.uniforms.uNumber = { value: look.number ? numberTexture(look.number, look.jerseyText, look.jersey) : null };
     shader.uniforms.uHasNumber = { value: look.number ? 1 : 0 };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vBind;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBind = position;');
+      .replace('#include <common>', `#include <common>\nvarying vec3 vBind;\nuniform float uFloor, uHeight, uOfficial, uFront;\n${JERSEY_GLSL}`)
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vBind = position;
+        {
+          float hy = (position.y - uFloor) / uHeight;
+          float side = abs(position.x) / uHeight;
+          float puff = 0.0;
+          vec3 outward = normalize(objectNormal);
+          if (uOfficial > 0.5) {
+            // Loose: the shirt off the body, the sleeves off the arm, the trousers straight-legged.
+            if (refShirtBody(hy, side)) puff = 0.008;
+            else if (refSleeve(hy, side)) puff = 0.007;
+            else if (refTrousers(hy, side)) puff = 0.011 + 0.008 * clamp((0.32 - hy) / 0.2, 0.0, 1.0);
+          } else if (jerseyAt(hy, side, position.z * uFront > 0.0) > 0) {
+            // A loose tank top: off the chest, and more below it, so it hangs straight down to the hem
+            // (sideways only, not up or down).
+            vec3 level = vec3(objectNormal.x, 0.0, objectNormal.z);
+            if (length(level) > 0.2) outward = normalize(level);
+            puff = 0.008 + 0.004 * clamp((0.66 - hy) / 0.08, 0.0, 1.0);
+          }
+          // The shorts stand off the thighs, flaring towards the hem.
+          if (uOfficial < 0.5 && hy > 0.32 && hy <= 0.6 && side < 0.12) puff = max(puff, 0.006 + 0.011 * clamp((0.46 - hy) / 0.14, 0.0, 1.0));
+          // The bare foot goes in under the shoe (a mesh of its own on the foot bone).
+          if (hy < SHOE_TOP) {
+            outward = normalize(objectNormal);
+            puff = -0.008;
+          }
+          transformed += outward * puff * uHeight;
+        }`,
+      );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying vec3 vBind;\nuniform vec3 uSkin, uJersey, uShorts;\nuniform float uFloor, uHeight, uFront, uOfficial, uHasNumber;\nuniform sampler2D uNumber;',
+        `#include <common>\nvarying vec3 vBind;\nuniform vec3 uSkin, uJersey, uShorts, uTrim;\nuniform float uFloor, uHeight, uFront, uOfficial, uHasNumber;\nuniform sampler2D uNumber;\n${JERSEY_GLSL}`,
       )
       .replace(
         'vec4 diffuseColor = vec4( diffuse, opacity );',
@@ -252,18 +318,37 @@ function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THRE
         float side = abs(vBind.x) / uHeight;
         vec3 c = uSkin;
         bool neck = hy > 0.79 && side < 0.04;
-        bool torso = hy > 0.47 && hy < 0.83 && side < 0.105;
-        // Short sleeves over the shoulders, to the middle of the upper arm (the bind pose is a T).
-        bool sleeve = hy > 0.74 && hy < 0.86 && side < 0.17;
-        if ((torso || sleeve) && !neck) {
-          // The shirt: hips to neck, shoulders covered.
-          c = uJersey;
-          if (uOfficial > 0.5 && fract(vBind.x / (uHeight * 0.04)) < 0.4) c = vec3(0.1);
+        int jersey = uOfficial > 0.5 ? 0 : jerseyAt(hy, side, vBind.z * uFront > 0.0);
+        bool official = uOfficial > 0.5 && (refShirtBody(hy, side) || refSleeve(hy, side));
+        bool front = vBind.z * uFront > 0.0;
+        float xs = vBind.x / uHeight;
+        if (official) {
+          // As in the reference: black raglan sleeves and side panels; front and back a grey panel
+          // with thin white stripes; a red and blue crew collar; a whistle on a dark lanyard.
+          // (Colours in linear light, as the shader works: sRGB #111 black, #9a9a9a grey.)
+          c = vec3(0.006);
+          if (refShirtBody(hy, side) && side < 0.072 && hy < 0.83) {
+            c = vec3(0.32);
+            float ax = abs(xs);
+            if (abs(ax - 0.016) < 0.0018 || abs(ax - 0.047) < 0.0018) c = vec3(0.9);
+          }
+          if (refShirtBody(hy, side) && side < 0.05 && hy > 0.826) c = hy > 0.833 ? vec3(0.57, 0.013, 0.027) : vec3(0.022, 0.04, 0.32);
+          if (front) {
+            // The lanyard from the sides of the neck down to the whistle, a little left of the middle.
+            float t = clamp((0.83 - hy) / 0.085, 0.0, 1.0);
+            float lx = 0.008 + (0.032 - 0.008) * (1.0 - t);
+            if (hy > 0.745 && hy < 0.83 && (abs(xs - lx) < 0.0016 || abs(xs + lx - 0.016) < 0.0016)) c = vec3(0.004);
+            if (hy > 0.722 && hy < 0.746 && abs(xs - 0.008) < 0.006) c = vec3(0.5, 0.52, 0.55);
+          }
+        }
+        if (jersey > 0 || official) {
+          if (jersey > 0) c = uJersey;
+          if (jersey == 2) c = uTrim;
           // The number: on the chest, bigger on the back.
-          if (uHasNumber > 0.5) {
+          if (uHasNumber > 0.5 && (!official || !front)) {
             bool back = vBind.z * uFront < 0.0;
-            float size = back ? 0.15 : 0.1;
-            float mid = back ? 0.64 : 0.66;
+            float size = official ? 0.11 : back ? 0.15 : 0.1;
+            float mid = official ? 0.735 : back ? 0.64 : 0.66;
             vec2 uv = vec2(0.5 + (back ? -1.0 : 1.0) * uFront * vBind.x / (uHeight * size), 0.5 + (hy - mid) / size);
             if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) {
               vec4 t = texture2D(uNumber, uv);
@@ -271,8 +356,34 @@ function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THRE
             }
           }
         }
-        else if (uOfficial > 0.5 ? (hy > 0.045 && hy <= 0.5 && side < 0.12) : (hy > 0.34 && hy <= 0.5 && side < 0.12)) c = uShorts;
-        else if (hy < 0.045) c = uOfficial > 0.5 ? vec3(0.08) : vec3(0.93);
+        else if (uOfficial > 0.5 && refTrousers(hy, side)) c = vec3(0.005);
+        else if (uOfficial < 0.5 && hy > 0.32 && hy <= 0.6 && side < 0.12) {
+          c = uShorts;
+          // As in the reference: a stripe in the jersey's colour round the waistband (just under the
+          // jersey's hem) and one above the hem of each leg.
+          if (uOfficial < 0.5 && ((hy > 0.562 && hy < 0.574) || (hy > 0.334 && hy < 0.346))) c = uJersey;
+        }
+        else if (uOfficial < 0.5 && hy < SHOE_TOP) {
+          // A white high-top, as in the reference: a dark rubber outsole and a grey midsole; the team
+          // colour only on the heel counter, a stripe along the side and a thin collar; grey laces.
+          float along = vBind.z * uFront / uHeight;      // heel negative, toes positive
+          float off = abs(side - 0.063);                 // from the middle of the foot, across
+          c = vec3(0.95);
+          if (hy < 0.006) c = vec3(0.18);
+          else if (hy < 0.017) c = vec3(0.82);
+          else if (hy > SHOE_TOP - 0.006) c = uJersey;
+          else if (along < -0.052 && hy < 0.06) c = uJersey;
+          else if (hy > 0.032 && hy < 0.037 && along > -0.05 && along < 0.02) c = uJersey;
+          else if (off < 0.009 && along > -0.035 && hy > 0.035 && hy < SHOE_TOP - 0.008) c = vec3(0.72);
+        }
+        else if (uOfficial < 0.5 && hy < 0.155) {
+          // White crew socks, two stripes in the team colour.
+          c = vec3(0.96);
+          if ((hy > 0.124 && hy < 0.131) || (hy > 0.137 && hy < 0.144)) c = uJersey;
+        }
+        else if (hy < 0.06) c = vec3(0.08);
+        // An official's black watch, on his left wrist.
+        if (uOfficial > 0.5 && xs > 0.366 && xs < 0.384 && hy > 0.775 && hy < 0.835) c = vec3(0.003);
         vec4 diffuseColor = vec4( c, opacity );`,
       );
   };
@@ -434,8 +545,8 @@ export class Player3D {
     };
     const stretch = new Map<THREE.Bone, THREE.Matrix4>();
     for (const sd of ['l', 'r'] as const) {
-      stretch.set(this.bones[`upperarm_${sd}`], stretchAlong(this.bones[`lowerarm_${sd}`].position, ARM_LENGTH));
-      stretch.set(this.bones[`lowerarm_${sd}`], stretchAlong(this.bones[`hand_${sd}`].position, ARM_LENGTH));
+      stretch.set(this.bones[`upperarm_${sd}`], stretchAlong(this.bones[`lowerarm_${sd}`].position, UPPER_ARM_LENGTH));
+      stretch.set(this.bones[`lowerarm_${sd}`], stretchAlong(this.bones[`hand_${sd}`].position, FOREARM_LENGTH));
     }
     model.traverse((o) => {
       const mesh = o as THREE.SkinnedMesh;
@@ -469,6 +580,79 @@ export class Player3D {
     this.arms = { l: arm('l', -1), r: arm('r', 1) };
     const leg = (s: 'l' | 'r', side: 1 | -1): Arm => ({ upper: this.bones[`thigh_${s}`], lower: this.bones[`calf_${s}`], hand: this.bones[`foot_${s}`], side });
     this.legs = { l: leg('l', -1), r: leg('r', 1) };
+    this.buildShoes(look);
+  }
+
+  /**
+   * Basketball shoes, as in the reference: a white high-top on a rubber sole, a solid rounded toe, the
+   * collar over the ankle, the heel counter and a stripe along each side in the team colour, grey
+   * laces. Rigid, on the foot bone, sized from his own foot (made in the bind pose); the bare foot is
+   * pulled in under it (bodyMaterial). An official's are black.
+   */
+  private buildShoes(look: PlayerLook): void {
+    this.root.updateMatrixWorld(true);
+    const white = look.official ? 0x1a1a1a : 0xf2f2f2;
+    const accent = look.official ? 0x333333 : new THREE.Color(look.jersey).getHex();
+    const mat = (c: number) => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
+    for (const sd of ['l', 'r'] as const) {
+      const foot = this.bones[`foot_${sd}`];
+      const ankle = foot.getWorldPosition(new THREE.Vector3());
+      const ball = this.bones[`ball_${sd}`].getWorldPosition(new THREE.Vector3());
+      // His size: the model's ankle to the ball of his foot, and his height.
+      const k = ankle.y / 0.11;
+      const along = ball.clone().sub(ankle).setY(0).normalize();
+      const heelZ = -0.075 * k;
+      const toeZ = ball.clone().sub(ankle).setY(0).length() + 0.09 * k;
+      const len = toeZ - heelZ;
+      const wide = 0.118 * k;
+      const shoe = new THREE.Group();
+      // Built along +z from the ankle (x across, y up), then turned to his foot.
+      const part = (geo: THREE.BufferGeometry, color: number, x: number, y: number, z: number) => {
+        const m = new THREE.Mesh(geo, mat(color));
+        m.position.set(x, y, z);
+        m.castShadow = true;
+        shoe.add(m);
+        return m;
+      };
+      const mid = (heelZ + toeZ) / 2;
+      /** A capsule lying along the foot (z), `h` high, `w` wide, `l` long, its bottom at `y0`. */
+      const pod = (w: number, h: number, l: number, y0: number, color: number, z = mid) => {
+        const m = part(new THREE.CapsuleGeometry(w / 2, Math.max(0.001, l - w), 4, 16), color, 0, y0 + h / 2, z);
+        m.rotation.x = Math.PI / 2;
+        m.scale.set(1, 1, h / w);
+        return m;
+      };
+      // The sole: the shoe's own outline, a dark rubber outsole under a grey midsole.
+      pod(wide + 0.012 * k, 0.014 * k, len + 0.012 * k, 0, 0x2a2a2a);
+      pod(wide + 0.01 * k, 0.022 * k, len + 0.008 * k, 0.012 * k, look.official ? 0x222222 : 0xd4d4d4);
+      // The upper: a solid rounded toe box and instep...
+      pod(wide, 0.085 * k, len, 0.026 * k, white);
+      // ...rising into the high-top round the ankle, padded at the collar.
+      const ankleZ = heelZ + 0.07 * k;
+      part(new THREE.CylinderGeometry(0.058 * k, 0.066 * k, 0.15 * k, 16), white, 0, 0.105 * k, ankleZ);
+      const collar = part(new THREE.TorusGeometry(0.056 * k, 0.011 * k, 8, 18), accent, 0, 0.18 * k, ankleZ);
+      collar.rotation.x = Math.PI / 2;
+      // The heel counter wraps round the back, in the team colour.
+      const counter = part(new THREE.CylinderGeometry(0.068 * k, 0.07 * k, 0.085 * k, 16, 1, true, Math.PI * 0.6, Math.PI * 0.8), accent, 0, 0.07 * k, ankleZ);
+      (counter.material as THREE.MeshLambertMaterial).side = THREE.DoubleSide;
+      // The tongue and instep, sloping from the top of the ankle down to the toe box, laced.
+      const top = new THREE.Vector3(0, 0.155 * k, ankleZ + 0.03 * k);
+      const low = new THREE.Vector3(0, 0.085 * k, mid + len * 0.22);
+      const slope = low.clone().sub(top);
+      const instep = part(new THREE.CapsuleGeometry(0.04 * k, slope.length(), 4, 12), white, 0, (top.y + low.y) / 2, (top.z + low.z) / 2);
+      instep.rotation.x = Math.atan2(slope.z, slope.y);
+      instep.scale.set(wide / (0.08 * k) * 0.85, 1, 0.75);
+      const laces = part(new THREE.BoxGeometry(0.026 * k, slope.length() * 0.9, 0.008 * k), look.official ? 0x444444 : 0xb8b8b8, 0, (top.y + low.y) / 2 + 0.024 * k, (top.z + low.z) / 2 + 0.012 * k);
+      laces.rotation.x = Math.atan2(slope.z, slope.y);
+      // A stripe along each side.
+      for (const side of [-1, 1]) part(new THREE.BoxGeometry(0.006 * k, 0.014 * k, len * 0.5), accent, side * (wide / 2 + 0.001 * k), 0.06 * k, mid + 0.03 * k);
+      // Placed under his ankle on the floor, pointing along his foot.
+      shoe.position.set(ankle.x, 0, ankle.z);
+      shoe.rotation.y = Math.atan2(along.x, along.z);
+      this.root.add(shoe);
+      shoe.updateMatrixWorld(true);
+      foot.attach(shoe);
+    }
   }
 
   /**
@@ -573,9 +757,12 @@ export class Player3D {
     const crouchClip = this.speed > 0.6 && this.dip === 0 && this.dribbling === 0 ? 'Crouch_Fwd_Loop' : 'Crouch_Idle_Loop';
     weights.Crouch_Fwd_Loop = crouchClip === 'Crouch_Fwd_Loop' ? low * (1 - air) : 0;
     weights.Crouch_Idle_Loop = crouchClip === 'Crouch_Idle_Loop' ? low * (1 - air) : 0;
-    // In the air: a jump shooter rises straight, legs long; anyone else tucks a little.
-    weights.Jump_Loop = air * (jumper ? 0 : 0.6);
-    weights[CLIP.idle] = (weights[CLIP.idle] ?? 0) + air * (jumper ? 1 : 0.4);
+    // In the air: a jump shooter, or a man going up for the ball with his hands up (a tip-off, a
+    // rebound), rises straight, his legs long and together; anyone else tucks a little.
+    const reaching = !jumper && !shooter && handsUp > 0.3;
+    const straight = jumper || reaching;
+    weights.Jump_Loop = air * (straight ? 0 : 0.6);
+    weights[CLIP.idle] = (weights[CLIP.idle] ?? 0) + air * (straight ? 1 : 0.4);
     for (const [name, a] of Object.entries(this.actions)) {
       a.setEffectiveWeight(weights[name] ?? 0);
       a.timeScale = 0;
@@ -589,8 +776,8 @@ export class Player3D {
     // Longer arms: the clips set the joints' positions every frame, so the elbow and wrist are moved
     // out again each time (the skin stretches to them, see the skeleton above).
     for (const sd of ['l', 'r'] as const) {
-      this.bones[`lowerarm_${sd}`].position.multiplyScalar(ARM_LENGTH);
-      this.bones[`hand_${sd}`].position.multiplyScalar(ARM_LENGTH);
+      this.bones[`lowerarm_${sd}`].position.multiplyScalar(UPPER_ARM_LENGTH);
+      this.bones[`hand_${sd}`].position.multiplyScalar(FOREARM_LENGTH);
     }
     this.root.updateMatrixWorld(true);
 
@@ -610,6 +797,22 @@ export class Player3D {
     }
 
     this.plantFeet(air > 0, dt);
+    // Going up for the ball, his legs hang straight under him, feet together (a hand's width apart),
+    // not in the standing clip's stance.
+    if (reaching && air > 0) {
+      const hl = this.legs.l.upper.getWorldPosition(new THREE.Vector3());
+      const hr = this.legs.r.upper.getWorldPosition(new THREE.Vector3());
+      const mid = hl.clone().add(hr).multiplyScalar(0.5);
+      const across = hr.clone().sub(hl).setY(0).normalize();
+      const front = new THREE.Vector3().crossVectors(UP, across).normalize();
+      for (const leg of [this.legs.l, this.legs.r]) {
+        const hip = leg.upper.getWorldPosition(new THREE.Vector3());
+        const knee = leg.lower.getWorldPosition(new THREE.Vector3());
+        const len = hip.distanceTo(knee) + knee.distanceTo(leg.hand.getWorldPosition(new THREE.Vector3()));
+        const foot = mid.clone().addScaledVector(across, leg.side * 0.07).addScaledVector(front, 0.04).add(new THREE.Vector3(0, -len * 0.97, 0));
+        reach(leg, foot, knee.clone().addScaledVector(front, 0.5), air);
+      }
+    }
     // Toes pointed down in the air.
     if (air > 0) {
       const side = new THREE.Vector3().crossVectors(new THREE.Vector3(Math.cos(this.facing), 0, Math.sin(this.facing)), UP).normalize();
@@ -627,6 +830,7 @@ export class Player3D {
       const headAt = this.bones.Head.getWorldPosition(new THREE.Vector3());
       let toward: THREE.Vector3;
       if (aim) toward = toScene(aim.to.x, aim.to.y, aim.to.z ?? RIM_HEIGHT).sub(headAt);
+      else if (reaching && air > 0) toward = toScene(frame.ball.x, frame.ball.y, frame.ball.z).sub(headAt);
       else {
         const l = frame.look?.[key] ?? this.facing;
         toward = new THREE.Vector3(Math.cos(l), 0, Math.sin(l));
@@ -1274,6 +1478,30 @@ export class Player3D {
         // Hands up: a contest, a closeout, a rebound. Standing tall, palms forward, fingers up.
         arms = `hands up ${handsUp.toFixed(2)}`;
         openBoth();
+        const toBall = ball.clone().sub(chest);
+        if (lift > 0.05 && toBall.y > -0.3 && toBall.length() < 3.5) {
+          // Up in the air for the ball (a tip-off, a rebound): his whole body stretched, both arms
+          // straight towards it, the nearer hand highest, palms to the ball.
+          // Off the floor he goes all the way: half-raised arms in the air point at nobody.
+          const w = Math.max(handsUp, Math.min(1, lift / 0.15));
+          arms = `reaching for the ball ${w.toFixed(2)}`;
+          const nearer = toBall.dot(right) >= 0 ? this.arms.r : this.arms.l;
+          for (const arm of [this.arms.l, this.arms.r]) {
+            const S = arm.upper.getWorldPosition(new THREE.Vector3());
+            const E = arm.lower.getWorldPosition(new THREE.Vector3());
+            const len = S.distanceTo(E) + E.distanceTo(arm.hand.getWorldPosition(new THREE.Vector3()));
+            // Towards the ball, but up: at most 35 degrees off straight up.
+            const d = ball.clone().sub(S).normalize();
+            const off = Math.acos(Math.max(-1, Math.min(1, d.y)));
+            if (off > 0.61) {
+              const flat = d.clone().setY(0).normalize();
+              d.copy(UP).multiplyScalar(Math.cos(0.61)).addScaledVector(flat, Math.sin(0.61));
+            }
+            const t = S.clone().addScaledVector(d, len * (arm === nearer ? 0.99 : 0.93)).addScaledVector(right, arm === nearer ? 0 : arm.side * 0.06);
+            reachTo(arm, t, w, S.clone().addScaledVector(right, arm.side * 0.5).addScaledVector(fwd, -0.2));
+            this.orient(sideOf(arm), ball.clone().sub(t).setY(0).normalize().add(new THREE.Vector3(0, 0.3, 0)), d.clone(), w);
+          }
+        } else
         for (const arm of [this.arms.l, this.arms.r]) {
           const t = arm.upper.getWorldPosition(new THREE.Vector3()).addScaledVector(fwd, 0.18).addScaledVector(right, arm.side * 0.12).add(new THREE.Vector3(0, 0.62, 0));
           reachTo(arm, t, handsUp);

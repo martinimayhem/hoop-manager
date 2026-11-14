@@ -63,6 +63,7 @@ export function Court3DPreview() {
         // Match seconds that went by: the rig plays at match time, so slow motion slows his legs too.
         game = real * k * (m.frame()?.timeScale ?? 1);
       }
+      scene.setClocks(m.clock, m.shotClock());
       scene.render(m.frame(), m.currentAction(), m.holderKey(), game, m.upcomingAction());
       const rig = scene.rigOf(scene.focus);
       if (now - shown > 120 && rig) {

@@ -5,7 +5,9 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
+  BOARD_X,
   CIRCLE_RADIUS,
   CORNER_THREE_FROM_SIDELINE,
   CORNER_THREE_LENGTH,
@@ -19,6 +21,28 @@ import {
   THREE_ARC_M,
 } from '../../engine/court';
 import { RIM_HEIGHT, type BallAction, type Frame } from '../court/animation';
+import {
+  BASELINE_HASH,
+  BOARD_BOTTOM,
+  BOARD_H,
+  BOARD_RECT_H,
+  BOARD_RECT_W,
+  BOARD_W,
+  FT_CIRCLE_HASH,
+  INNER_CIRCLE_R,
+  LANE_BLOCK,
+  LANE_MARKS_AT,
+  LANE_MARK_OUT,
+  LANE_MARK_W,
+  LINE_W,
+  NET_LEN,
+  RIM_GAP,
+  RIM_INNER_R,
+  RIM_R,
+  RIM_ROD_R,
+  SIDELINE_HASH,
+  SUB_BOX,
+} from '../court/markings';
 import { TEAM_COLOURS } from '../labels';
 import { BALL_R, Player3D, toScene, type ClipInfo, type PlayerLook, type Upcoming } from './player3d';
 
@@ -53,6 +77,9 @@ const ROW_D = 0.85;
 const ROW_H = 0.42;
 const STANDS_FROM = 3;
 
+/** Behind a board, away from the court: +x at the right-hand end (end 1), -x at the other. */
+const backOf = (end: 1 | -1): 1 | -1 => (end === 1 ? 1 : -1);
+
 export class Scene3D {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -71,6 +98,10 @@ export class Scene3D {
   only: Set<string> | null = null;
   private wideAt = new THREE.Vector3();
   private wideLook = new THREE.Vector3();
+  /** The clock displays on the hoops: drawn again only when what they show changes. */
+  private clockFaces: { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; shown: string }[] = [];
+  /** The match view's camera can be turned round the court, zoomed and panned (drag, wheel or pinch, right-drag); double-click puts it back. */
+  private controls: OrbitControls;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -91,6 +122,19 @@ export class Scene3D {
     this.wideLook.copy(centre).add(new THREE.Vector3(-1.2, 0, 2.6));
     this.camera.position.copy(this.wideAt);
     this.camera.lookAt(this.wideLook);
+    this.controls = new OrbitControls(this.camera, canvas);
+    this.controls.target.copy(this.wideLook);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.12;
+    this.controls.minDistance = 4;
+    this.controls.maxDistance = 60;
+    // Never under the floor, nor straight down from overhead.
+    this.controls.minPolarAngle = 0.12;
+    this.controls.maxPolarAngle = Math.PI / 2 - 0.06;
+    this.controls.screenSpacePanning = false;
+    this.controls.update();
+    this.controls.saveState();
+    canvas.addEventListener('dblclick', () => this.resetView());
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x9a7a5a, 1.7));
     const sun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -177,9 +221,14 @@ export class Scene3D {
       this.camera.position.set(p.x - 2.9, 2.2 + p.y, p.z + 3.8);
       this.camera.lookAt(p.x, 1.1 + p.y, p.z);
     } else {
-      this.camera.position.copy(this.wideAt);
-      this.camera.lookAt(this.wideLook);
+      // The match view: where the viewer has turned it. The point it turns round stays over the court.
+      const t = this.controls.target;
+      const lo = toScene(-2, -2);
+      const hi = toScene(COURT.w + 2, COURT.h + 2);
+      t.set(Math.max(lo.x, Math.min(hi.x, t.x)), Math.max(0, Math.min(4, t.y)), Math.max(lo.z, Math.min(hi.z, t.z)));
+      this.controls.update();
     }
+    this.controls.enabled = !this.devCamera && !this.closeUp;
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -189,7 +238,13 @@ export class Scene3D {
     this.players = {};
   }
 
+  /** Back to the standard view over the near corner. */
+  resetView(): void {
+    this.controls.reset();
+  }
+
   dispose(): void {
+    this.controls.dispose();
     this.renderer.dispose();
   }
 
@@ -226,7 +281,7 @@ export class Scene3D {
       g.fillRect(X(0), Y(y), COURT.w * PX, 1);
     }
 
-    const line = (w = 0.06) => {
+    const line = (w = LINE_W) => {
       g.strokeStyle = '#ffffff';
       g.lineWidth = w * PX;
     };
@@ -256,12 +311,41 @@ export class Scene3D {
     g.beginPath();
     g.arc(X(HALF_X), Y(MID_Y), CIRCLE_RADIUS * PX, 0, Math.PI * 2);
     g.stroke();
+    g.beginPath();
+    g.arc(X(HALF_X), Y(MID_Y), INNER_CIRCLE_R * PX, 0, Math.PI * 2);
+    g.stroke();
+    // The substitution box: a mark 4 ft each side of the midcourt line, off the court in front of the scorer's table.
+    g.fillStyle = '#ffffff';
+    for (const side of [-1, 1]) g.fillRect(X(HALF_X + side * SUB_BOX.off - LINE_W / 2), Y(-SUB_BOX.len), LINE_W * PX, SUB_BOX.len * PX);
     for (const end of [1, -1] as const) {
       const ex = (x: number) => (end === 1 ? x : COURT.w - x);
       const base = ex(COURT.w);
       const ft = ex(FREE_THROW_LINE_X);
       const hoop = ex(HOOP_X);
-      g.strokeRect(X(Math.min(base, ft)), Y(MID_Y - KEY_HALF_WIDTH), Math.abs(base - ft) * PX, KEY_HALF_WIDTH * 2 * PX);
+      // The lane lines are part of the lane: its 16 ft are to their outside edges.
+      const laneIn = KEY_HALF_WIDTH - LINE_W / 2;
+      g.strokeRect(X(Math.min(base, ft)), Y(MID_Y - laneIn), Math.abs(base - ft) * PX, laneIn * 2 * PX);
+      // Lane space marks (the first a 1 ft block), outside both lane lines; hash marks on the baseline
+      // 3 ft outside the lane and by the free-throw circle at 13 ft; Rule No. 1 (court/markings.ts).
+      g.fillStyle = '#ffffff';
+      const mark = (depth: number, len: number, y0: number, y1: number) => {
+        const x0 = ex(COURT.w - depth);
+        const x1 = ex(COURT.w - depth - len);
+        g.fillRect(X(Math.min(x0, x1)), Y(Math.min(y0, y1)), Math.abs(x1 - x0) * PX, Math.abs(y1 - y0) * PX);
+      };
+      for (const side of [-1, 1]) {
+        const lane = MID_Y + side * KEY_HALF_WIDTH;
+        const out = lane + side * LANE_MARK_OUT;
+        mark(LANE_BLOCK.from, LANE_BLOCK.len, lane, out);
+        for (const at of LANE_MARKS_AT) mark(at, LANE_MARK_W, lane, out);
+        const hashY = lane + side * BASELINE_HASH.out;
+        mark(0, BASELINE_HASH.len, hashY - LINE_W / 2, hashY + LINE_W / 2);
+        const circleY = lane + side * FT_CIRCLE_HASH.out;
+        mark(FT_CIRCLE_HASH.from - LINE_W / 2, LINE_W, circleY, circleY + side * FT_CIRCLE_HASH.len);
+        // 28 ft from the baseline, 3 ft onto the court from both sidelines.
+        const sideline = side < 0 ? 0 : COURT.h;
+        mark(SIDELINE_HASH.from - LINE_W / 2, LINE_W, sideline, sideline - side * SIDELINE_HASH.len);
+      }
       // Free-throw circle: solid towards half court, dashed inside the key.
       g.beginPath();
       g.arc(X(ft), Y(MID_Y), CIRCLE_RADIUS * PX, end === 1 ? Math.PI / 2 : -Math.PI / 2, end === 1 ? (Math.PI * 3) / 2 : Math.PI / 2);
@@ -271,9 +355,13 @@ export class Scene3D {
       g.arc(X(ft), Y(MID_Y), CIRCLE_RADIUS * PX, end === 1 ? -Math.PI / 2 : Math.PI / 2, end === 1 ? Math.PI / 2 : (Math.PI * 3) / 2);
       g.stroke();
       g.setLineDash([]);
-      // Restricted area.
+      // Restricted area: a half circle 4 ft from the ring's centre, then parallel to the lane lines to the face of the backboard.
+      const boardFace = ex(BOARD_X);
       g.beginPath();
-      g.arc(X(hoop), Y(MID_Y), RESTRICTED_M * PX, end === 1 ? Math.PI / 2 : -Math.PI / 2, end === 1 ? (Math.PI * 3) / 2 : Math.PI / 2);
+      g.moveTo(X(boardFace), Y(MID_Y - RESTRICTED_M));
+      g.lineTo(X(hoop), Y(MID_Y - RESTRICTED_M));
+      g.arc(X(hoop), Y(MID_Y), RESTRICTED_M * PX, end === 1 ? -Math.PI / 2 : -Math.PI / 2, end === 1 ? Math.PI / 2 : Math.PI / 2, end === 1);
+      g.lineTo(X(boardFace), Y(MID_Y + RESTRICTED_M));
       g.stroke();
       // Three-point line: straight in the corners, then the arc.
       const corner = ex(COURT.w - CORNER_THREE_LENGTH);
@@ -352,29 +440,151 @@ export class Scene3D {
   }
 
   /** Both hoops: padded post, arm, a white board with its square, an orange rim and a net. */
+  /** Shows the game clock and shot clock on the hoops' displays (null shot clock: off, blank). */
+  setClocks(game: number, shot: number | null): void {
+    const g0 = Math.max(0, game);
+    const gameText = g0 >= 60 ? `${Math.floor(Math.ceil(g0) / 60)}:${String(Math.ceil(g0) % 60).padStart(2, '0')}` : g0.toFixed(1);
+    const shotText = shot === null ? '' : shot >= 5 ? String(Math.ceil(shot)) : shot.toFixed(1);
+    const key = `${gameText}|${shotText}`;
+    for (const f of this.clockFaces) {
+      if (f.shown === key) continue;
+      f.shown = key;
+      const g = f.canvas.getContext('2d')!;
+      g.fillStyle = '#0a0a0c';
+      g.fillRect(0, 0, 256, 300);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#f3e3b5';
+      g.font = '700 66px ui-monospace, Consolas, monospace';
+      g.fillText(gameText, 128, 62);
+      g.fillStyle = '#ff2a1a';
+      g.font = '800 168px ui-monospace, Consolas, monospace';
+      g.fillText(shotText, 128, 200);
+      f.tex.needsUpdate = true;
+    }
+  }
+
   private buildHoops(): void {
     const mat = (color: number, opts: THREE.MeshLambertMaterialParameters = {}) => new THREE.MeshLambertMaterial({ color, flatShading: true, ...opts });
     for (const end of [1, -1] as const) {
       const ex = (x: number) => (end === 1 ? x : COURT.w - x);
       const hoop = ex(HOOP_X);
-      const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 1.4), mat(0x2a3d52));
-      base.position.copy(toScene(ex(COURT.w + 1.3), MID_Y, 0.25));
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, RIM_HEIGHT + 0.7, 0.22), mat(0x2a3d52));
-      post.position.copy(toScene(ex(COURT.w + 1.1), MID_Y, (RIM_HEIGHT + 0.7) / 2));
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.34, 2, 0.34), mat(end === 1 ? 0x2f7bff : 0xff7a1a));
-      pad.position.copy(toScene(ex(COURT.w + 1.1), MID_Y, 1));
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.14, 0.14), mat(0x2a3d52));
-      arm.position.copy(toScene(ex(COURT.w), MID_Y, RIM_HEIGHT + 0.6));
-      const board = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.07, 1.83), mat(0xffffff, { transparent: true, opacity: 0.85 }));
-      board.position.copy(toScene(ex(COURT.w - 1.22), MID_Y, RIM_HEIGHT + 0.45));
-      const square = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.59), mat(0xe34b26, { wireframe: true }));
-      square.position.copy(toScene(ex(COURT.w - 1.22), MID_Y, RIM_HEIGHT + 0.3));
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.022, 6, 20), mat(0xff5a1f));
+      // The stand, as in the reference: a padded base on the floor behind the baseline, a tall padded
+      // column narrowing as it rises, a white boom curving over and forward to the board, padding along
+      // the board's bottom edge and lower sides, and a black frame behind the board carrying the game
+      // clock and shot clock above it. The padding in the colour of the team whose end it is.
+      const padColour = end === 1 ? 0x2f6fd8 : 0xe86a12;
+      const away = backOf(end);
+      const out = (d: number) => ex(COURT.w + d);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.75, 1.25), mat(padColour));
+      base.position.copy(toScene(out(2.3), MID_Y, 0.375));
+      const baseTop = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 1.05), mat(padColour));
+      baseTop.position.copy(toScene(out(2.3), MID_Y, 0.81));
+      // The column: a padded box, wider at the foot.
+      const colGeo = new THREE.CylinderGeometry(0.3, 0.42, 2.25, 4, 1);
+      colGeo.rotateY(Math.PI / 4);
+      const column = new THREE.Mesh(colGeo, mat(padColour));
+      column.scale.set(1, 1, 0.8);
+      column.position.copy(toScene(out(2.0), MID_Y, 0.75 + 1.12));
+      // The boom: up out of the column, over and forward to the back of the board, in white.
+      const boardBack = ex(BOARD_X) + away * 0.04;
+      const curve = new THREE.CubicBezierCurve3(
+        toScene(out(1.98), MID_Y, 2.9),
+        toScene(out(1.95), MID_Y, 3.5),
+        toScene(out(1.1), MID_Y, 3.3),
+        toScene(boardBack + away * 0.3, MID_Y, 3.12),
+      );
+      const boom = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.12, 8, false), mat(0xf2f2f2));
+      const collar = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.32), mat(0xf2f2f2));
+      collar.position.copy(toScene(out(1.98), MID_Y, 2.95));
+      // The frame behind the board, up to the clocks: a post and braces, black.
+      const black = mat(0x1c1c1f);
+      const frame = new THREE.Group();
+      const strut = (a: THREE.Vector3, b: THREE.Vector3, r = 0.035) => {
+        const d = b.clone().sub(a);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 6), black);
+        m.position.copy(a.clone().add(b).multiplyScalar(0.5));
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+        frame.add(m);
+      };
+      const behind = boardBack + away * 0.12;
+      const clockY = BOARD_BOTTOM + BOARD_H + 0.95;
+      strut(toScene(behind, MID_Y, 3.1), toScene(behind, MID_Y, clockY - 0.3), 0.05);
+      for (const side of [-1, 1]) {
+        strut(toScene(behind, MID_Y + side * 0.75, BOARD_BOTTOM + BOARD_H - 0.05), toScene(behind, MID_Y + side * 0.12, clockY - 0.35));
+        strut(toScene(behind, MID_Y + side * 0.85, BOARD_BOTTOM + 0.1), toScene(behind, MID_Y, 3.1));
+      }
+      // Padding along the board's bottom edge and up its lower sides.
+      const padBottom = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, BOARD_W + 0.1), mat(padColour));
+      padBottom.position.copy(toScene(ex(BOARD_X) + away * 0.02, MID_Y, BOARD_BOTTOM - 0.045));
+      const padSides = [-1, 1].map((side) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, 0.07), mat(padColour));
+        m.position.copy(toScene(ex(BOARD_X) + away * 0.02, MID_Y + side * (BOARD_W / 2 + 0.03), BOARD_BOTTOM + 0.2));
+        return m;
+      });
+      // The clocks: a black box above the board with a display on both faces (to the court and away).
+      const clockBox = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.74, 0.64), black);
+      clockBox.position.copy(toScene(behind, MID_Y, clockY));
+      for (const dir of [-away, away]) {
+        const c = document.createElement('canvas');
+        c.width = 256;
+        c.height = 300;
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const face = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.66), new THREE.MeshBasicMaterial({ map: tex }));
+        face.position.copy(toScene(behind + dir * 0.105, MID_Y, clockY));
+        // A plane faces +z; turn it to face along the court (+x or -x in the scene).
+        face.rotation.y = dir === 1 ? Math.PI / 2 : -Math.PI / 2;
+        this.scene.add(face);
+        this.clockFaces.push({ canvas: c, tex, shown: '' });
+      }
+      for (const m of [base, baseTop, column, boom, collar, padBottom, ...padSides, clockBox]) {
+        m.castShadow = true;
+        this.scene.add(m);
+      }
+      this.scene.add(frame);
+      // Rule No. 1 (court/markings.ts): a 6 x 3.5 ft board; a 24 x 18" rectangle in a 2" line centred
+      // behind the ring, its base line level with it; an 18" ring 10 ft up, 6" from the board's face,
+      // on a bracket; an 18" net.
+      const faceX = ex(BOARD_X);
+      /** Away from the court, behind the board. */
+      const back = away;
+      // Clear glass in a white frame.
+      const board = new THREE.Mesh(new THREE.BoxGeometry(0.03, BOARD_H, BOARD_W), mat(0xdfe8ee, { transparent: true, opacity: 0.35 }));
+      const rail = (h: number, w: number, across: number, up: number) => {
+        const f = new THREE.Mesh(new THREE.BoxGeometry(0.06, h, w), mat(0xf4f4f4));
+        f.position.copy(toScene(faceX + back * 0.025, MID_Y + across, up));
+        f.castShadow = true;
+        this.scene.add(f);
+      };
+      rail(0.06, BOARD_W, 0, BOARD_BOTTOM + BOARD_H - 0.03);
+      rail(0.06, BOARD_W, 0, BOARD_BOTTOM + 0.03);
+      for (const side of [-1, 1]) rail(BOARD_H, 0.06, side * (BOARD_W / 2 - 0.03), BOARD_BOTTOM + BOARD_H / 2);
+      board.position.copy(toScene(faceX + back * 0.025, MID_Y, BOARD_BOTTOM + BOARD_H / 2));
+      const square = new THREE.Group();
+      const rectBottom = RIM_HEIGHT - LINE_W;
+      const bars: [number, number, number, number][] = [
+        // [across, up, width across, height]
+        [0, rectBottom + LINE_W / 2, BOARD_RECT_W, LINE_W],
+        [0, rectBottom + BOARD_RECT_H - LINE_W / 2, BOARD_RECT_W, LINE_W],
+        [-(BOARD_RECT_W - LINE_W) / 2, rectBottom + BOARD_RECT_H / 2, LINE_W, BOARD_RECT_H],
+        [(BOARD_RECT_W - LINE_W) / 2, rectBottom + BOARD_RECT_H / 2, LINE_W, BOARD_RECT_H],
+      ];
+      for (const [across, upAt, w, h] of bars) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.012, h, w), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        bar.position.copy(toScene(faceX - back * 0.007, MID_Y + across, upAt));
+        square.add(bar);
+      }
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(RIM_R, RIM_ROD_R * 1.6, 6, 28), mat(0xff5a1f));
       rim.rotation.x = Math.PI / 2;
-      rim.position.copy(toScene(hoop, MID_Y, RIM_HEIGHT));
-      const net = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.14, 0.42, 12, 3, true), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.8 }));
-      net.position.copy(toScene(hoop, MID_Y, RIM_HEIGHT - 0.21));
-      for (const m of [base, post, pad, arm, board, square, rim, net]) {
+      rim.position.copy(toScene(hoop, MID_Y, RIM_HEIGHT - RIM_ROD_R));
+      // The bracket from the board's face to the ring.
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(RIM_GAP + 0.02, 0.03, 0.12), mat(0xff5a1f));
+      bracket.position.copy(toScene(faceX - back * (RIM_GAP / 2), MID_Y, RIM_HEIGHT - 0.03));
+      const net = new THREE.Mesh(new THREE.CylinderGeometry(RIM_INNER_R, RIM_INNER_R * 0.62, NET_LEN, 12, 3, true), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.8 }));
+      net.position.copy(toScene(hoop, MID_Y, RIM_HEIGHT - NET_LEN / 2));
+      this.scene.add(bracket);
+      for (const m of [board, square, rim, net]) {
         m.castShadow = m !== net;
         this.scene.add(m);
       }

@@ -6,6 +6,7 @@
 // earlier moment (more time left), --to the later one. --every is match seconds between frames.
 // --zoom frames the area round the ball (a closer 3D camera, an enlarged crop of the 2D court).
 // --follow <player key> (e.g. 0:ham-8): the 3D camera side on to that player, close (side on to the rim when he shoots).
+// --cam x,y,z,tx,ty,tz: a fixed 3D camera (court metres: x along, y across, z up), from and looking at.
 // --warm <s>: how many seconds the 3D view is drawn before the first frame (default 3).
 // Also saves sheet-2d.png / sheet-3d.png: every frame as a thumbnail in one image.
 //
@@ -58,6 +59,7 @@ try {
   if (a.zoom) params.set('zoom', '1');
   if (a.follow) params.set('follow', a.follow);
   if (a.warm) params.set('warm', a.warm);
+  if (a.cam) params.set('cam', a.cam);
   if (to) params.set('to', to);
   const url = `${base}?${params.toString()}`;
   console.log(`Playing seed ${seed} to Q${quarter} ${from} and capturing every ${every} s until ${to || '10 s later'} (${view})…`);

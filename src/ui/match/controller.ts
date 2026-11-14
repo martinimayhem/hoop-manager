@@ -269,6 +269,9 @@ export class LiveMatch {
   private travelled: object | null = null;
   /** The possession the clock was last run down for. */
   private clockOf: Script | null = null;
+  /** The shot clock, for the views (never read by the engine): what it read when this possession's
+   *  script started, the game clock then, and whose possession it was. */
+  private shot = { base: 24, from: 720, side: -1 as number, of: null as Script | null };
   private t = 0;
   private firedBeats = 0;
   private lastFrame: Frame | null = null;
@@ -502,6 +505,12 @@ export class LiveMatch {
     const shown = Math.ceil(this.clock);
     this.clock = sc === this.clockOf ? Math.min(this.clock, clock) : clock;
     this.clockOf = sc;
+    if (this.shot.of !== sc) {
+      // A new possession: 24 when the ball changes hands; the same team keeping it (an offensive
+      // rebound, a side-out) gets at least 14, as in the engine.
+      const left = this.shotClock() ?? 24;
+      this.shot = { base: sc.offence === this.shot.side ? Math.max(14, left) : 24, from: sc.clockStart, side: sc.offence, of: sc };
+    }
     // The scoreboard redraws on a change: let it see every second go.
     if (Math.ceil(this.clock) !== shown) this.bump();
     // A set-up line held back while a result was being read comes up as soon as it has been.
@@ -589,6 +598,12 @@ export class LiveMatch {
   /** Player key of whoever has the ball right now (null while it's in the air). */
   holderKey(): string | null {
     return this.holder;
+  }
+
+  /** Seconds on the shot clock, for display; null when it is off (fewer seconds left in the quarter). */
+  shotClock(): number | null {
+    const v = Math.max(0, this.shot.base - (this.shot.from - this.clock));
+    return this.clock < v ? null : v;
   }
 
   /** What the ball is doing in the beat being shown: dribbled, passed, shot (and how). For views that draw more than the frame says. */
