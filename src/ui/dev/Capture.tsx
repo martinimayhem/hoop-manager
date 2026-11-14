@@ -120,7 +120,7 @@ export function Capture() {
         const text = m.caption?.text ?? m.feed[0]?.text ?? '';
         // Following a player in 3D: what his arms are doing (the pose the rig chose), to check against the picture.
         const pose = label === '3D' && follow && scene ? scene.rigOf(follow)?.state.arms : '';
-        ctx.fillText(`${label} · seed ${seed} · ${text}${pose ? ` · ${pose}` : ''}`.slice(0, 120), 34 + w, BANNER / 2);
+        ctx.fillText(`${label} · seed ${seed} · ${pose ? pose : text}`.slice(0, 120), 34 + w, BANNER / 2);
       };
       const shoot = (t: number) => {
         const tag = `${periodLabel(m.quarter)}-${clockString(m.clock).replace(':', 'm')}s-t${t.toFixed(2)}`;

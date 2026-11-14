@@ -288,6 +288,7 @@ export function MoveLab() {
         pos = warm;
       };
       restart();
+      let camDir: number | null = null;
       const aim = (f: Frame) => {
         const cam = live.current.camera;
         if (cam === 'game') {
@@ -295,18 +296,22 @@ export function MoveLab() {
           scene.closeUp = false;
           return;
         }
-        const p = f.players[subject];
-        if (!p) return;
-        const at3 = toScene(p.x, p.y);
+        // On the player as drawn (the rig, not the frame's spot), his whole body in view; side on to
+        // the way his body goes (or to the rim for a shot), turning smoothly so the view does not jerk.
         const rig = scene.rigOf(subject);
-        let dir = rig?.facingAngle ?? 0;
-        if (towards) dir = Math.atan2(towards.z - at3.z, towards.x - at3.x);
-        const lift = f.lift?.[subject] ?? 0;
+        if (!rig) return;
+        const at3 = rig.root.position;
+        let want = rig.heading;
+        if (towards) want = Math.atan2(towards.z - at3.z, towards.x - at3.x);
+        camDir = camDir === null ? want : camDir + Math.atan2(Math.sin(want - camDir), Math.cos(want - camDir)) * 0.08;
+        const lift = at3.y;
+        const look = new THREE.Vector3(at3.x, 0.95 + lift * 0.7, at3.z);
         if (cam === 'side') {
-          scene.devCamera = { from: new THREE.Vector3(at3.x + Math.sin(dir) * 4.2, 1.7 + lift, at3.z - Math.cos(dir) * 4.2), to: new THREE.Vector3(at3.x, 1.1 + lift * 0.8, at3.z) };
+          scene.devCamera = { from: new THREE.Vector3(at3.x + Math.sin(camDir) * 5.2, 1.35 + lift * 0.7, at3.z - Math.cos(camDir) * 5.2), to: look };
         } else {
-          scene.devCamera = { from: new THREE.Vector3(at3.x - Math.cos(dir) * 4, 2.2 + lift, at3.z - Math.sin(dir) * 4), to: new THREE.Vector3(at3.x, 1.1 + lift * 0.8, at3.z) };
+          scene.devCamera = { from: new THREE.Vector3(at3.x - Math.cos(camDir) * 5, 2.1 + lift * 0.7, at3.z - Math.sin(camDir) * 5), to: look };
         }
+        void f;
       };
       const loop = (now: number) => {
         raf = requestAnimationFrame(loop);

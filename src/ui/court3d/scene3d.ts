@@ -163,9 +163,9 @@ export class Scene3D {
       this.camera.position.copy(this.devCamera.from);
       this.camera.lookAt(this.devCamera.to);
     } else if (this.closeUp === 'side' && rig) {
-      // Side on to his shot (towards the rim he shoots at), or to where he faces.
+      // Side on to his shot (towards the rim he shoots at), or to the way his body goes.
       const p = rig.root.position;
-      let f = rig.facingAngle;
+      let f = rig.heading;
       if (action?.kind === 'fromPlayer' && action.from === this.focus) {
         const rim = toScene(action.to.x, action.to.y);
         f = Math.atan2(rim.z - p.z, rim.x - p.x);
