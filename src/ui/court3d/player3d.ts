@@ -145,6 +145,10 @@ const STILL_M_S = 0.25;
 const SPEED_SMOOTH_S = 0.12;
 /** Ball radius (m). */
 export const BALL_R = 0.12;
+/** A ball handed to him from far off comes to him at this speed (m/s): a pass's. */
+const BALL_CATCH_UP_M_S = 9;
+/** A held ball that would move further than this in a frame (m, plus 12 m/s) is carried across by the hands instead. */
+const BALL_HANDOFF_M = 0.12;
 /** Within this far of the ball, a player holding it has his hands on it. */
 const HOLD_M = 0.75;
 /** He turns his hips to where he is running and keeps his chest to where he faces, up to this much. */
@@ -208,6 +212,11 @@ const DRIBBLE_PUSH_MIN_S = 0.1;
  */
 const DRIBBLE_BOUNCE_OUT_M = 0.34;
 const DRIBBLE_BOUNCE_AHEAD = [0.22, 0.07];
+/** An opponent this close (m) makes the handler dribble with the hand away from him. */
+const DRIBBLE_GUARDED_M = 2.5;
+/** Guarded, the ball is kept back and out: it bounces beside his foot (m behind it) and further out from his body (m). */
+const DRIBBLE_GUARDED_BACK_M = 0.08;
+const DRIBBLE_GUARDED_OUT_M = 0.42;
 /**
  * On the move the dribbling arm is swung out at the shoulder by this much (radians): the clip's hand
  * works in front of his middle (a standing stance); moving, the ball goes outside the striding legs.
@@ -591,7 +600,13 @@ export class Player3D {
   private dribRight = 1;
   /** How much he is moving, for the dribble (0 standing, 1 on the move): how far the arm is swung out; and how far it is lowered. */
   private dribMove = 0;
+  private dribMoveS = 0;
+  /** His heading and place for the dribble's frame (eased: see toBody). */
+  private dribHeading = 0;
+  private dribRoot = new THREE.Vector3();
   private dribDown = 0;
+  /** An opponent is close: the dribble is protected (kept back, out, on the far side). */
+  private dribGuarded = false;
   /**
    * Guarding the man with the ball: the defensive stance clip (Mixamo "defend dribbling"), its clock
    * and how much of it is on (eases in and out).
@@ -602,19 +617,29 @@ export class Player3D {
   private drib: {
     phase: 'contact' | 'flight' | 'held';
     pos: THREE.Vector3;
-    /** In flight: where this stretch of it began (the release, then the bounce), its velocity then, and the time since. */
+    /**
+     * In flight, its way across in his own frame (x: ahead of his hips, z: to his right), so it goes
+     * where he goes: from where it left the hand to the bounce spot by his foot, then up to his palm.
+     * Up and down it is physics alone: let go at `y0` at `down` m/s, the floor after `tDown` s, the peak
+     * `tUp` s after that.
+     */
     from: THREE.Vector3;
-    vel: THREE.Vector3;
-    since: number;
-    /** Down to the floor, then up to the top of the bounce: how long each takes (s). */
+    spot: THREE.Vector3;
+    y0: number;
     down: number;
-    up: number;
+    tDown: number;
+    tUp: number;
+    since: number;
     bounced: boolean;
     /** The clip time of the top the hand comes back to. */
     backAt: number;
     /** How the last catch went: how far the ball was from the palm (m) and how fast it was still going up (m/s). */
     gap: number;
     rising: number;
+    /** What is left of a catch off the palm (m), which the push takes back to nothing by the lowest point; the clip times of that catch and lowest point. */
+    reach: THREE.Vector3;
+    caughtAt: number;
+    lowAt: number;
   } | null = null;
   private dribPoses: Record<string, ClipPose> = {};
   /** The head's forward, in the head bone's own space. */
@@ -636,6 +661,7 @@ export class Player3D {
   /** A held ball being taken up from wherever it was: blended in over a moment. */
   private heldBefore = false;
   private blendIn = 1;
+  private blendTime = 0.15;
   private blendFrom: THREE.Vector3 | null = null;
   state: RigState = { speed: 0, mode: '', weights: {}, arms: '' };
 
@@ -996,7 +1022,10 @@ export class Player3D {
       this.dribPrevT = this.dribT;
       if (dribbles && this.drib?.phase !== 'held') this.dribT += dt * this.dribRate;
       for (const sd of ['l', 'r'] as const) this.dribArm[sd] = Math.max(0, Math.min(1, this.dribArm[sd] + ((dribbles && this.dribSide === sd ? 1 : -1) * dt) / 0.12));
-      moveK = Math.max(0, Math.min(1, (this.speed - 0.3) / 0.9));
+      // Eased (about 0.3 s): the standing and the moving pose hold the hand in different places, and a
+      // switch with every change of pace would move the palm out from under a ball in the air.
+      this.dribMoveS += (Math.max(0, Math.min(1, (this.speed - 0.3) / 0.9)) - this.dribMoveS) * (1 - Math.exp(-dt / 0.3));
+      moveK = this.dribMoveS;
       this.dribStand = this.dribbling * (1 - moveK) * (1 - air);
       this.dribRight = Math.max(0, Math.min(1, this.dribRight + ((this.dribSide === 'r' ? 1 : -1) * dt) / 0.25));
       if (this.dribStand > 0) {
@@ -1046,6 +1075,17 @@ export class Player3D {
       turnWorld(this.bones.neck_01, across, lean * 0.7);
     }
 
+    // The dribble's frame turns with him, eased (see toBody).
+    {
+      const hipsNow = Math.PI / 2 - this.yaw;
+      const turn = Math.atan2(Math.sin(hipsNow - this.dribHeading), Math.cos(hipsNow - this.dribHeading));
+      this.dribHeading = this.drib ? this.dribHeading + turn * (1 - Math.exp(-dt / 0.2)) : hipsNow;
+      // His place, smoothed over a few hundredths of a second: the 2D layer's spacing nudges him by
+      // millimetres from frame to frame, which the ball would show as a wobble.
+      if (!this.drib || this.dribRoot.distanceTo(this.root.position) > 0.5) this.dribRoot.copy(this.root.position);
+      else this.dribRoot.lerp(this.root.position, 1 - Math.exp(-dt / 0.06));
+      this.dribRoot.y = 0;
+    }
     // On the move, the dribbling arm swung out to his side.
     this.dribMove = moveK;
     this.dribDown = moveK * (1 - drive);
@@ -1175,8 +1215,10 @@ export class Player3D {
   }
 
   /** Dev: the dribble as it stands: phase, the ball, and how the last catch went. */
-  get dribbleInfo(): { phase: string; ball: THREE.Vector3; gap: number; rising: number; side: 'l' | 'r' } | null {
-    return this.drib ? { phase: this.drib.phase, ball: this.drib.pos.clone(), gap: this.drib.gap, rising: this.drib.rising, side: this.dribSide } : null;
+  get dribbleInfo(): { phase: string; ball: THREE.Vector3; gap: number; rising: number; side: 'l' | 'r'; clipT: number; rate: number; speed: number; vel: THREE.Vector3 } | null {
+    return this.drib
+      ? { phase: this.drib.phase, ball: this.drib.pos.clone(), gap: this.drib.gap, rising: this.drib.rising, side: this.dribSide, clipT: this.dribT, rate: this.dribRate, speed: this.speed, vel: this.vel.clone() }
+      : null;
   }
 
   /** Dev: a bone's place in the world. */
@@ -1237,25 +1279,43 @@ export class Player3D {
     return { speed, down: (hit - speed) / GRAVITY, up: (RESTITUTION * hit) / GRAVITY };
   }
 
-  /** Where the ball is to meet the palm at clip time `t`, `later` seconds from now (he moves on meanwhile). */
-  private meetAt(t: number, later: number): THREE.Vector3 {
-    const accel = this.acc.clone().clampLength(0, 8);
-    const tt = Math.min(later, 0.6);
-    return this.ballInPalmAt(this.dribSide, t).addScaledVector(this.vel, later).addScaledVector(accel, 0.5 * tt * tt);
+  /**
+   * A point in his own frame (x ahead, z to his right, y up from the floor) and back. Ahead: his hips'
+   * heading eased over a moment (the hips snap round as he goes from running to sliding to backing up;
+   * the ball must not swing with that, only with his real turning).
+   */
+  private toBody(p: THREE.Vector3): THREE.Vector3 {
+    const hips = this.dribHeading;
+    const f = new THREE.Vector3(Math.cos(hips), 0, Math.sin(hips));
+    const r = new THREE.Vector3().crossVectors(f, UP).normalize();
+    const v = p.clone().sub(this.dribRoot);
+    return new THREE.Vector3(v.dot(f), p.y, v.dot(r));
+  }
+  private fromBody(l: THREE.Vector3): THREE.Vector3 {
+    const hips = this.dribHeading;
+    const f = new THREE.Vector3(Math.cos(hips), 0, Math.sin(hips));
+    const r = new THREE.Vector3().crossVectors(f, UP).normalize();
+    return this.dribRoot.clone().setY(l.y).addScaledVector(f, l.x).addScaledVector(r, l.z);
   }
 
   /**
-   * The dribbled ball, by physics, in time with the dribble clip (CLAUDE.md: the hand meets it at the
-   * top of the bounce; it never sticks to the hand nor turns in the air).
+   * The dribbled ball, in time with the dribble clip (CLAUDE.md: the hand meets it at the top of the
+   * bounce; it never sticks to the hand).
    *
    * In contact (from a top to the lowest push point) it is under the palm and the clip pushes it down.
    * At the lowest point it is let go, down at the speed that, with gravity and one bounce off the floor
-   * (restitution 0.8), brings it up to a peak just under where the palm is at the clip's next top. The
-   * clip's rise is played so the hand gets to that top as the ball peaks, and the push quick enough
-   * that the whole bounce takes the cycle for his speed (0.75 s standing, 0.6 s running). Across, it
-   * goes straight at where the palm will be; at the bounce (where it changes direction anyway) it is
-   * aimed again at where the palm will then really be. `want`: the hand the frame has the ball on (a
-   * crossover changes hands at a release); `ending`: catch it at the next top and hold it.
+   * (restitution 0.8), brings it up to a peak at the palm's height at the clip's next top. The clip's
+   * rise is played so the hand gets to that top as the ball peaks, and the push quick enough that the
+   * whole bounce takes the cycle for his speed (0.75 s standing, 0.6 s running).
+   *
+   * Up and down that is physics, exactly. Across, its way is laid out in his own frame: to the bounce
+   * spot beside his foot (ahead of him on the move, back by his foot when guarded), then up to his palm.
+   * So it goes where he goes: the 2D layer turns him, stops him and starts him without warning, and a
+   * ball aimed once in the world would end up away from him. (When he changes pace or turns while it is
+   * in the air, it changes course across with him, as much as his body does.)
+   *
+   * `want`: the hand away from the defender (a crossover changes hands at a release); `ending`: catch
+   * it at the next top and hold it.
    */
   private dribbleBall(want: 'l' | 'r', ending: boolean, dt: number): NonNullable<Player3D['drib']> {
     const clip = MIXAMO.Dribble;
@@ -1279,81 +1339,82 @@ export class Player3D {
     };
     if (!this.drib) {
       const pos = this.ballInPalm(this.dribSide);
-      this.drib = { phase: ending ? 'held' : 'contact', pos, from: pos.clone(), vel: new THREE.Vector3(), since: 0, down: 0, up: 0, bounced: false, backAt: 0, gap: 0, rising: 0 };
+      this.drib = { phase: ending ? 'held' : 'contact', pos, from: new THREE.Vector3(), spot: new THREE.Vector3(), y0: 0, down: 0, tDown: 0, tUp: 0, since: 0, bounced: false, backAt: 0, gap: 0, rising: 0, reach: new THREE.Vector3(), caughtAt: 0, lowAt: 0 };
       startPush();
     }
     const d = this.drib;
     if (d.phase === 'flight') {
       d.since += dt;
-      if (!d.bounced && d.since >= d.down) {
-        // The floor: up at 0.8 of the speed it came down with, and aimed again at where the palm will be
-        // at the top, which is now only the rise away. The clip's rise is timed to it.
-        const hitAt = d.from.clone().addScaledVector(d.vel, d.down);
-        hitAt.y = BALL_R;
-        const hitSpeed = -(d.vel.y - GRAVITY * d.down);
-        const upSpeed = RESTITUTION * hitSpeed;
-        const up = upSpeed / GRAVITY;
-        const to = this.meetAt(d.backAt, up);
-        d.since -= d.down;
-        d.from = hitAt;
-        d.vel.set((to.x - hitAt.x) / up, upSpeed, (to.z - hitAt.z) / up);
-        d.up = up;
-        d.bounced = true;
-        this.dribRate = Math.max(0.05, (d.backAt - this.dribT) / Math.max(0.02, up - d.since));
-      }
       const t = d.since;
-      d.pos = d.from.clone().addScaledVector(d.vel, t);
-      d.pos.y = Math.max(BALL_R, d.from.y + d.vel.y * t - 0.5 * GRAVITY * t * t);
+      if (!d.bounced && t >= d.tDown) {
+        // The floor: the clip's rise timed to the ball's (what is left of it after this frame).
+        d.bounced = true;
+        this.dribRate = Math.max(0.05, (d.backAt - this.dribT) / Math.max(0.02, d.tUp - (t - d.tDown)));
+      }
+      // Up and down: gravity, and the bounce at restitution 0.8.
+      const upSpeed = RESTITUTION * (d.down + GRAVITY * d.tDown);
+      const y = t < d.tDown ? d.y0 - d.down * t - 0.5 * GRAVITY * t * t : BALL_R + upSpeed * (t - d.tDown) - 0.5 * GRAVITY * (t - d.tDown) ** 2;
+      // Across, in his frame: to the spot, then to where the palm will be at the top.
+      let across: THREE.Vector3;
+      if (t < d.tDown) across = d.from.clone().lerp(d.spot, t / d.tDown);
+      else across = d.spot.clone().lerp(this.toBody(this.ballInPalmAt(this.dribSide, d.backAt)), Math.min(1, (t - d.tDown) / d.tUp));
+      d.pos = this.fromBody(across.setY(Math.max(BALL_R, y)));
       if (ev.tops.some(passed)) {
         // The top: the hand meets it.
         const there = this.ballInPalm(this.dribSide);
         d.gap = d.pos.distanceTo(there);
-        d.rising = d.vel.y - GRAVITY * t;
+        d.rising = upSpeed - GRAVITY * (t - d.tDown);
+        d.reach = d.pos.clone().sub(there);
         d.phase = ending ? 'held' : 'contact';
-        d.pos = there;
+        d.caughtAt = this.dribT;
+        d.lowAt = after(ev.lows, this.dribT);
         startPush();
       }
       return d;
     }
-    d.pos = this.ballInPalm(this.dribSide);
+    // In the hand: under the palm (what is left of a catch off it, the push takes back).
+    const back = d.lowAt > d.caughtAt ? Math.max(0, Math.min(1, (this.dribT - d.caughtAt) / (d.lowAt - d.caughtAt))) : 1;
+    const k = 1 - back * back * (3 - 2 * back);
     if (d.phase === 'held') {
       if (!ending) {
         d.phase = 'contact';
+        d.reach = d.pos.clone().sub(this.ballInPalm(this.dribSide));
+        d.caughtAt = this.dribT;
+        d.lowAt = after(ev.lows, this.dribT);
         startPush();
+        return d;
       }
+      // Holding it, the dribble about to end: in to his hip on that side, the hand carrying it there.
+      const pocket = this.fromBody(new THREE.Vector3(0.12, this.ballInPalm(this.dribSide).y - 0.08, (this.dribSide === 'r' ? 1 : -1) * 0.3));
+      d.pos = d.pos.clone().lerp(pocket, 1 - Math.exp(-dt / 0.12));
       return d;
     }
+    d.pos = this.ballInPalm(this.dribSide).addScaledVector(d.reach, k);
     if (ev.lows.some(passed)) {
       // The lowest push point: let go. A crossover: the other hand takes it at the next top.
       this.dribSide = want;
       const back = after(ev.tops, this.dribT);
-      const from = d.pos.clone();
-      // Down so that it peaks at the palm's height at the top (worked out from where the palm will be).
-      let b = Player3D.bounce(from.y, this.ballInPalmAt(this.dribSide, back).y);
-      const to = this.meetAt(back, b.down + b.up);
-      b = Player3D.bounce(from.y, to.y);
-      const T = b.down + b.up;
-      // Across: to the floor out beside his foot and ahead of him (where he will be when it lands), then
-      // from there to the palm (aimed at the bounce).
-      const hips = Math.PI / 2 - this.yaw;
-      const bF = new THREE.Vector3(Math.cos(hips), 0, Math.sin(hips));
-      const bR = new THREE.Vector3().crossVectors(bF, UP).normalize();
-      const accel = this.acc.clone().clampLength(0, 8);
-      const spot = this.root.position
-        .clone()
-        .addScaledVector(this.vel, b.down)
-        .addScaledVector(accel, 0.5 * b.down * b.down)
-        .addScaledVector(bF, DRIBBLE_BOUNCE_AHEAD[0] + DRIBBLE_BOUNCE_AHEAD[1] * this.speed)
-        .addScaledVector(bR, (this.dribSide === 'r' ? 1 : -1) * DRIBBLE_BOUNCE_OUT_M);
+      const b = Player3D.bounce(d.pos.y, this.ballInPalmAt(this.dribSide, back).y);
+      // Where it hits the floor, in his frame: out beside his foot; on the move ahead of him the way he
+      // is going (he runs onto it), guarded back by his foot and out wide (his body between it and the
+      // defender, who is on the other side: the hand is the one away from him).
+      const going = this.toBody(this.root.position.clone().add(this.vel)).setY(0);
+      const ahead = going.length() > 0.5 ? going.normalize() : new THREE.Vector3(1, 0, 0);
+      const side = this.dribSide === 'r' ? 1 : -1;
+      const spot = this.dribGuarded
+        ? new THREE.Vector3(-DRIBBLE_GUARDED_BACK_M, BALL_R, side * DRIBBLE_GUARDED_OUT_M)
+        : ahead.multiplyScalar(DRIBBLE_BOUNCE_AHEAD[0] + DRIBBLE_BOUNCE_AHEAD[1] * this.speed).add(new THREE.Vector3(0, BALL_R, side * DRIBBLE_BOUNCE_OUT_M));
       d.phase = 'flight';
-      d.from = from;
-      d.vel.set((spot.x - from.x) / b.down, -b.speed, (spot.z - from.z) / b.down);
+      d.from = this.toBody(d.pos);
+      d.spot = spot;
+      d.y0 = d.pos.y;
+      d.down = b.speed;
+      d.tDown = b.down;
+      d.tUp = b.up;
       d.since = 0;
-      d.down = b.down;
-      d.up = b.up;
       d.bounced = false;
       d.backAt = back;
-      this.dribRate = (back - this.dribT) / T;
+      this.dribRate = (back - this.dribT) / (b.down + b.up);
     }
     return d;
   }
@@ -1399,15 +1460,24 @@ export class Player3D {
    * Where to draw the ball: in his hands while the pose holds it, then easing back onto the frame's
    * path over about 0.15 s once it has left them.
    */
-  ball(frameBall: THREE.Vector3, dt: number): THREE.Vector3 {
+  ball(frameBall: THREE.Vector3, dt: number, drawn?: THREE.Vector3): THREE.Vector3 {
     if (this.ballAt) {
-      // Taken up from wherever it was (not snapped into the hands): blended in over a moment.
+      // Taken up from where it is on screen (not snapped into the hands): blended in over a moment.
       if (!this.heldBefore) {
-        this.blendFrom = (this.ballShown ?? frameBall).clone();
-        this.blendIn = this.drib ? 1 : 0;
+        this.blendFrom = (drawn ?? frameBall).clone();
+        this.blendIn = 0;
+        // From far off (the frame hands it to him before a pass has got there): it comes to him at a
+        // pass's speed, not in an instant.
+        this.blendTime = Math.max(0.15, Math.min(0.6, this.blendFrom.distanceTo(this.ballAt) / BALL_CATCH_UP_M_S));
+      } else if (this.ballShown && this.blendIn >= 1 && this.ballShown.distanceTo(this.ballAt) > BALL_HANDOFF_M + 12 * dt) {
+        // From one way of holding it to another (a dribble caught, then picked up for a pass): the
+        // hands carry it across, it does not jump.
+        this.blendFrom = this.ballShown.clone();
+        this.blendIn = 0;
+        this.blendTime = 0.12;
       }
       this.heldBefore = true;
-      this.blendIn = Math.min(1, this.blendIn + dt / 0.15);
+      this.blendIn = Math.min(1, this.blendIn + dt / this.blendTime);
       const k = this.blendIn * this.blendIn * (3 - 2 * this.blendIn);
       this.ballShown = this.blendFrom && k < 1 ? this.blendFrom.clone().lerp(this.ballAt, k) : this.ballAt.clone();
       this.ballBack = 0;
@@ -1713,12 +1783,34 @@ export class Player3D {
       dribbling = true;
       const hips = Math.PI / 2 - this.yaw;
       const bR = new THREE.Vector3().crossVectors(new THREE.Vector3(Math.cos(hips), 0, Math.sin(hips)), UP).normalize();
-      const want = (Math.sign(ball.clone().sub(chest).dot(bR)) || 1) > 0 ? 'r' : 'l';
+      // The hand away from the nearest opponent close to him (he keeps his body between the ball and
+      // the defender); with nobody near, the side the frame has the ball on.
+      let want: 'l' | 'r' = (Math.sign(ball.clone().sub(chest).dot(bR)) || 1) > 0 ? 'r' : 'l';
+      const team = key.slice(0, key.indexOf(':') + 1);
+      const me = frame.players[key];
+      let nearest: { d: number; side: number } | null = null;
+      for (const [k, p] of Object.entries(frame.players)) {
+        if (k.startsWith(team) || k.startsWith('ref')) continue;
+        const d = Math.hypot(p.x - me.x, p.y - me.y);
+        if (d < DRIBBLE_GUARDED_M && (!nearest || d < nearest.d)) nearest = { d, side: toScene(p.x, p.y).sub(toScene(me.x, me.y)).dot(bR) };
+      }
+      if (nearest) want = nearest.side > 0 ? 'l' : 'r';
+      this.dribGuarded = !!nearest;
       const ending = !!next && !(next.action.kind === 'held' && next.action.dribble) && next.in < DRIBBLE_CATCH_S;
+      if (!this.drib) this.dribSide = want;
       const d = this.dribbleBall(want, ending, dt);
       const h = this.dribSide;
       this.open = { l: 1, r: 1 };
       this.curl[h] = CUP;
+      // The hand to the ball where it is off the clip's path: going to meet it in the last moment of its
+      // flight (or waiting at the top for it), and in the hand until the push has taken it back. The
+      // palm on its top, fingers forward over it.
+      const arm = this.arms[h];
+      const fingersFwd = new THREE.Vector3(Math.cos(this.facing), 0, Math.sin(this.facing));
+      if (d.phase !== 'flight' && d.pos.distanceTo(this.ballInPalm(h)) > 0.01) {
+        palmOn(arm, d.pos, UP, fingersFwd, 1);
+        d.pos = this.ballInPalm(h);
+      }
       this.ballAt = d.pos.clone();
       const which = h === 'r' ? 'right' : 'left';
       arms = d.phase === 'flight' ? `dribble (${which} hand): ball in the air` : d.phase === 'held' ? `dribble (${which} hand): holding it` : `dribble (${which} hand): pushing it down (met it ${(d.gap * 100).toFixed(1)} cm off)`;

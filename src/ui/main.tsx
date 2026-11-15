@@ -28,10 +28,16 @@ const Clips3D = import.meta.env.DEV ? lazy(() => import('./dev/Clips3D').then((m
 const clips3d = Clips3D && new URLSearchParams(window.location.search).has('clips3d');
 const Dribble3D = import.meta.env.DEV ? lazy(() => import('./dev/Dribble3D').then((m) => ({ default: m.Dribble3D }))) : null;
 const dribble3d = Dribble3D && new URLSearchParams(window.location.search).has('dribble3d');
+const DribbleCheck = import.meta.env.DEV ? lazy(() => import('./dev/DribbleCheck').then((m) => ({ default: m.DribbleCheck }))) : null;
+const dribblecheck = DribbleCheck && new URLSearchParams(window.location.search).has('dribblecheck');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {clips3d && Clips3D ? (
+    {dribblecheck && DribbleCheck ? (
+      <Suspense fallback={null}>
+        <DribbleCheck />
+      </Suspense>
+    ) : clips3d && Clips3D ? (
       <Suspense fallback={null}>
         <Clips3D />
       </Suspense>

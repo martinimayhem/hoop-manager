@@ -37,7 +37,7 @@ const PICK_UP_M_S = 1.5;
 const CHIN_S = 0.4;
 const CHIN_HEIGHT = 1.5;
 /** A jump stop: how hard a player with the ball in his hands can stop (m/s²). */
-const JUMP_STOP = 18;
+const JUMP_STOP = 21; // about 2 g: a receiver caught at a sprint stops within his two steps (1.2 m)
 /** Bounces a second when standing; a moving handler bounces once every two steps. */
 const STANDING_BOUNCE_HZ = 2.2;
 /** Never more than this many bounces a second, however fast he goes. */
@@ -57,6 +57,10 @@ const REACH_BALL_M = 2;
 const CONTEST_M = 2.5;
 /** The defender nearest the shooter gets a hand up from this close: a late contest, whether or not he can jump at it. Anyone else only within CONTEST_M. */
 const HAND_UP_M = 4.6;
+/** Within this much of the nearest defender's distance (m), a defender counts as nearest too. */
+const NEAR_ENOUGH_M = 0.4;
+/** ...when that close to the shooter (m): further off only the nearest himself reaches. */
+const NEAR_ENOUGH_WITHIN_M = 3;
 /** A defender this close to a man who has just caught it closes out with his hands up. */
 const CLOSE_OUT_M = 2.5;
 /** A chaser runs on the ball handler's heels: this far behind him, this far to his own side, aiming where he will be this far ahead (seconds). */
@@ -131,6 +135,10 @@ const READ_ON_BALL_S = 0.12;
 const TURN_AHEAD_S = 0.5;
 /** A defender this close to the ball handler stays square to them and slides, whatever the speed. */
 const ON_BALL_M = 3;
+/** An on-ball defender keeps square along the basket's line while his man is within this angle of it (radians). */
+const SQUARE_WITHIN = (50 * Math.PI) / 180;
+/** Recovering close to the ball handler, a defender looks at most this far off him (radians). */
+const RECOVER_LOOK = (80 * Math.PI) / 180;
 /** A guarding defender this close to his man is down in his stance. */
 const STANCE_M = 2.5;
 /** The direction a player is running, as their body reads it: smoothed over this long (seconds). */
@@ -225,6 +233,8 @@ export interface LiveContext {
 
 /** Over and back: how far over half court the ball handler stays once his team has the ball there. */
 const HALF_LINE_M = 0.5;
+/** Running forward at least this fast (m/s), a ball handler still behind that line is on his way over it. */
+const ON_THE_WAY_M_S = 1;
 
 /**
  * The ball handler's footwork. Gathered: he has just caught it or picked it up. Dribbling: he may go
@@ -301,6 +311,34 @@ function keepApart(pos: Record<string, Pos>, firm?: string): void {
         pos[keys[j]] = { x: b.x + ux * gap * (1 - shareA), y: b.y + uy * gap * (1 - shareA) };
       }
     }
+  }
+}
+
+/**
+ * Room for the ball handler: no opponent gets closer to him than this (m, centre to centre) while he
+ * has the ball in play. Two bodies leaning in, a defender's arms out: closer, the defender could take
+ * the ball out of his hands, and a handler always keeps it from him. The opponent gives way.
+ */
+const HANDLER_ROOM_M = 1.45;
+
+/** How fast an opponent inside that room gives way (m/s of game time): a quick slide back, never a jump. */
+const HANDLER_ROOM_SLIDE_M_S = 6;
+
+function giveHandlerRoom(pos: Record<string, Pos>, holder: string, step: number, guards: (k: string) => boolean): void {
+  const h = pos[holder];
+  if (!h || isRef(holder)) return;
+  const side = holder.slice(0, holder.indexOf(':') + 1);
+  for (const [k, p] of Object.entries(pos)) {
+    // Only the man guarding him: a helper or a trapper going by has his own job (and pushed off the
+    // handler he would be pushed into someone else's way).
+    if (k.startsWith(side) || isRef(k) || !guards(k)) continue;
+    const dx = p.x - h.x;
+    const dy = p.y - h.y;
+    const d = Math.hypot(dx, dy);
+    if (d >= HANDLER_ROOM_M) continue;
+    if (d < 0.01) continue;
+    const back = Math.min(HANDLER_ROOM_M - d, step);
+    pos[k] = { x: p.x + (dx / d) * back, y: p.y + (dy / d) * back };
   }
 }
 
@@ -805,14 +843,25 @@ export class Motion {
     // More than once: a line can push someone back into a neighbour, who then has to give way along it.
     for (let round = 0; round < 3; round++) {
       keepApart(next, live && !live.dead ? live.goNow?.[0] : undefined);
+      // The man with the ball in play has room: an opponent gives way to an arm's length.
+      if (ballHolder && live && !live.dead && this.handle?.key === ballHolder) giveHandlerRoom(next, ballHolder, HANDLER_ROOM_SLIDE_M_S * dt * speedScale, (k) => this.markingNow[k] === ballHolder);
       for (const key of Object.keys(next)) if (key !== outOfBounds && !isRef(key)) keepInside(next, key, BOUNDS_M_S * dt * speedScale);
       // Over and back: half court is a line at the ball handler's back, like the sideline.
       if (live?.frontcourt && ballHolder && next[ballHolder] && ballHolder.startsWith(`${live.offence}:`)) {
         const p = next[ballHolder];
         const line = live.dir === 1 ? HALF_X + HALF_LINE_M : COURT.w - HALF_X - HALF_LINE_M;
-        if (live.dir === 1 ? p.x < line : p.x > line) {
+        const behind = (q: Pos) => (live.dir === 1 ? q.x < line : q.x > line);
+        // Not for a man on his way over it, running forward: the ball crosses half court before his body
+        // does, and he is not pulled onto the line nor stopped dead from a sprint (no body stops in one
+        // frame). Anyone else, going back or caught behind it, is held to it; only the backward part of
+        // his run is stopped.
+        const was = this.pos[ballHolder];
+        const v0 = nextVel[ballHolder] ?? { x: 0, y: 0 };
+        const crossing = was && behind(was) && v0.x * live.dir > ON_THE_WAY_M_S * speedScale;
+        if (behind(p) && !crossing) {
+          const v = nextVel[ballHolder] ?? { x: 0, y: 0 };
           next[ballHolder] = { x: line, y: p.y };
-          nextVel[ballHolder] = { x: 0, y: nextVel[ballHolder]?.y ?? 0 };
+          nextVel[ballHolder] = { x: live.dir === 1 ? Math.max(0, v.x) : Math.min(0, v.x), y: v.y };
         }
       }
     }
@@ -947,7 +996,9 @@ export class Motion {
         const off = (k: string) => Math.hypot(shooter.x - this.pos[k].x, shooter.y - this.pos[k].y);
         const d = off(key);
         if (d < CONTEST_M) return true;
-        const nearest = Object.keys(this.pos).every((k) => k === key || isRef(k) || team(k) === team(a.from) || off(k) >= d);
+        // The nearest, or as good as (two level with each other both go: the nearest can change hands
+        // just before the release, and a hand only comes up so fast).
+        const nearest = Object.keys(this.pos).every((k) => k === key || isRef(k) || team(k) === team(a.from) || off(k) >= d - (d < NEAR_ENOUGH_WITHIN_M ? NEAR_ENOUGH_M : 0));
         if (d < HAND_UP_M && (beat.contest === key || nearest)) return true;
       }
     }
@@ -1167,8 +1218,17 @@ export class Motion {
       // Square to his man along the line from the basket: steady as they jostle, never circling him.
       const rim = scene.dir === 1 ? HOOP : { x: COURT.w - HOOP.x, y: HOOP.y };
       const h = this.pos[holder];
-      const square = guarding ? Math.atan2(h.y - rim.y, h.x - rim.x) : toPlayer(holder);
-      return quick(beaten ? blend(square) : square);
+      // (Square along that line while he is in front of him; once the handler is past or across him,
+      // at the man himself: a defender never turns his back on the ball.)
+      const line = Math.atan2(h.y - rim.y, h.x - rim.x);
+      const square = guarding && Math.abs(angleDiff(line, toPlayer(holder))) < SQUARE_WITHIN ? line : toPlayer(holder);
+      if (!beaten) return quick(square);
+      // Beaten, he turns to run to recover, but close to the handler never so far that his back is to
+      // him: he runs with his shoulders turned to the ball.
+      let f = blend(square);
+      const toMan = toPlayer(holder);
+      if (Math.hypot(h.x - me.x, h.y - me.y) < CHASE_M && Math.abs(angleDiff(f, toMan)) > RECOVER_LOOK) f = toMan + Math.sign(angleDiff(f, toMan)) * RECOVER_LOOK;
+      return quick(f);
     }
     // Off the ball: see man and ball. A zone just watches the ball.
     const man = this.pos[(this.markingNow[key] ?? scene.guards[key])];

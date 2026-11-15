@@ -152,6 +152,9 @@ export interface GuardStyle {
  * - against an elite shooter he stays attached wherever the ball is: help comes from the others.
  * A press stays tight everywhere, and anything else waits for the offence near half court.
  */
+/** How far an on-ball defender stands off his man (m, centre to centre): an arm's length and a bit: both lean in (the defender's stance leans well forward), so their heads stay apart. */
+export const ON_BALL_M = 1.5;
+
 export function guardSpot(man: Pos, ball: Pos, onBall: boolean, pressing: boolean, style: GuardStyle = {}): Pos {
   const dx = HOOP.x - man.x;
   const dy = HOOP.y - man.y;
@@ -159,7 +162,9 @@ export function guardSpot(man: Pos, ball: Pos, onBall: boolean, pressing: boolea
   const fromBall = Math.hypot(man.x - ball.x, man.y - ball.y);
   const halfCourt = !pressing && !onBall && ball.x > HALF_X + 3 && man.x > HALF_X;
   const deny = halfCourt && fromBall < DENY_M && fromBall > 0.5;
-  const wanted = pressing ? (onBall ? 1 : 1.2) : onBall ? 1 : style.tight && halfCourt ? 1 : deny ? 1.3 : Math.max(1.8, Math.min(3.6, 1.2 + fromBall * 0.28));
+  // On the ball: an arm's length off him (he can reach the ball, not take it out of his hands: the
+  // handler keeps it away from him; see HANDLER_ROOM_M in motion.ts).
+  const wanted = pressing ? (onBall ? ON_BALL_M : 1.2) : onBall ? ON_BALL_M : style.tight && halfCourt ? 1 : deny ? 1.3 : Math.max(1.8, Math.min(3.6, 1.2 + fromBall * 0.28));
   const gap = Math.min(wanted, toHoop * 0.6);
   let spot = { x: man.x + (dx / toHoop) * gap, y: man.y + (dy / toHoop) * gap };
   if (deny || (style.tight && halfCourt && fromBall > 0.5)) {

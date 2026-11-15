@@ -6,7 +6,7 @@ import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../src/data/teams
 import { createMatch, stepPossession } from '../src/engine/match';
 import { other, playerOf } from '../src/engine/state';
 import { PACE_M_S, REFS, beatDurations, beatAt, buildScript, isRef, playerKey, type Frame, type Pace, type Script } from '../src/ui/court/animation';
-import { BODY_M, COURT, FORMATIONS, HOOP, MIN_SPACING_M, ZONE, insideCourt } from '../src/ui/court/formations';
+import { BODY_M, COURT, FORMATIONS, HOOP, MIN_SPACING_M, ON_BALL_M, ZONE, insideCourt } from '../src/ui/court/formations';
 import { Motion, angleDiff, facingScene, speedFactor } from '../src/ui/court/motion';
 import { PASS_SPEED } from '../src/ui/court/animation';
 import { CANVAS_H, CANVAS_W, bodyView, project, spriteScale } from '../src/ui/court/render';
@@ -325,7 +325,7 @@ describe('floor spacing and positions', () => {
           if (!p) return;
           zone++;
           // Out on the ball, or in his area, the whole shape shifted towards the ball's side.
-          if (beat.marking?.[k] === holder) expect(apart(p, handler)).toBeLessThan(1.5);
+          if (beat.marking?.[k] === holder) expect(apart(p, handler)).toBeLessThan(ON_BALL_M + 0.1);
           else {
             const norm = script.dir === 1 ? p : { x: COURT.w - p.x, y: p.y };
             expect(apart(norm, { x: ZONE[i][0], y: ZONE[i][1] })).toBeLessThan(2.6);
@@ -349,7 +349,7 @@ describe('floor spacing and positions', () => {
       if (!beat || beat.ball.kind !== 'held') return;
       const handler = beat.players[beat.ball.holder];
       const defenders = Object.entries(beat.players).filter(([k]) => !k.startsWith(`${script.offence}:`) && !isRef(k));
-      expect(Math.min(...defenders.map(([, p]) => apart(p, handler)))).toBeLessThan(1.5);
+      expect(Math.min(...defenders.map(([, p]) => apart(p, handler)))).toBeLessThan(ON_BALL_M + 0.1);
       picked++;
     });
     expect(picked).toBeGreaterThan(50);
@@ -680,7 +680,7 @@ describe('facing', () => {
             if (k === holder && speed > 3.5 && !turningToAct && scene.posting !== k) note('handler faces the way they go', degrees(f, Math.atan2(m.vel[k].y, m.vel[k].x)) < 45);
             if (k === holder && speed < 0.5 && !turningToAct && scene.posting !== k) note('standing handler faces the basket', degrees(f, angleTo(me, hoopFor(k))) < 45);
             if (k !== holder && sameTeam && speed < 1) note('off-ball attackers face the ball', degrees(f, angleTo(me, ball)) < 60);
-            if (!sameTeam && apart(me, m.pos[holder]) < 1.5) note('on-ball defender never turns their back', degrees(f, angleTo(me, m.pos[holder])) < 90);
+            if (!sameTeam && apart(me, m.pos[holder]) < ON_BALL_M + 0.2) note('on-ball defender never turns their back', degrees(f, angleTo(me, m.pos[holder])) < 90);
             const man = script.guards[k];
             if (!sameTeam && man && man !== holder && speed < 1 && apart(me, m.pos[holder]) > 3) note('off-ball defenders see man and ball', degrees(f, angleTo(me, { x: (m.pos[man].x + ball.x) / 2, y: (m.pos[man].y + ball.y) / 2 })) < 60);
           }
@@ -707,7 +707,7 @@ describe('facing', () => {
     expect(tally['off-ball defenders see man and ball']).toBeUndefined();
   }, 60000);
 
-  it('the on-ball defender stands about 1 m away, between the handler and the basket', () => {
+  it('the on-ball defender stands ON_BALL_M off (an arm and a bit), between the handler and the basket', () => {
     let checked = 0;
     eachScript(planWith({ defence: 'man' }), 1, (script) => {
       for (const beat of script.beats) {
@@ -717,7 +717,7 @@ describe('facing', () => {
         const guard = Object.keys(beat.marking ?? {}).find((d) => beat.marking![d] === holder);
         if (!guard) continue;
         checked++;
-        expect(apart(beat.players[guard], beat.players[holder])).toBeCloseTo(1, 1);
+        expect(apart(beat.players[guard], beat.players[holder])).toBeCloseTo(ON_BALL_M, 1);
         expect(apart(beat.players[guard], hoopOf(script))).toBeLessThan(apart(beat.players[holder], hoopOf(script)));
       }
     });

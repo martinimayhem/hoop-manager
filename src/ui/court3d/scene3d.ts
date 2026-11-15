@@ -98,6 +98,8 @@ export class Scene3D {
   private ball: THREE.Mesh;
   private ballShadow: THREE.Mesh;
   private players: Record<string, Player3D> = {};
+  /** Whose pose drew the ball last frame (null: the frame's own ball). */
+  private ballOwner: string | null = null;
   /** The arena round the court: the bowl, courtside, the ribbon board and the crowd. */
   readonly arena: Arena;
   /** Frame time, smoothed (ms), for the performance readout. */
@@ -281,6 +283,11 @@ export class Scene3D {
       for (const [k, rig] of Object.entries(this.players)) rig.root.visible = here.has(k);
       const at = toScene(frame.ball.x, frame.ball.y, frame.ball.z);
       let shown = at;
+      // Who draws the ball: the man who has it, always; otherwise whoever drew it last frame (a shooter
+      // letting it go, a hand easing off it); anyone else only if nobody does. Never someone who has
+      // just lost it over the man who now has it.
+      let owner: string | null = null;
+      const drawn = this.ball.position.clone();
       for (const k of here) {
         let rig = this.players[k];
         if (!rig) {
@@ -291,9 +298,13 @@ export class Scene3D {
         }
         rig.update(k, frame, action, holder, dt, next);
         // The ball in the hands of whoever the pose has holding it.
-        const b = rig.ball(at, dt);
-        if (b !== at) shown = b;
+        const b = rig.ball(at, dt, drawn);
+        if (b !== at && (k === holder || owner === null || (owner !== holder && k === this.ballOwner))) {
+          shown = b;
+          owner = k;
+        }
       }
+      this.ballOwner = owner;
       // Never into the floor: at its lowest the ball rests on it.
       shown = shown.clone().setY(Math.max(BALL_R, shown.y));
       this.ball.position.copy(shown);
