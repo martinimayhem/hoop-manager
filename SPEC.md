@@ -2,12 +2,17 @@
 
 > Working title. A browser-based basketball management game in the spirit of Football Manager:
 > build a squad under a budget, scout opponents, set tactics, and out-coach the other side in fast,
-> watchable matches. Built to play father vs son, or vs AI, across a full season.
+> watchable matches. Play head-to-head against a friend on the same device, or vs AI, across a full
+> season.
 
 ---
 
 ## 1. Purpose and audience
 
+- **Audience:** young basketball fans (about 13 and up) who know the game and want to coach, plus
+  anyone who likes management games. Clear enough for a teenager, deep enough for adults.
+- **Fair play:** no manipulative mechanics: no paid random packs, no energy timers or forced waiting,
+  no guilt-driven streaks or notifications, no pay-to-win.
 - **Modes:** Player vs AI, and Player vs Player on the same device (hot-seat).
 - **Feel:** Quick to play (a match takes about 5–8 minutes including timeouts), fun to watch, and
   **skill-based**: the better manager should win more often, not the one who spent the most on
@@ -63,10 +68,20 @@ To keep skill in the game, attributes interact rather than simply add up:
 - High-usage stars get tired; stamina and rotation matter late in games.
 
 ### 3.3 Player pool
-- Roughly 250 fictional players spread across the leagues, stored as a JSON data file.
-- Names are **playful parodies** of real players (e.g. a nod to the real name, not the real name).
-  Generated once by the AI, then editable by hand.
-- Ratings loosely inspired by each real player's style, so the parody feels recognisable.
+- **Stars:** about 100 hand-made players with **playful parodies** of real players' names (a nod to
+  the real name, never the real name or one letter off it), stored as a JSON data file. Ratings
+  loosely inspired by each real player's style, so the parody feels recognisable.
+- **Everyone else:** generated players ("journeymen"), named from basketball-pun surnames so a
+  generated name can never be a real player's.
+- **How many names are needed** (3 leagues × 8 teams × 12 players):
+  - on rosters: 288;
+  - market at the start (rosters plus about 1.3–1.5× choice for drafts and free agency): about
+    375–430;
+  - new players each season (1–2 rookies per team): 24–48;
+  - over a 10-season career: about 650–900 unique names.
+- **Generator requirement:** at least 10× that many possible names (e.g. 100+ first names × 100+
+  pun surnames), names that don't visibly repeat, and a guaranteed unique result. The generator
+  must never loop forever when names run short (today's 30 × 30 lists can).
 
 ---
 
@@ -79,7 +94,7 @@ To keep skill in the game, attributes interact rather than simply add up:
 - Constraint: at least 2 players per position group (guards / wings / bigs) to stop silly squads.
 - **Draft modes:**
   - *Free draft* (vs AI): buy freely from the market until budget or roster is full.
-  - *Snake draft* (vs son): players alternate picks from a shared pool, so you can't both have the
+  - *Snake draft* (head-to-head): players alternate picks from a shared pool, so you can't both have the
     best player. Both still bound by budget.
 - The AI teams build sensible squads using the same rules.
 
@@ -130,12 +145,14 @@ These form a **counter system** (rock-paper-scissors with nuance), e.g.:
 - Fast tempo favours fit, quick teams; slow tempo favours strong half-court teams.
 
 ### 7.3 In-match decisions
-- **Timeouts:** 3 per team per match. The match pauses; you can change any of the game plan above.
+- **Timeouts:** 2 in the first half, 3 in the second, 1 per overtime (FIBA-style, kept on purpose
+  for pace; everything else follows NBA rules). The match pauses; you can change any of the game plan
+  above.
 - **Substitutions** at timeouts and quarter breaks (plus automatic subs for exhausted or fouled-out
   players, following your rotation).
 - **Live feedback** to read what's working: momentum bar, a mini box score, player fatigue bars, and
   assistant-coach tips. Better staff = clearer tips.
-- **Hot-seat (vs son):** each player has a timeout key (e.g. Player 1 = `Q`, Player 2 = `P`). The
+- **Hot-seat (head-to-head):** each player has a timeout key (e.g. Player 1 = `Q`, Player 2 = `P`). The
   team calling the timeout makes its changes; the other team may also adjust during the same pause.
 
 ### 7.4 Match engine (FM-inspired, loosely)
@@ -144,6 +161,9 @@ For each possession:
 2. Resolve against the defence: matchup quality (attributes), defensive scheme, fatigue, tactics
    execution (head coach), momentum and a controlled amount of randomness.
 3. Outcome: made shot (2/3), miss → rebound contest, turnover, foul → free throws, or fast break.
+   Every shot comes from a **shot zone** (restricted area, paint, mid-range, corner three, above-the-
+   break three) with NBA league-average base odds; the zone decides the points and where the shot
+   is drawn. Rebounds depend on where the ball comes down.
 4. Update fatigue, fouls, stats, momentum and commentary.
 
 **Architecture rule:** the engine is pure logic, separate from the visuals, with a seeded random
@@ -153,8 +173,12 @@ generator. That means:
 - A **balance lab** can run 1,000+ games to check that no single tactic or squad type always wins.
 
 ### 7.5 Presentation
-- **2D top-down court** with 10 player dots (numbers or initials) and the ball. Movement is a
-  simplified animation of each possession (drive, pass, shot, rebound), not a physics simulation.
+- **2D isometric court** with 10 players and the ball. Movement is an animation of each possession
+  (drive, pass, shot, rebound) driven by the engine's events, not a physics simulation. The engine
+  decides every outcome; the animation never changes it (see CLAUDE.md).
+- **Rules and court:** NBA (28.65 × 15.24 m court, 7.24 m three-point arc, 12-minute quarters,
+  6 fouls to foul out), except timeouts (see 7.3).
+- **3D view:** an experiment, kept off the main branch until it looks better than the 2D view.
 - **Commentary feed** with short, fun lines ("Hot Curry pulls up from deep… BANG!").
 - Scoreboard, quarter clock, fouls, timeouts left, momentum bar.
 
@@ -174,7 +198,7 @@ generator. That means:
   - Small transfer window mid-season: sell one player / buy one with the remaining budget
 - League table, top scorers, season awards.
 
-> **Naming note:** parody names are fine for private family use. If this is ever published, use fully
+> **Naming note:** parody names are fine for private use. If this is ever published, use fully
 > fictional names; parodies of real players carry likeness and trademark risk.
 
 ---
@@ -196,18 +220,33 @@ Each phase must be playable and fun before starting the next.
 
 | Phase | What | Done when… |
 |---|---|---|
-| **1. Match engine (text only)** | Possession sim, tactics, counters, fatigue, box score. No graphics. | You can run a match in the console and tactics clearly change outcomes. Balance lab runs 1,000 games. |
-| **2. Playable match** | 2D court, commentary, timeouts, subs, speed setting. Fixed squads. | You and your son enjoy a full 4-quarter match head-to-head. |
-| **3. Draft + budget + scouting** | Player pool, pricing, free and snake draft, fuzzy scouting. | Two different drafting strategies can both win. |
+| **1. Match engine (text only)** ✅ | Possession sim, tactics, counters, fatigue, box score. No graphics. | You can run a match in the console and tactics clearly change outcomes. Balance lab runs 1,000 games. |
+| **2. Playable match** ✅ | 2D court, commentary, timeouts, subs, speed setting. Fixed squads. | Two players enjoy a full 4-quarter match head-to-head. |
+| **3. Draft + budget + scouting** ✅ | Player pool, pricing, free and snake draft, fuzzy scouting. | Two different drafting strategies can both win. |
 | **4. Coaches** | 3 coach roles with real effects. | Spending on staff is a real trade-off vs players. |
 | **5. Season** | Leagues, schedule, AI teams, table, playoffs, injuries, development, saves. | A full season can be played and saved. |
 | **6. Polish** | Sounds, better animations, awards, season 2 carry-over. | — |
+
+### Roadmap after phase 3
+
+Phases 1–3 are done. Next, in this order:
+
+1. **Franchise layer (phases 4–5):** league, schedule, standings, playoffs and saves; player
+   development and aging; coaches; a simple budget for coaching, facilities and scouting. Designed
+   first in `SEASON_SPEC.md`, then built. **Depth ceiling:** about Hoop Land's level. No salary-cap
+   sheets, luxury tax or debt.
+2. **Daily Clutch:** the same late-game scenario for everyone each day (seeded), using the clutch
+   play-calls.
+3. **Match feel:** arcade banners for big plays ("ALLEY-OOP!"), a play-of-the-game replay, a
+   reacting crowd.
+4. **Team codes:** save a team and tactics as a code to play an asynchronous head-to-head.
+5. **Goals:** achievements, board goals per match and season.
 
 ---
 
 ## 11. Success criteria
 
-- A match vs the AI or your son takes **under 10 minutes** and you want to play another.
+- A match vs the AI or a friend takes **under 10 minutes** and you want to play another.
 - In the balance lab, **no single tactic wins more than ~60%** of games between equal squads.
 - A well-drafted cheaper squad with the right tactic can beat a more expensive squad.
 - Changing tactics at a timeout **visibly changes** what happens on court within a few possessions.
