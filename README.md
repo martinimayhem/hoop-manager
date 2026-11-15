@@ -2,7 +2,8 @@
 
 A browser basketball management game: draft a squad on a budget, scout the opponent, set your
 tactics and out-coach the other bench. Play against the computer or head-to-head on one keyboard.
-See [SPEC.md](SPEC.md) for the full design.
+Made for young basketball fans (about 13 and up) who want to coach, and for anyone who likes
+management games. See [SPEC.md](SPEC.md) for the full design.
 
 ## Play
 
@@ -30,7 +31,8 @@ Open the address it prints (usually http://localhost:5173).
 | `P` | Timeout, Player 2 (away, blue), hot-seat only |
 | `Space` | Pause / resume |
 
-Each team has 3 timeouts. A timeout happens at the next dead ball; both coaches may adjust during it.
+Each team has 2 timeouts in the first half, 3 in the second and 1 per overtime. A timeout happens at
+the next dead ball; both coaches may adjust during it.
 
 ## Developer commands
 
@@ -49,3 +51,14 @@ Each team has 3 timeouts. A timeout happens at the next dead ball; both coaches 
 - `src/ui/`: React screens, canvas court, live-match controller
 - `src/data/`: `players.json` (the market) and the two quick-match teams
 - `scripts/`: terminal match and balance lab
+
+## Roadmap
+
+Next up is the franchise layer: leagues, a full season with playoffs and saves, player development,
+coaches and a simple budget. After that: a Daily Clutch challenge, arcade-style match moments and
+team codes for head-to-head play at a distance. See the roadmap in [SPEC.md](SPEC.md).
+
+## Rights
+
+All rights reserved. The code is visible for reference; please ask before reusing it. All player
+names are fictional; any resemblance to real players is meant as affectionate parody.
