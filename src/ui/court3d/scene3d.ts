@@ -23,6 +23,7 @@ import {
 import { RIM_HEIGHT, isRef, type BallAction, type Frame } from '../court/animation';
 import type { Fx } from '../match/controller';
 import { Arena } from './arena';
+import { setHairParts } from './hair3d';
 import { Director } from './director';
 import {
   BASELINE_HASH,
@@ -60,11 +61,19 @@ let loading: Promise<Assets> | null = null;
 export function loadAssets(): Promise<Assets> {
   loading ??= (async () => {
     const loader = new GLTFLoader();
-    const [character, clipFile, info] = await Promise.all([
+    const [character, clipFile, info, hair] = await Promise.all([
       loader.loadAsync('/3d/player.glb'),
       loader.loadAsync('/3d/clips.glb'),
       fetch('/3d/clips.json').then((r) => r.json() as Promise<Record<string, ClipInfo>>),
+      loader.loadAsync('/3d/hair.glb'),
     ]);
+    // The pack's hairstyles and beard (CC0), by name, for the players' heads.
+    const parts: Record<string, THREE.BufferGeometry> = {};
+    hair.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) parts[mesh.name] = mesh.geometry;
+    });
+    setHairParts(parts);
     return { character, clips: clipFile.animations, info };
   })();
   return loading;

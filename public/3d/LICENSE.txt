@@ -1,3 +1,4 @@
-player.glb and clips.glb are built from Quaternius packs (Universal Base Characters, Universal Animation
-Library; Standard versions), released under CC0 1.0 Universal (public domain):
+player.glb, hair.glb and clips.glb are built from Quaternius packs (Universal Base Characters, Universal
+Animation Library; Standard versions), released under CC0 1.0 Universal (public domain):
 https://creativecommons.org/publicdomain/zero/1.0/  -  https://quaternius.com
+(Each zip's own licence file, License_Standard.txt: "CC0 1.0 Universal (CC0 1.0) Public Domain Dedication".)

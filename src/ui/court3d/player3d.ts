@@ -9,6 +9,8 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RIM_HEIGHT, type BallAction, type Frame } from '../court/animation';
 import { SHOTS } from '../court/motion';
+import type { FacialHair, Hairstyle } from '../looks';
+import { buildHair } from './hair3d';
 
 /** Court metres (x along, y across, z up) to the 3D scene (x along, y up, z across). */
 export function toScene(x: number, y: number, z = 0): THREE.Vector3 {
@@ -38,8 +40,13 @@ export interface PlayerLook {
   /** Build: about 0.9 (wiry) to 1.2 (heavy), from looks.ts. */
   girth: number;
   skin: string;
-  /** Null: bald or shaved, no hair. */
-  hair: string | null;
+  /** The hair colour (for the hair, the beard and a shaved head's shadow). */
+  hair: string;
+  /** From the player's appearance record (looks.ts), the same one his portrait is drawn from. */
+  hairstyle: Hairstyle;
+  facialHair: FacialHair;
+  /** A headband, in the team colour, as on the 2D court. */
+  headband?: boolean;
   jersey: string;
   /** The number's colour. */
   jerseyText: string;
@@ -264,8 +271,12 @@ int jerseyAt(float hy, float side, bool front) {
   return 1;
 }`;
 
+/** From this height (model metres, bind pose) up, the head and neck: smooth-shaded. */
+const HEAD_FROM_Y = '1.565';
+
 function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THREE.Material {
-  const m = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+  // Faceted, except the head and neck: smooth, so the face reads as a face (see normal below).
+  const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const h = bounds.max.y - bounds.min.y;
   const official = !!look.official;
   m.onBeforeCompile = (shader) => {
@@ -316,6 +327,12 @@ function bodyMaterial(look: PlayerLook, bounds: THREE.Box3, front: number): THRE
       .replace(
         '#include <common>',
         `#include <common>\nvarying vec3 vBind;\nuniform vec3 uSkin, uJersey, uShorts, uTrim;\nuniform float uFloor, uHeight, uFront, uOfficial, uHasNumber;\nuniform sampler2D uNumber;\n${JERSEY_GLSL}`,
+      )
+      .replace(
+        '#include <normal_fragment_begin>',
+        `#include <normal_fragment_begin>
+        // Flat-shaded below the neck (the low-poly look); the head and neck smooth.
+        if (!(vBind.y > ${HEAD_FROM_Y} && abs(vBind.x) < 0.11)) normal = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));`,
       )
       .replace(
         'vec4 diffuseColor = vec4( diffuse, opacity );',
@@ -530,7 +547,8 @@ export class Player3D {
       let found: THREE.SkinnedMesh | null = null;
       model.traverse((o) => {
         const sm = o as THREE.SkinnedMesh;
-        if (sm.isSkinnedMesh && !found) found = sm;
+        // The body itself: the skinned mesh with the most vertices (the others are the eyes and brows).
+        if (sm.isSkinnedMesh && (!found || sm.geometry.getAttribute('position').count > (found as THREE.SkinnedMesh).geometry.getAttribute('position').count)) found = sm;
       });
       return found as THREE.SkinnedMesh | null;
     })();
@@ -544,10 +562,9 @@ export class Player3D {
       mesh.frustumCulled = false;
       mesh.castShadow = true;
       const name = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).name;
-      if (name === 'MI_Hair_1') {
-        mesh.visible = !!look.hair;
-        mesh.material = new THREE.MeshLambertMaterial({ color: look.hair ?? '#000000', flatShading: true });
-      } else mesh.material = name === 'MI_Eyes' ? new THREE.MeshBasicMaterial({ color: 0x111111 }) : bodyMaterial(look, bounds, front);
+      // The model's own brows are left out: the head is skin, hair and two small dark eyes.
+      if (name === 'MI_Hair_1') mesh.visible = false;
+      else mesh.material = name === 'MI_Eyes' ? new THREE.MeshBasicMaterial({ color: 0x141010 }) : bodyMaterial(look, bounds, front);
     });
     // As tall as the player is.
     this.scale = look.heightM / (bounds.max.y - bounds.min.y);
@@ -628,6 +645,24 @@ export class Player3D {
     const leg = (s: 'l' | 'r', side: 1 | -1): Arm => ({ upper: this.bones[`thigh_${s}`], lower: this.bones[`calf_${s}`], hand: this.bones[`foot_${s}`], side });
     this.legs = { l: leg('l', -1), r: leg('r', 1) };
     this.buildShoes(look);
+    // Hair, beard and headband: real meshes, rigid on the head bone, built over the head's own shape
+    // in the bind pose (the body's positions) and carried into the bone's space.
+    if (body) {
+      const hair = buildHair(body.geometry, front, {
+        hairstyle: look.hairstyle,
+        facialHair: look.facialHair,
+        hair: look.hair,
+        skin: look.skin,
+        headband: look.headband && !look.official ? look.jersey : null,
+      });
+      const i = body.skeleton.bones.findIndex((b) => b.name === 'Head');
+      if (hair && i >= 0) {
+        hair.applyMatrix4(body.skeleton.boneInverses[i].clone().multiply(body.bindMatrix));
+        const mesh = new THREE.Mesh(hair, new THREE.MeshLambertMaterial({ vertexColors: true }));
+        mesh.castShadow = true;
+        body.skeleton.bones[i].add(mesh);
+      }
+    }
   }
 
   /**

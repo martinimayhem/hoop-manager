@@ -20,10 +20,17 @@ const movelab = MoveLab && new URLSearchParams(window.location.search).has('move
 // Dev only: ?film shows every step of a dribble, a pass, a jump shot and a dunk in 3D, frame by frame.
 const Court3DFilm = import.meta.env.DEV ? lazy(() => import('./dev/Court3DFilm').then((m) => ({ default: m.Court3DFilm }))) : null;
 const film = Court3DFilm && new URLSearchParams(window.location.search).has('film');
+// Dev only: ?heads3d shows the 3D heads close up (every hairstyle and skin tone; =match: a match's ten players).
+const Heads3D = import.meta.env.DEV ? lazy(() => import('./dev/Heads3D').then((m) => ({ default: m.Heads3D }))) : null;
+const heads3d = Heads3D && new URLSearchParams(window.location.search).has('heads3d');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {capture && Capture ? (
+    {heads3d && Heads3D ? (
+      <Suspense fallback={null}>
+        <Heads3D />
+      </Suspense>
+    ) : capture && Capture ? (
       <Suspense fallback={null}>
         <Capture />
       </Suspense>
