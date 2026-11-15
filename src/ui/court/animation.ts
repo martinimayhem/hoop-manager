@@ -4,6 +4,7 @@
 // running, and works out where the ball is from whoever holds it. Pure: no DOM, no timing. Everything is court space: metres on
 // the NBA court (engine/court.ts), plus height for the ball; internally everything is laid out as if the offence attacks to the right.
 
+import type { FakeCue } from './fakes';
 import { FREE_THROW_LINE_X, HALF_X, KEY_HALF_WIDTH, fromHoop, shotPoint } from '../../engine/court';
 import { other } from '../../engine/state';
 import { POSITIONS, type ReboundLanding, type DefenceScheme, type KeyMatchup, type OffensiveFocus, type Position, type ShotType, type Side, type Tempo, type TimedEvent, type Transition } from '../../engine/types';
@@ -45,6 +46,8 @@ export interface Frame {
   stance?: Record<string, number>;
   /** How far each player's hands are up, 0..1; anyone missing has them down. */
   reach?: Record<string, number>;
+  /** A fake under way (drawing only, see fakes.ts): who, what, and how far through. */
+  fake?: FakeCue | null;
 }
 
 /** Chest: flat and fast. Bounce: off the floor past a defender. Lob: up and over, for long or crowded passes. */
@@ -247,8 +250,11 @@ const MID: Spot[] = [[4.27, -2.8], [4.75, 0], [4.27, 2.8]].map(([b, a]) => hoopS
 const POST: Spot[] = [[1.73, -1.8], [1.73, 1.8]].map(([b, a]) => hoopSpot(b, a));
 /** The shooter's feet just behind the free-throw line. */
 const FT_SPOT: Pos = { x: FREE_THROW_LINE_X - 0.15, y: MID_Y };
-/** Free-throw lane places, from the basket out (x), either side of the lane (y). */
-const LANE_X = [1.03, 1.93, 2.83].map((b) => HOOP_X - b);
+/**
+ * Free-throw lane places, from the basket out (x), either side of the lane (y): the middle of each
+ * marked space (NBA: 8-11, 11-14 and 14-17 ft from the end line), the hoop 1.6 m in from it.
+ */
+const LANE_X = [2.9, 3.81, 4.72].map((fromEnd) => COURT.w - fromEnd);
 const LANE_Y = [MID_Y - KEY_HALF_WIDTH - 0.46, MID_Y + KEY_HALF_WIDTH + 0.46];
 /** On the last free throw the lane steps in as the ball is released. */
 const STEP_IN_M = 0.9;
@@ -1419,11 +1425,14 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     if (d1) out[d1] = { x: LANE_X[2], y: at[d1].y < MID_Y ? LANE_Y[0] : LANE_Y[1] };
     if (o0) out[o0] = { x: LANE_X[1], y: LANE_Y[0] };
     if (o1) out[o1] = { x: LANE_X[1], y: LANE_Y[1] };
+    // Off the lane, behind the arc. The defence: one at the top to box out the shooter, one on a wing
+    // for a long rebound. The offence: one on the other wing, and a safety just past the top of the
+    // arc, back for defence.
     const behind: [string | undefined, Pos][] = [
       [defs[0], fromHoop(7.71, 1.81)],
-      [defs[1], fromHoop(11.32, -1.99)],
-      [offs[0], fromHoop(7.57, -4.04)],
-      [offs[1], fromHoop(11.71, 2.4)],
+      [defs[1], fromHoop(7.6, -4.6)],
+      [offs[0], fromHoop(7.57, 4.3)],
+      [offs[1], fromHoop(9.6, -1.6)],
     ];
     for (const [k, p] of behind) if (k) out[k] = p;
     return out;

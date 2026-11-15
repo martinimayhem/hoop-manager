@@ -30,10 +30,16 @@ const Dribble3D = import.meta.env.DEV ? lazy(() => import('./dev/Dribble3D').the
 const dribble3d = Dribble3D && new URLSearchParams(window.location.search).has('dribble3d');
 const DribbleCheck = import.meta.env.DEV ? lazy(() => import('./dev/DribbleCheck').then((m) => ({ default: m.DribbleCheck }))) : null;
 const dribblecheck = DribbleCheck && new URLSearchParams(window.location.search).has('dribblecheck');
+const JointCheck = import.meta.env.DEV ? lazy(() => import('./dev/JointCheck').then((m) => ({ default: m.JointCheck }))) : null;
+const jointcheck = JointCheck && new URLSearchParams(window.location.search).has('jointcheck');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {dribblecheck && DribbleCheck ? (
+    {jointcheck && JointCheck ? (
+      <Suspense fallback={null}>
+        <JointCheck />
+      </Suspense>
+    ) : dribblecheck && DribbleCheck ? (
       <Suspense fallback={null}>
         <DribbleCheck />
       </Suspense>

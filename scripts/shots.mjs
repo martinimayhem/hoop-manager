@@ -10,7 +10,7 @@ import { createServer } from 'vite';
 const argv = process.argv.slice(2);
 const page = argv[0];
 if (!page) {
-  console.error('usage: npm run shots -- <clips3d|dribble3d> [--out <dir>]');
+  console.error('usage: npm run shots -- <clips3d|dribble3d|film> [--out <dir>]');
   process.exit(1);
 }
 const dir = resolve(argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : join('frames', page));
@@ -31,10 +31,7 @@ try {
   await tab.goto(`${base}?${page}`);
   for (;;) {
     const s = await tab.evaluate(() => window.__shots && { done: window.__shots.done, error: window.__shots.error });
-    if (s?.done) {
-      if (s.error) throw new Error(s.error);
-      break;
-    }
+    if (s?.done) break;
     await new Promise((r) => setTimeout(r, 300));
   }
   const n = await tab.evaluate(() => window.__shots.images.length);
@@ -43,7 +40,13 @@ try {
     mkdirSync(dirname(join(dir, img.name)), { recursive: true });
     writeFileSync(join(dir, img.name), Buffer.from(img.png.split(',')[1], 'base64'));
   }
+  // What each picture shows, if the page says (the film's captions).
+  const labels = await tab.evaluate(() => window.__shots.images.filter((i) => i.label).map((i) => `${i.name}  ${i.label}`));
+  if (labels.length) writeFileSync(join(dir, 'labels.txt'), labels.join('\n') + '\n');
   console.log(`Saved ${n} images to ${dir}`);
+  // A page that found something wrong (a check that failed): its files are saved, then it fails.
+  const error = await tab.evaluate(() => window.__shots.error);
+  if (error) throw new Error(error);
 } catch (e) {
   console.error(`shots: ${e instanceof Error ? e.message : e}`);
   process.exitCode = 1;

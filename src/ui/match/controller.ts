@@ -16,6 +16,7 @@ import type { Controller } from '../../game/draft';
 import { HALF_X } from '../../engine/court';
 import { COURT, beatAt, beatDurations, buildScript, playerKey, type BallAction, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
 import { GATHER_STEPS_M, Motion, facingScene } from '../court/motion';
+import { fakeAt, planFakes, type FakeCue, type PlannedFake } from '../court/fakes';
 import { clockString } from '../labels';
 import { excitement } from './highlights';
 
@@ -188,6 +189,13 @@ export interface TeamView {
   coachTechnicals: number;
 }
 
+/** A fake only draws a bite from a defender this close to the faker (m). */
+const FAKE_BITE_M = 2.6;
+/** A defender sold on a pump fake leaves the floor this much (m). */
+const PUMP_BITE_HOP_M = 0.3;
+/** A pump or pass fake is announced this long before it starts (s): time to catch the last dribble. */
+const FAKE_WARN_S = 0.9;
+
 export class LiveMatch {
   readonly s: MatchState;
   readonly names: Names;
@@ -261,6 +269,9 @@ export class LiveMatch {
   private scriptEvents: TimedEvent[] = [];
   private durations: number[] = [];
   private beatEnds: number[] = [];
+  /** The possession's fakes (drawing only), planned for these beat timings. */
+  private fakes: PlannedFake[] = [];
+  private fakesFor: number[] | null = null;
   /** How long the pass about to be thrown has waited for its receiver to get over half court. */
   private passWait = 0;
   /** The script in which the offence has had the ball over half court: it may not go back. */
@@ -592,11 +603,71 @@ export class LiveMatch {
       timeScale: rate * speedScale,
       shooter: beat.ball.kind === 'fromPlayer' && beat.ball.style !== 'throw' && u < 0.85 ? beat.ball.from : null,
     };
+    this.showFake(sc, beat, speedScale);
     if (this.firedBeats >= sc.beats.length) this.endPossession();
   }
 
   frame(): Frame | null {
     return this.lastFrame;
+  }
+
+  /**
+   * A fake, if one is under way (drawing only: see fakes.ts). The frame says who is faking what and
+   * how far through; the ball goes with it (up on a pump fake, out on a pass fake); and the man
+   * guarding him bites, trying to stop what he is shown: hands up and a hop at a pump fake, a hand out
+   * at a pass fake, standing up out of his stance at a hesitation.
+   */
+  private showFake(sc: Script, beat: Beat, speedScale: number): void {
+    const f = this.lastFrame;
+    if (!f) return;
+    if (this.fakesFor !== this.beatEnds) {
+      this.fakesFor = this.beatEnds;
+      this.fakes = planFakes(sc.beats, this.beatEnds, speedScale * (this.slowMo ? 1 / 1.8 : 1), `${this.possessionCount}|${sc.quarter}|${sc.clockStart.toFixed(2)}`);
+    }
+    // Under way, or (a pump or pass fake) coming: announced a moment ahead (k below 0), so the drawing
+    // can end the dribble and have the ball in his hands when it starts.
+    const plan = fakeAt(this.fakes, this.t) ?? this.fakes.find((x) => (x.kind === 'pump' || x.kind === 'pass') && this.t >= x.start - FAKE_WARN_S && this.t < x.start) ?? null;
+    if (!plan || this.holder !== plan.key || beat.dead) {
+      f.fake = null;
+      return;
+    }
+    const k = (this.t - plan.start) / (plan.end - plan.start);
+    const me = f.players[plan.key];
+    if (!me) return;
+    const cue: FakeCue = { kind: plan.kind, key: plan.key, k };
+    if (k < 0) {
+      f.fake = cue;
+      return;
+    }
+    const bell = Math.sin(Math.PI * k);
+    if (plan.kind === 'pump') f.ball = { ...f.ball, z: f.ball.z + 0.75 * bell };
+    if (plan.kind === 'pass' && plan.to && f.players[plan.to]) {
+      // Shown the other way: the real pass's line turned well round, to the side it is not going.
+      const r = f.players[plan.to];
+      const a = Math.atan2(r.y - me.y, r.x - me.x) + (this.possessionCount % 2 ? 1 : -1) * 1.4;
+      cue.toward = { x: me.x + Math.cos(a) * 4, y: me.y + Math.sin(a) * 4 };
+      f.ball = { ...f.ball, x: f.ball.x + Math.cos(a) * 0.3 * bell, y: f.ball.y + Math.sin(a) * 0.3 * bell };
+    }
+    f.fake = cue;
+    // His man: the one guarding him, or else the nearest opponent; only if he is close enough to bite.
+    const team = plan.key.slice(0, plan.key.indexOf(':') + 1);
+    const guard =
+      Object.keys(beat.marking ?? {}).find((d) => beat.marking![d] === plan.key) ??
+      Object.keys(f.players)
+        .filter((k2) => !k2.startsWith(team) && !k2.startsWith('ref'))
+        .sort((x, y) => Math.hypot(f.players[x].x - me.x, f.players[x].y - me.y) - Math.hypot(f.players[y].x - me.x, f.players[y].y - me.y))[0];
+    const g = guard ? f.players[guard] : null;
+    if (!guard || !g || Math.hypot(g.x - me.x, g.y - me.y) > FAKE_BITE_M) return;
+    // He reacts a moment after the fake starts, and is fully sold at its height.
+    const sold = Math.max(0, Math.sin(Math.PI * Math.max(0, Math.min(1, (k - 0.12) / 0.8))));
+    if (plan.kind === 'pump') {
+      f.reach = { ...f.reach, [guard]: Math.max(f.reach?.[guard] ?? 0, sold) };
+      f.lift = { ...f.lift, [guard]: Math.max(f.lift?.[guard] ?? 0, PUMP_BITE_HOP_M * sold) };
+    } else if (plan.kind === 'pass') {
+      f.reach = { ...f.reach, [guard]: Math.max(f.reach?.[guard] ?? 0, 0.7 * sold) };
+    } else if (plan.kind === 'hesi' && f.stance?.[guard]) {
+      f.stance = { ...f.stance, [guard]: f.stance[guard] * (1 - 0.6 * sold) };
+    }
   }
 
   /** Player key of whoever has the ball right now (null while it's in the air). */
@@ -617,12 +688,27 @@ export class LiveMatch {
   }
 
   /** What the ball does next, and how soon (real seconds): a view can show a shooter gathering for it. */
-  upcomingAction(): { action: BallAction; in: number } | null {
+  upcomingAction(): { action: BallAction; in: number; shot?: { action: BallAction; in: number } } | null {
     const sc = this.script;
     if (!sc) return null;
     const { index } = beatAt(sc, this.durations, this.t);
     if (index + 1 >= sc.beats.length) return null;
-    return { action: sc.beats[index + 1].ball, in: Math.max(0, this.beatEnds[index] - this.t) };
+    // The holder's own shot, if he keeps the ball until it (a few short beats on): the drawing gathers
+    // for it before it is the very next beat.
+    let shot: { action: BallAction; in: number } | undefined;
+    const holder = (() => {
+      const b = sc.beats[index].ball;
+      return b.kind === 'held' ? b.holder : null;
+    })();
+    for (let j = index + 1; holder && j < Math.min(sc.beats.length, index + 4); j++) {
+      const b = sc.beats[j].ball;
+      if (b.kind === 'fromPlayer' && b.from === holder) {
+        shot = { action: b, in: Math.max(0, this.beatEnds[j - 1] - this.t) };
+        break;
+      }
+      if (!(b.kind === 'held' && b.holder === holder)) break;
+    }
+    return { action: sc.beats[index + 1].ball, in: Math.max(0, this.beatEnds[index] - this.t), shot };
   }
 
   // ---- Internals ------------------------------------------------------------

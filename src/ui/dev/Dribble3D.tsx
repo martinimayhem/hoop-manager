@@ -24,10 +24,10 @@ const SHOW_S = 2;
  * defender, and the ball bounce the way he is going.
  */
 const CASES = [
-  { name: 'standing', speed: 0, dir: 0, def: { x: 1.4, y: -0.45 } },
-  { name: 'walking', speed: 1.6, dir: 0, def: { x: 1.4, y: 0.5 } },
+  { name: 'standing', speed: 0, dir: 0, def: { x: 1.6, y: -0.45 } },
+  { name: 'walking', speed: 1.6, dir: 0, def: { x: 1.6, y: 0.5 } },
   { name: 'sprinting', speed: 6.5, dir: 0, def: { x: 1.8, y: -0.45 } },
-  { name: 'sliding sideways', speed: 2.5, dir: Math.PI / 2, def: { x: 1.4, y: -0.3 } },
+  { name: 'sliding sideways', speed: 2.5, dir: Math.PI / 2, def: { x: 1.6, y: -0.3 } },
 ];
 const KIT = TEAM_COLOURS[0];
 const DEF_KIT = TEAM_COLOURS[1];
@@ -68,6 +68,9 @@ export function Dribble3D() {
         const sg = sheet.getContext('2d')!;
         const catches: { gap: number; rising: number; height: number }[] = [];
         let lastPhase = '';
+        /** The ball as drawn, the last two frames; each bounce: where it hit against his feet, and its speed across in and out. */
+        const trail: THREE.Vector3[] = [];
+        const bounces: { ahead: number; out: number; turn: number; dv: number }[] = [];
         let t = 0;
         let shot = 0;
         const steps = Math.round((WARM_S + SHOW_S) / DT);
@@ -93,11 +96,27 @@ export function Dribble3D() {
           scene.render(frame, action, key, DT);
           if (capture) {
             g.drawImage(c3.current!, 0, BANNER, W, H);
-            // And straight on from in front: how far out to his side the ball is, against his legs.
-            scene.devCamera = { from: new THREE.Vector3(at.x + 4.5, 1.0, at.z), to: new THREE.Vector3(at.x, 0.7, at.z) };
+            // And from above, in front: where the ball bounces against his feet (front, behind, out).
+            scene.devCamera = { from: new THREE.Vector3(at.x + 2.2, 4.6, at.z + 0.6), to: new THREE.Vector3(at.x, 0.2, at.z) };
             scene.render(frame, action, key, 0);
             g.drawImage(c3.current!, W, BANNER, W, H);
           }
+          // A bounce: coming down, then going up, at the floor. Where, against his feet (ahead of his front
+          // toe, out from his middle, in his facing +x), and the ball's speed across before and after.
+          const bnow = scene.ballDrawn;
+          if (trail.length === 2 && t >= WARM_S) {
+            const [p0, p1] = trail;
+            if (p1.y < 0.2 && p1.y <= p0.y && bnow.y > p1.y) {
+              const rig = scene.rigOf(key)!;
+              const toes = Math.max(rig.boneAt('ball_l').x, rig.boneAt('ball_r').x) - at.x;
+              const vin = new THREE.Vector2(p1.x - p0.x, p1.z - p0.z).divideScalar(DT);
+              const vout = new THREE.Vector2(bnow.x - p1.x, bnow.z - p1.z).divideScalar(DT);
+              const turn = vin.length() > 0.05 && vout.length() > 0.05 ? (Math.acos(Math.max(-1, Math.min(1, vin.dot(vout) / (vin.length() * vout.length())))) * 180) / Math.PI : 0;
+              bounces.push({ ahead: p1.x - at.x - toes, out: p1.z - at.z, turn, dv: vout.clone().sub(vin).length() });
+            }
+          }
+          trail.push(bnow.clone());
+          if (trail.length > 2) trail.shift();
           const info = scene.rigOf(key)?.dribbleInfo;
           if (info && t >= WARM_S && lastPhase === 'flight' && info.phase !== 'flight') catches.push({ gap: info.gap, rising: info.rising, height: info.ball.y });
           lastPhase = info?.phase ?? '';
@@ -121,6 +140,10 @@ export function Dribble3D() {
         const line = `${c.name} (${c.speed} m/s): ${catches.length} catches in 2 s; ball met the palm at most ${(worst * 100).toFixed(1)} cm off; still rising ${catches.map((k) => k.rising.toFixed(2)).join(', ')} m/s as the hand met it; ball centre at the catch ${catches.map((k) => k.height.toFixed(2)).join(', ')} m (he is ${LOOK.heightM} m)`;
         summary.push(line);
         console.log(line);
+        console.log(
+          `  bounces: ` +
+            bounces.map((b) => `${(b.ahead * 100).toFixed(0)} cm ${b.ahead >= 0 ? 'ahead of' : 'behind'} his front toe, ${(Math.abs(b.out) * 100).toFixed(0)} cm out to his ${b.out >= 0 ? 'right' : 'left'}, turned ${b.turn.toFixed(0)}°, speed across changed ${b.dv.toFixed(2)} m/s`).join(' | '),
+        );
       }
       setStatus('done');
       window.__shots = { done: true, images, error: undefined };

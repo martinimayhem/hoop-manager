@@ -38,6 +38,8 @@ export function Court3DFilm() {
   useEffect(() => {
     let cancelled = false;
     const pause = () => new Promise((r) => setTimeout(r, 30));
+    // For `npm run shots -- film`: every frame, saved by move and time.
+    window.__shots = { done: false, images: [] };
     (async () => {
       const assets = await loadAssets();
       const canvas = canvasRef.current;
@@ -112,7 +114,14 @@ export function Court3DFilm() {
         const p = m.frame()?.players[k];
         return p ? toScene(p.x, p.y) : new THREE.Vector3();
       };
-      const arms = (k: string) => scene.rigOf(k)?.state.arms || '–';
+      const arms = (k: string) => {
+        const rig = scene.rigOf(k) as unknown as { state: { arms: string }; ballInPalm(s: 'l' | 'r'): THREE.Vector3; drib: { pos: THREE.Vector3 } | null } | null;
+        if (!rig) return '–';
+        // How far the drawn ball is from each palm (cm), and the dribble model's ball from the drawn one.
+        const b = scene.ballDrawn;
+        const g = (['l', 'r'] as const).map((s) => `${s} ${(rig.ballInPalm(s).distanceTo(b) * 100).toFixed(0)}`).join(' ');
+        return `${rig.state.arms || '–'} [palm ${g}${rig.drib ? ` · model ${(rig.drib.pos.distanceTo(b) * 100).toFixed(0)}` : ''}]`;
+      };
       const out: Strip[] = [];
       const say = async (s: string) => {
         if (!cancelled) setStatus(s);
@@ -248,14 +257,15 @@ export function Court3DFilm() {
         return false;
       });
       if (at4 >= 0) {
-        // From a moment before the take-off.
-        replay(at4 - 18);
+        // From his last steps before it (the gather), through the plant and the jump, to the landing.
+        replay(at4 - 42);
         scene.only = new Set([dunker]);
         const at = posOf(dunker);
         const dir = Math.atan2(dunkRim.z - at.z, dunkRim.x - at.x);
         // Far enough back to have him and the rim in the picture, following him.
-        const shots = film(1.7, 0.1, () => sideCam(posOf(dunker).lerp(dunkRim, 0.35), dir, 5.6, 2.1), () => arms(dunker));
-        out.push({ title: `Dunk: ${dunker}`, note: 'A frame every 0.1 s from 0.3 s before the take-off. Side on to the rim.', shots });
+        const drawnAt = () => scene.rigOf(dunker)?.root.position.clone().setY(0) ?? posOf(dunker);
+        const shots = film(2.2, 0.08, () => sideCam(drawnAt().lerp(dunkRim, 0.15), dir, 7.5, 1.8), () => `${arms(dunker)} · up ${(scene.rigOf(dunker)?.root.position.y ?? 0).toFixed(2)} m`);
+        out.push({ title: `Dunk: ${dunker}`, note: 'A frame every 0.08 s from 0.7 s before the shot: the last steps, the plant, the jump. Side on to the rim.', shots });
       }
 
       scene.only = null;
@@ -264,7 +274,15 @@ export function Court3DFilm() {
         setStrips(out);
         setStatus(`Seed ${seed}: ${out.length} moves filmed.`);
       }
-    })().catch((e: unknown) => setStatus(String(e)));
+      const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      window.__shots = {
+        done: true,
+        images: out.flatMap((st, i) => st.shots.map((f) => ({ name: `${i + 1}-${slug(st.title.split(':')[0])}/${f.t.toFixed(2)}s.jpg`, png: f.url, label: f.label }))),
+      };
+    })().catch((e: unknown) => {
+      setStatus(String(e));
+      window.__shots = { done: true, images: [], error: String(e) };
+    });
     return () => {
       cancelled = true;
     };

@@ -14,6 +14,7 @@
     "frames": "node scripts/frames.mjs",
     "heads": "node scripts/heads.mjs",
     "shots": "node scripts/shots.mjs",
+    "joints": "node scripts/shots.mjs jointcheck --out frames/jointcheck",
     "retarget": "node scripts/retarget-mixamo.mjs"
   },
   "devDependencies": {

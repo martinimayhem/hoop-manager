@@ -23,7 +23,7 @@ const ANGLE_NAMES = ['front', '3/4', 'side', 'back'];
 
 declare global {
   interface Window {
-    __shots?: { done: boolean; images: { name: string; png: string }[]; error?: string };
+    __shots?: { done: boolean; images: { name: string; png: string; label?: string }[]; error?: string };
   }
 }
 
