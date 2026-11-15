@@ -12,7 +12,9 @@
     "match": "tsx scripts/play-match.ts",
     "lab": "tsx scripts/balance-lab.ts",
     "frames": "node scripts/frames.mjs",
-    "heads": "node scripts/heads.mjs"
+    "heads": "node scripts/heads.mjs",
+    "shots": "node scripts/shots.mjs",
+    "retarget": "node scripts/retarget-mixamo.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

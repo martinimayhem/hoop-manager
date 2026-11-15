@@ -23,10 +23,23 @@ const film = Court3DFilm && new URLSearchParams(window.location.search).has('fil
 // Dev only: ?heads3d shows the 3D heads close up (every hairstyle and skin tone; =match: a match's ten players).
 const Heads3D = import.meta.env.DEV ? lazy(() => import('./dev/Heads3D').then((m) => ({ default: m.Heads3D }))) : null;
 const heads3d = Heads3D && new URLSearchParams(window.location.search).has('heads3d');
+// Dev only: ?clips3d plays each Mixamo clip on the base body; ?dribble3d films one player dribbling at three speeds.
+const Clips3D = import.meta.env.DEV ? lazy(() => import('./dev/Clips3D').then((m) => ({ default: m.Clips3D }))) : null;
+const clips3d = Clips3D && new URLSearchParams(window.location.search).has('clips3d');
+const Dribble3D = import.meta.env.DEV ? lazy(() => import('./dev/Dribble3D').then((m) => ({ default: m.Dribble3D }))) : null;
+const dribble3d = Dribble3D && new URLSearchParams(window.location.search).has('dribble3d');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {heads3d && Heads3D ? (
+    {clips3d && Clips3D ? (
+      <Suspense fallback={null}>
+        <Clips3D />
+      </Suspense>
+    ) : dribble3d && Dribble3D ? (
+      <Suspense fallback={null}>
+        <Dribble3D />
+      </Suspense>
+    ) : heads3d && Heads3D ? (
       <Suspense fallback={null}>
         <Heads3D />
       </Suspense>

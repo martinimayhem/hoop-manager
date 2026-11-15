@@ -48,7 +48,7 @@ import {
   SUB_BOX,
 } from '../court/markings';
 import { TEAM_COLOURS } from '../labels';
-import { BALL_R, Player3D, toScene, type ClipInfo, type PlayerLook, type Upcoming } from './player3d';
+import { BALL_R, Player3D, setMixamoClips, toScene, type ClipInfo, type PlayerLook, type Upcoming } from './player3d';
 
 export interface Assets {
   character: Awaited<ReturnType<GLTFLoader['loadAsync']>>;
@@ -61,12 +61,15 @@ let loading: Promise<Assets> | null = null;
 export function loadAssets(): Promise<Assets> {
   loading ??= (async () => {
     const loader = new GLTFLoader();
-    const [character, clipFile, info, hair] = await Promise.all([
+    const [character, clipFile, info, hair, mixamo] = await Promise.all([
       loader.loadAsync('/3d/player.glb'),
       loader.loadAsync('/3d/clips.glb'),
       fetch('/3d/clips.json').then((r) => r.json() as Promise<Record<string, ClipInfo>>),
       loader.loadAsync('/3d/hair.glb'),
+      fetch('/3d/mixamo.json').then((r) => r.json()),
     ]);
+    // The Mixamo clips (dribble, run), retargeted onto our skeleton.
+    setMixamoClips(mixamo);
     // The pack's hairstyles and beard (CC0), by name, for the players' heads.
     const parts: Record<string, THREE.BufferGeometry> = {};
     hair.scene.traverse((o) => {

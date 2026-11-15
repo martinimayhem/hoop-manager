@@ -153,3 +153,7 @@ frames/
 
 # Real NBA tracking data downloaded by npm run sportvu (not ours to commit)
 data/sportvu/
+
+# Mixamo animation files: Adobe forbids redistributing the raw files (public repo). Only the clips
+# retargeted onto our skeleton (public/3d) are committed.
+assets/animations/
