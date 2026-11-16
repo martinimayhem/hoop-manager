@@ -77,7 +77,8 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const turn = currentTurn(state);
+  // A single match's draft: always two teams, so a team index is 0 or 1.
+  const turn = currentTurn(state) as 0 | 1 | null;
   // Which team the human is acting for right now.
   const actingTeam: 0 | 1 | null =
     state.mode === 'snake' ? (turn !== null && state.teams[turn].controller === 'human' ? turn : null) : isTeamComplete(state, 0) ? null : 0;
@@ -250,7 +251,7 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
                     </td>
                     <td className="left">
                       <span className="player-cell">
-                        <Portrait player={p.player} side={owner} size={26} number={false} />
+                        <Portrait player={p.player} side={owner as 0 | 1 | undefined} size={26} number={false} />
                         <span className="dr-who">
                           <b>{p.player.name}</b>
                           <span className="muted"> {p.player.archetype}</span>
@@ -283,7 +284,7 @@ export function DraftScreen({ setup, onDone }: { setup: Setup; onDone: (teams: [
             p={sel}
             ratings={scouted.get(sel.player.id)!}
             owner={state.owner[sel.player.id] !== undefined ? state.teams[state.owner[sel.player.id]].name : null}
-            ownerSide={state.owner[sel.player.id]}
+            ownerSide={state.owner[sel.player.id] as 0 | 1 | undefined}
             check={actingTeam !== null ? canPick(state, actingTeam, sel.player.id) : { ok: false, reason: 'Not your turn' }}
             onSign={() => doPick(sel.player.id)}
             onClose={() => setSelected(null)}

@@ -8,9 +8,22 @@ import type { GamePlan, Side, Team } from '../../engine/types';
 import { aiGamePlan } from '../../game/ai';
 import type { Setup } from '../App';
 import { PlanEditor } from '../components/PlanEditor';
-import { ScoutingReport } from '../components/ScoutingReport';
+import { ScoutingReport, type ScoutView } from '../components/ScoutingReport';
 
-export function PrepScreen({ setup, teams, onReady, onMenu }: { setup: Setup; teams: [Team, Team]; onReady: (plans: [GamePlan, GamePlan]) => void; onMenu: () => void }) {
+export function PrepScreen({
+  setup,
+  teams,
+  onReady,
+  onMenu,
+  scout,
+}: {
+  setup: Setup;
+  teams: [Team, Team];
+  onReady: (plans: [GamePlan, GamePlan]) => void;
+  onMenu: () => void;
+  /** In a league: how well each side knows the other (by side). */
+  scout?: [ScoutView, ScoutView];
+}) {
   const humans: Side[] = setup.mode === 'ai' ? [0] : [0, 1];
   const initial = useMemo<[GamePlan, GamePlan]>(() => {
     const rng = createRng(Date.now() >>> 0);
@@ -76,7 +89,7 @@ export function PrepScreen({ setup, teams, onReady, onMenu }: { setup: Setup; te
         </div>
         <div className="panel">
           <h3>Scouting report: {opponent.name}</h3>
-          <ScoutingReport opponent={opponent} us={team} side={side === 0 ? 1 : 0} />
+          <ScoutingReport opponent={opponent} us={team} side={side === 0 ? 1 : 0} scout={scout?.[side]} />
         </div>
       </div>
     </div>

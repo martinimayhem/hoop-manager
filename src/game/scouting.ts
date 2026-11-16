@@ -45,9 +45,10 @@ function spread(hype: number, accuracy: number): number {
   return Math.max(0, Math.round((1 - accuracy) * 22 * fame));
 }
 
-export function scoutAttr(player: Player, key: AttrKey, hype: number, accuracy: number): Range {
+/** `minHalf`: never narrower than this either side (a league's scouting after meetings, SEASON_SPEC R2.6). */
+export function scoutAttr(player: Player, key: AttrKey, hype: number, accuracy: number, minHalf = 0): Range {
   const value = player.attrs[key];
-  const half = spread(hype, accuracy);
+  const half = Math.max(minHalf, spread(hype, accuracy));
   if (half === 0) return { lo: value, hi: value };
   // Where the true value sits inside the window is stable per player+attribute.
   const offset = Math.round(hashUnit(`scout:${player.id}:${key}`) * half);
@@ -56,8 +57,8 @@ export function scoutAttr(player: Player, key: AttrKey, hype: number, accuracy: 
   return { lo: Math.min(lo, value), hi: Math.max(hi, value) };
 }
 
-export function scoutGroup(player: Player, group: AttributeGroup, hype: number, accuracy: number): Range {
-  const ranges = group.attrs.map((a) => scoutAttr(player, a.key, hype, accuracy));
+export function scoutGroup(player: Player, group: AttributeGroup, hype: number, accuracy: number, minHalf = 0): Range {
+  const ranges = group.attrs.map((a) => scoutAttr(player, a.key, hype, accuracy, minHalf));
   const avg = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) / xs.length);
   return { lo: avg(ranges.map((r) => r.lo)), hi: avg(ranges.map((r) => r.hi)) };
 }

@@ -16,7 +16,7 @@ function startView(): Setup['view'] {
   }
 }
 
-export function MainMenu({ onStart }: { onStart: (setup: Setup) => void }) {
+export function MainMenu({ onStart, onLeague }: { onStart: (setup: Setup) => void; onLeague: () => void }) {
   const [mode, setMode] = useState<Setup['mode']>('ai');
   const [draft, setDraft] = useState<Setup['draft']>('free');
   const [names, setNames] = useState<[string, string]>(['Player 1', 'Player 2']);
@@ -34,6 +34,16 @@ export function MainMenu({ onStart }: { onStart: (setup: Setup) => void }) {
         </div>
         <div className="muted">Build a squad on a budget, scout the opponent, set your tactics, and out-coach the other bench.</div>
       </div>
+      <div className="panel row">
+        <div style={{ flex: 1 }}>
+          <h3 style={{ margin: 0 }}>Quick League</h3>
+          <div className="muted small">A whole season: 8 teams, a snake draft, 14 matchdays and a league table. Saved as you go.</div>
+        </div>
+        <button className="primary" onClick={onLeague}>
+          Quick League ▶
+        </button>
+      </div>
+      <h3 style={{ margin: '4px 0 0' }}>Or a single match</h3>
 
       <div className="panel">
         <h3>Opponent</h3>

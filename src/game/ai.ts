@@ -39,7 +39,7 @@ function perceivedOverall(state: DraftState, id: string): number {
   return composite(p.player).overall + error / keys.length;
 }
 
-export function aiDraftPick(state: DraftState, team: 0 | 1, rng: RngState): string | null {
+export function aiDraftPick(state: DraftState, team: number, rng: RngState): string | null {
   const t = state.teams[team];
   const slotsLeft = ROSTER_SIZE - t.picks.length;
   if (slotsLeft <= 0) return null;
@@ -67,7 +67,7 @@ export function aiDraftPick(state: DraftState, team: 0 | 1, rng: RngState): stri
 }
 
 /** Fills the AI's whole roster at once (free draft). */
-export function aiDraftAll(state: DraftState, team: 0 | 1, rng: RngState): DraftState {
+export function aiDraftAll(state: DraftState, team: number, rng: RngState): DraftState {
   let s = state;
   while (!isTeamComplete(s, team)) {
     const id = aiDraftPick(s, team, rng);

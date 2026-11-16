@@ -11,10 +11,20 @@ import { Portrait, ShirtNumber } from './Portrait';
 
 const HYPE_FALLBACK = 50;
 
-export function ScoutingReport({ opponent, us, side }: { opponent: Team; us: Team; /** The opponent's kit. */ side?: Side }) {
+/** How well the opponent is known: in a league, ranges narrow each time you have played them (never below `minHalf`). */
+export interface ScoutView {
+  accuracy: number;
+  minHalf: number;
+  /** Players' reputations (a league's own pool); default: the single-match market's. */
+  hypes?: Map<string, number>;
+}
+
+export function ScoutingReport({ opponent, us, side, scout }: { opponent: Team; us: Team; /** The opponent's kit. */ side?: Side; scout?: ScoutView }) {
   const pool = poolById();
-  const hype = (id: string) => pool.get(id)?.hype ?? HYPE_FALLBACK;
-  const t = scoutedTendencies(opponent, us, DEFAULT_SCOUT_ACCURACY);
+  const hype = (id: string) => scout?.hypes?.get(id) ?? pool.get(id)?.hype ?? HYPE_FALLBACK;
+  const accuracy = scout?.accuracy ?? DEFAULT_SCOUT_ACCURACY;
+  const minHalf = scout?.minHalf ?? 0;
+  const t = scoutedTendencies(opponent, us, accuracy);
   const players = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall);
   return (
     <div style={{ display: 'grid', gap: 12 }}>
@@ -50,11 +60,11 @@ export function ScoutingReport({ opponent, us, side }: { opponent: Team; us: Tea
                 <td>{p.weightKg}</td>
                 {ATTRIBUTE_GROUPS.map((g) => (
                   <td key={g.key}>
-                    <RangeCell r={scoutGroup(p, g, hype(p.id), DEFAULT_SCOUT_ACCURACY)} />
+                    <RangeCell r={scoutGroup(p, g, hype(p.id), accuracy, minHalf)} />
                   </td>
                 ))}
                 <td>
-                  <Stars n={potentialStars(p, DEFAULT_SCOUT_ACCURACY)} />
+                  <Stars n={potentialStars(p, accuracy)} />
                 </td>
               </tr>
             ))}

@@ -1,0 +1,12 @@
+Hoop Manager
+
+This project adapts ideas and specification structure from:
+
+  open-football (https://github.com/ZOXEXIVO/open-football)
+  Licensed under the Apache License, Version 2.0
+  (http://www.apache.org/licenses/LICENSE-2.0)
+
+Used in SEASON_SPEC.md: the requirement + WHEN/THEN scenario format, and ideas from its league
+schedule, table, standings, season, simulation, awards, news, player development, player happiness
+and transfer market specifications, scaled down to 8-team, 14-matchday basketball leagues. The
+text in SEASON_SPEC.md is our own; no open-football code is included.

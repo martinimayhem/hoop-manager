@@ -18,7 +18,7 @@
 - Online multiplayer (two devices over the internet)
 - Mobile or touch layout
 - Real player names, photos, team logos or league branding (see §8)
-- Trading between human players, contracts, salaries over multiple years
+- Trading between the two human players (trades with AI clubs are in, Career mode)
 
 ---
 
@@ -29,7 +29,8 @@ Pick league → Draft squad (12 players + 3 coaches) under budget
    → Season: for each matchday
         Scout opponent (fuzzy info) → Set game plan → Play match (4 quarters, live)
         → Post-match: results, injuries, player development, morale
-   → Playoffs → Season summary → (next season: v2)
+   → Playoffs → Season summary
+   → Career: offseason (retirements, draft, contracts, free agency, ageing) → next season
 ```
 
 The two moments that must be fun first: **the draft** and **the live match**. Everything else
@@ -162,6 +163,10 @@ generator. That means:
 
 ## 8. Leagues and season
 
+> **Phase 5 is specified in detail in [SEASON_SPEC.md](SEASON_SPEC.md)**: Quick League (one 8-team
+> season) and Career (a 48-club world: America and Europe, three tiers, promotion and relegation, a
+> world draft, contracts, ageing, seasons that follow on). Where the two differ, SEASON_SPEC.md wins.
+
 - **3 leagues** with different budgets and player quality, e.g. *Street League* (low budget),
   *Pro League*, *Legends League* (high budget).
 - Each league: **8 teams**, double round-robin (14 matchdays), then top-4 playoffs (semi-final, final).
@@ -200,8 +205,8 @@ Each phase must be playable and fun before starting the next.
 | **2. Playable match** | 2D court, commentary, timeouts, subs, speed setting. Fixed squads. | You and your son enjoy a full 4-quarter match head-to-head. |
 | **3. Draft + budget + scouting** | Player pool, pricing, free and snake draft, fuzzy scouting. | Two different drafting strategies can both win. |
 | **4. Coaches** | 3 coach roles with real effects. | Spending on staff is a real trade-off vs players. |
-| **5. Season** | Leagues, schedule, AI teams, table, playoffs, injuries, development, saves. | A full season can be played and saved. |
-| **6. Polish** | Sounds, better animations, awards, season 2 carry-over. | — |
+| **5. Season and Career** (SEASON_SPEC.md) | 5a Quick League → 5b world, promotion/relegation → 5c playoffs, awards → 5d offseason, contracts, draft → 5e injuries, development, morale, news → 5f trade deadline. Career logic first, checked by `npm run world`, then its screens. | A Quick League season can be played and saved; a Career runs for 10 seasons with every lab target passing, then is playable. |
+| **6. Polish** | Sounds, better animations, more presentation. | — |
 
 ---
 

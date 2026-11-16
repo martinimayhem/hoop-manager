@@ -9,6 +9,9 @@ import { MainMenu } from './screens/MainMenu';
 import { MatchScreen } from './screens/MatchScreen';
 import { PrepScreen } from './screens/PrepScreen';
 import { ResultScreen } from './screens/ResultScreen';
+import { LeagueFlow } from './screens/league/LeagueFlow';
+import { LeagueMenu } from './screens/league/LeagueMenu';
+import type { QuickLeague } from '../game/league/quickLeague';
 import { abbrOf } from './labels';
 
 export interface Setup {
@@ -22,6 +25,8 @@ export interface Setup {
 
 type Screen =
   | { kind: 'menu' }
+  | { kind: 'league-menu' }
+  | { kind: 'league'; league: QuickLeague; slot: number; key: number }
   | { kind: 'draft'; setup: Setup }
   | { kind: 'prep'; setup: Setup; teams: [Team, Team] }
   | { kind: 'match'; setup: Setup; teams: [Team, Team]; plans: [GamePlan, GamePlan]; seed: number }
@@ -47,7 +52,20 @@ export function App() {
             onStart={(setup) =>
               setScreen(setup.draft === 'quick' ? { kind: 'prep', setup, teams: quickTeams(setup) } : { kind: 'draft', setup })
             }
+            onLeague={() => setScreen({ kind: 'league-menu' })}
           />
+        </div>
+      );
+    case 'league-menu':
+      return (
+        <div className="app">
+          <LeagueMenu onBack={menu} onOpen={(league, slot) => setScreen({ kind: 'league', league, slot, key: Date.now() })} />
+        </div>
+      );
+    case 'league':
+      return (
+        <div className="app">
+          <LeagueFlow key={screen.key} initial={screen.league} slot={screen.slot} onMenu={menu} onNewLeague={() => setScreen({ kind: 'league-menu' })} />
         </div>
       );
     case 'draft':

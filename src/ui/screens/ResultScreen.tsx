@@ -4,7 +4,8 @@ import { BoxScoreTables, LineScore } from '../components/BoxScoreTable';
 import { Portrait } from '../components/Portrait';
 import { ShotChart } from '../components/ShotChart';
 
-export function ResultScreen({ match, onRematch, onMenu }: { match: LiveMatch; onRematch: () => void; onMenu: () => void }) {
+/** `onContinue`: in a league, the way on (instead of a rematch). */
+export function ResultScreen({ match, onRematch, onMenu, onContinue }: { match: LiveMatch; onRematch?: () => void; onMenu: () => void; onContinue?: () => void }) {
   const box = buildBoxScore(match.s);
   const winner = box.winner ?? 0;
   // Player of the game: best match rating.
@@ -27,10 +28,16 @@ export function ResultScreen({ match, onRematch, onMenu }: { match: LiveMatch; o
             </h1>
             <LineScore box={box} />
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="primary" onClick={onRematch}>
-                Rematch (same squads)
-              </button>
-              <button onClick={onMenu}>Main menu</button>
+              {onContinue ? (
+                <button className="primary" onClick={onContinue}>
+                  Continue ▶
+                </button>
+              ) : (
+                <button className="primary" onClick={onRematch}>
+                  Rematch (same squads)
+                </button>
+              )}
+              {!onContinue && <button onClick={onMenu}>Main menu</button>}
             </div>
           </div>
           <div className="card-star result-mvp" style={{ ['--team' as string]: mvpColour }}>

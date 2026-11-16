@@ -50,6 +50,8 @@ export function MatchScreen({
     ref.current.debugTravels = new URLSearchParams(window.location.search).has('debugTravels');
   }
   const m = ref.current;
+  // Dev only: the live match, for headless checks that play a match to its end quickly.
+  if (import.meta.env.DEV) (window as unknown as { __liveMatch?: LiveMatch }).__liveMatch = m;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CourtRenderer | null>(null);
