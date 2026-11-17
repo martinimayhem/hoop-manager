@@ -76,7 +76,8 @@ export function Capture() {
       const want3d = view === '3d' || view === 'both';
 
       const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], seed, ['ai', 'ai'], 'normal');
-      m.highlights = false;
+      // Every possession played out, unless asked to play it as highlights mode does (&hl).
+      m.highlights = q.has('hl');
       const renderer2d = new CourtRenderer([TEAM_COLOURS[0], TEAM_COLOURS[1]]);
       let scene: Scene3D | null = null;
       if (want3d) {

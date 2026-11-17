@@ -11,7 +11,7 @@ import { playerRating } from '../../engine/stats';
 import { aiCall, asksForCall, isClutch } from '../../game/clutch';
 import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
 import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
-import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
+import { assistantTips, createTipMemory, currentTips, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
 import { HALF_X } from '../../engine/court';
 import { COURT, beatAt, beatDurations, buildScript, playerKey, type BallAction, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
@@ -66,15 +66,45 @@ interface PossessionStart {
 
 /**
  * A trip to the line worth showing in highlights mode on top of the best plays: an and-one, or free
- * throws in the last two minutes of a quarter, or in the last five minutes of a close fourth quarter
- * or overtime.
+ * throws in the last two minutes of a close fourth quarter or overtime. (Late in the other quarters
+ * they are no longer shown: they took a lot of time for little.)
  */
-function freeThrowsThatMatter(s: MatchState, events: TimedEvent[]): boolean {
+export function freeThrowsThatMatter(s: MatchState, events: TimedEvent[]): boolean {
   const fts = events.filter((e) => e.type === 'freeThrow' && !e.technical);
   if (fts.length === 0) return false;
   const andOne = events.some((e) => e.type === 'shot' && e.made);
   const margin = Math.abs(s.teams[0].score - s.teams[1].score);
-  return andOne || s.clock <= 120 || (s.quarter >= 4 && s.clock <= 300 && margin <= 6);
+  return andOne || (s.quarter >= 4 && s.clock <= 120 && margin <= 6);
+}
+
+/**
+ * Highlights mode: where a shown possession's free-throw trips jump to. For each trip of two or three
+ * attempts, from the first beat after the whistle (`from`) to the start of the last attempt's
+ * routine (`to`): only the last free throw is shown. The ones skipped still happen, their events
+ * firing as the clock passes them.
+ */
+export function freeThrowJumps(script: Script, events: TimedEvent[]): { from: number; to: number }[] {
+  const fireBeat = (i: number) => script.beats.findIndex((b) => b.fire.includes(i));
+  const trips: number[][] = [];
+  let trip: number[] = [];
+  events.forEach((e, i) => {
+    if (e.type === 'freeThrow' && !e.technical) trip.push(i);
+    else if (e.type === 'shot' || e.type === 'turnover' || e.type === 'rebound') {
+      if (trip.length) trips.push(trip);
+      trip = [];
+    }
+  });
+  if (trip.length) trips.push(trip);
+  const jumps: { from: number; to: number }[] = [];
+  for (const t of trips) {
+    if (t.length < 2) continue;
+    // The beat where the whistle went: the one firing the last event before the first attempt.
+    const whistle = t[0] > 0 ? fireBeat(t[0] - 1) : -1;
+    const lastButOne = fireBeat(t[t.length - 2]);
+    if (whistle < 0 || lastButOne < 0 || lastButOne + 1 <= whistle + 1) continue;
+    jumps.push({ from: whistle + 1, to: lastButOne + 1 });
+  }
+  return jumps;
 }
 
 /** Where the ball is at the end of a beat. */
@@ -93,13 +123,26 @@ function endBall(beat: Beat): Pos {
   }
 }
 
+/** The play starts once the attacking teammates are this close to their spots (m)… */
+const SET_ARRIVED_M = 1.2;
+/** …or after waiting this long for them (real seconds at Normal speed), whichever comes first. */
+const SET_WAIT_S = 3;
+
 /** Over and back: with the ball over half court, a pass waits until the receiver is this far over too. */
 const OVER_HALF_M = 0.8;
 /** The longest a pass waits for that (real seconds); a receiver who cannot get there is not waited on forever. */
 const OVER_HALF_WAIT_S = 3;
 const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
-/** In highlights mode, how many plays of each quarter are shown; the rest are played out instantly. */
-export const HIGHLIGHTS_PER_QUARTER = 5;
+/**
+ * In highlights mode, how many plays of each quarter are shown; the rest are played out instantly.
+ * Three in the first three quarters, five in the fourth, three in an overtime (whose close finish is
+ * shown in full anyway).
+ */
+export function highlightsIn(quarter: number): number {
+  return quarter === 4 ? 5 : 3;
+}
+/** A highlight starts this long (real seconds, at Normal speed) before its moment: the shot or the turnover. */
+const CLIP_LEAD_S = 5;
 /** Game seconds per second of play while the ball is brought up, at Normal speed: about real time. */
 const BRING_UP_CLOCK_RATE = 1;
 /** How long a result line stays up before a set-up line may replace it (real seconds). */
@@ -230,7 +273,8 @@ export class LiveMatch {
   caption: Caption | null = null;
   clutch: ClutchState | null = null;
   /** Halftime team-talk reactions per side, once given. */
-  talks: [{ talk: Talk; reaction: string } | null, { talk: Talk; reaction: string } | null] = [null, null];
+  /** The half-time talks given: what was said, how they took it, and whether it helped (morale > 0). */
+  talks: [{ talk: Talk; reaction: string; morale: number } | null, { talk: Talk; reaction: string; morale: number } | null] = [null, null];
   private fx: Fx[] = [];
   private clutchCalls: PossessionCalls | null = null;
   /**
@@ -289,6 +333,10 @@ export class LiveMatch {
   private shot = { base: 24, from: 720, side: -1 as number, of: null as Script | null };
   private t = 0;
   private firedBeats = 0;
+  /** How long the end of this possession's set-up has waited for teammates to reach their spots. */
+  private setWait = 0;
+  /** Highlights: jumps over free throws not shown (beat indices), in order. */
+  private jumps: { from: number; to: number }[] = [];
   private lastFrame: Frame | null = null;
   /**
    * Where everyone stood when the last skipped possession ended (highlights mode): the next clip
@@ -393,8 +441,9 @@ export class LiveMatch {
   teamTalk(side: Side, talk: Talk): void {
     if (this.talks[side]) return;
     const out = giveTalk(this.s, side, talk);
-    this.talks[side] = { talk, reaction: out.reaction };
+    this.talks[side] = { talk, reaction: out.reaction, morale: out.morale };
     this.feedPush({ text: `${this.s.teams[side].team.name} team talk: ${out.reaction}`, side, kind: 'coach' });
+    this.bump();
   }
 
   /**
@@ -428,6 +477,11 @@ export class LiveMatch {
     this.speed = speed;
     if (this.script) this.retime();
     this.bump();
+  }
+
+  /** The assistant's tips for a side that still hold now, in today's words, newest first. */
+  liveTips(side: Side): Tip[] {
+    return currentTips(this.s, this.tipMemory, this.tips, side);
   }
 
   toggleHighlights(): void {
@@ -514,6 +568,14 @@ export class LiveMatch {
     }
     this.t += dt;
     const sc = this.script;
+    // Highlights: from the whistle straight to the last free throw of the trip.
+    const jump = this.jumps[0];
+    if (jump && this.t >= (jump.from > 0 ? this.beatEnds[jump.from - 1] : 0)) {
+      this.jumps.shift();
+      this.t = Math.max(this.t, this.beatEnds[jump.to - 1]);
+      this.motion.place(sc.beats[jump.to - 1].players);
+    }
+    this.waitForTheSet(sc, dt);
     const waiting = this.overAndBack(sc, dt);
     // The clock only ever runs down, whatever the speed is changed to on the way.
     const clock = sc.clockStart - (sc.clockStart - sc.clockEnd) * this.running();
@@ -599,7 +661,9 @@ export class LiveMatch {
       look: { ...this.motion.look },
       stance: { ...this.motion.stance },
       reach: { ...this.motion.reach },
-      lift: this.motion.jumps(beat, u),
+      reachAim: { ...this.motion.reachAim },
+      // Gravity in match time: the beat's length times how fast the match is being played.
+      lift: this.motion.jumps(beat, u, this.durations[index] * rate * speedScale),
       timeScale: rate * speedScale,
       shooter: beat.ball.kind === 'fromPlayer' && beat.ball.style !== 'throw' && u < 0.85 ? beat.ball.from : null,
     };
@@ -791,8 +855,11 @@ export class LiveMatch {
       return;
     }
 
+    // A highlight (not a close finish): cut in near the moment, and only the last free throw of a trip.
+    let trim = false;
     if (this.highlights && !this.clutchCalls) {
       if (this.shown.quarter !== s.quarter) this.shown = { quarter: s.quarter, count: 0 };
+      trim = !isClutch(s);
       const shown = this.isHighlight(s);
       if (!shown) {
         this.skipPossession();
@@ -847,18 +914,36 @@ export class LiveMatch {
     }
     this.retime();
     this.t = 0;
+    this.setWait = 0;
     this.firedBeats = 0;
     this.startedBeat = -1;
     this.publishedThrough = s.events.length;
-    if (this.cut) {
-      // Like a highlight on television, it starts at the set-up: the bring-up is not news. Anything
-      // that happened on the way (a substitution, say) still fires as the clock passes it. The
-      // picture cuts straight to where everyone is at that moment; nobody runs there from the last
-      // clip shown.
+    this.jumps = trim ? freeThrowJumps(this.script, this.scriptEvents) : [];
+    if (this.cut || trim) {
+      // Like a highlight on television, it starts at the set-up: the bring-up is not news. A
+      // highlight starts closer still, a few seconds before its moment (the shot, the turnover).
+      // Anything that happened on the way (a substitution, say) still fires as the clock passes it.
+      // The picture cuts straight to where everyone is at that moment; nobody runs there from the
+      // last clip shown.
       this.cut = false;
-      const setUp = this.script.beats.findIndex((b) => b.phase === 'setUp');
-      if (setUp > 0) this.t = this.beatEnds[setUp - 1];
-      const at = setUp > 0 ? this.script.beats[setUp - 1].players : prev?.players;
+      const beats = this.script.beats;
+      const setUp = beats.findIndex((b) => b.phase === 'setUp');
+      let start = Math.max(0, setUp);
+      if (trim) {
+        const moment = (types: string[]) => beats.findIndex((b) => b.fire.some((i) => types.includes(this.scriptEvents[i].type)));
+        const key = [moment(['shot', 'turnover']), moment(['freeThrow'])].find((k) => k >= 0) ?? -1;
+        if (key >= 0) {
+          const lead = CLIP_LEAD_S / (this.speed === 'fast' ? 2.1 : 1);
+          // The latest beat to start from that still leaves the lead before the moment.
+          let k = key;
+          while (k > start && this.beatEnds[key] - (k > 0 ? this.beatEnds[k - 1] : 0) < lead) k--;
+          // Never into the middle of the set-up: players dropped there mid-run would still be on their
+          // way when the play starts. Then the whole set-up (fast-forwarded when routine) is shown.
+          if (beats[k].phase !== 'setUp') start = Math.max(start, k);
+        }
+      }
+      if (start > 0) this.t = this.beatEnds[start - 1];
+      const at = start > 0 ? beats[start - 1].players : prev?.players;
       if (at) this.motion.place(at);
     }
     this.carry = null;
@@ -885,7 +970,7 @@ export class LiveMatch {
    */
   private isHighlight(s: MatchState): 'play' | 'extra' | false {
     if (isClutch(s)) return 'play';
-    const left = HIGHLIGHTS_PER_QUARTER - this.shown.count;
+    const left = highlightsIn(s.quarter) - this.shown.count;
     const copy = structuredClone(s);
     const quarter = copy.quarter;
     const scores: number[] = [];
@@ -1026,6 +1111,34 @@ export class LiveMatch {
       start += d;
     });
     return Math.min(1, run / game);
+  }
+
+  /**
+   * The play starts when the attacking players are at their spots, not before: the script plans the
+   * set-up's length from where it meant them to be, but players react, speed up and go round each
+   * other, and can still be several metres short. So at the end of the set-up, while a teammate is
+   * still on his way, the set-up goes on a little (the handler keeps dribbling at his spot), up to
+   * SET_WAIT_S. Only the picture waits: the engine's result is already decided.
+   */
+  private waitForTheSet(sc: Script, dt: number): void {
+    const { index } = beatAt(sc, this.durations, this.t);
+    const beat = sc.beats[index];
+    if (beat.phase !== 'setUp' || sc.beats[index + 1]?.phase !== 'play' || beat.dead) return;
+    // Only in the last moment of the set-up.
+    if (this.t < this.beatEnds[index] - dt * 2) return;
+    const limit = SET_WAIT_S / (this.speed === 'fast' ? 2.1 : 1);
+    if (this.setWait >= limit) return;
+    const handler = beat.ball.kind === 'held' ? beat.ball.holder : null;
+    const own = `${sc.offence}:`;
+    const away = Object.entries(beat.players).some(
+      ([k, p]) => k.startsWith(own) && k !== handler && !beat.marking?.[k] && this.motion.pos[k] && Math.hypot(this.motion.pos[k].x - p.x, this.motion.pos[k].y - p.y) > SET_ARRIVED_M,
+    );
+    if (!away) return;
+    // The set-up beat lasts a moment longer, everything after it a moment later.
+    this.setWait += dt;
+    this.durations[index] += dt * 2;
+    let acc = 0;
+    this.beatEnds = this.durations.map((d) => (acc += d));
   }
 
   /**

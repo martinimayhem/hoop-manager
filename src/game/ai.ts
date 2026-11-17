@@ -11,6 +11,7 @@ import {
   DEFENCE_SCHEMES,
   OFFENSIVE_FOCI,
   TEMPOS,
+  type Aggression,
   type DefenceScheme,
   type GamePlan,
   type MatchState,
@@ -21,7 +22,7 @@ import {
   type Team,
   type Tempo,
 } from '../engine/types';
-import { canPick, currentTurn, findPool, groupCounts, isTeamComplete, pick, ROSTER_SIZE, type DraftState } from './draft';
+import { canPick, currentTurn, findPool, groupCounts, isLeagueDraft, isTeamComplete, pick, ROSTER_SIZE, type DraftState } from './draft';
 import { DEFAULT_SCOUT_ACCURACY, scoutAttr, type AttrKey } from './scouting';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,24 @@ function perceivedOverall(state: DraftState, id: string): number {
   return composite(p.player).overall + error / keys.length;
 }
 
+/**
+ * In a league, the AI's own caution (not a rule for anyone): every team's open slots will use up the
+ * cheapest players on the market, shared out as a snake draft shares them, so it keeps enough to buy
+ * its share of those, at evenly spread ranks among them.
+ */
+function prudentFill(state: DraftState, team: number, n: number, excludeId: string): number {
+  if (n <= 0) return 0;
+  const prices = state.pool
+    .filter((p) => !(p.player.id in state.owner) && p.player.id !== excludeId)
+    .map((p) => p.price)
+    .sort((a, b) => a - b);
+  const open = state.teams.reduce((s, t, i) => s + (i === team ? n : Math.max(0, ROSTER_SIZE - t.picks.length)), 0);
+  const upTo = Math.min(prices.length, open);
+  let sum = 0;
+  for (let j = 1; j <= n; j++) sum += prices[Math.min(upTo, Math.ceil((j * upTo) / n)) - 1] ?? 0;
+  return sum;
+}
+
 export function aiDraftPick(state: DraftState, team: number, rng: RngState): string | null {
   const t = state.teams[team];
   const slotsLeft = ROSTER_SIZE - t.picks.length;
@@ -46,7 +65,10 @@ export function aiDraftPick(state: DraftState, team: number, rng: RngState): str
   const counts = groupCounts(state, team);
   const positionsHeld = new Set(t.picks.map((id) => findPool(state, id).player.position));
   const fairShare = t.budgetLeft / slotsLeft;
-  const candidates = state.pool.filter((p) => canPick(state, team, p.player.id).ok);
+  const legal = state.pool.filter((p) => canPick(state, team, p.player.id).ok);
+  // In a league, careful: only what leaves enough for its share of the cheap players (if anything does).
+  const careful = isLeagueDraft(state) ? legal.filter((p) => t.budgetLeft - p.price >= prudentFill(state, team, slotsLeft - 1, p.player.id)) : legal;
+  const candidates = careful.length > 0 ? careful : legal;
   if (candidates.length === 0) return null;
   let best = candidates[0].player.id;
   let bestScore = -Infinity;
@@ -214,6 +236,7 @@ export function aiGamePlan(team: Team, opponent: Team, rng: RngState): GamePlan 
     defence: sample(t.defence, rng),
     tempo: sample(t.tempo, rng),
     keyMatchup: dbl.worth > DOUBLE_WORTH && chance(rng, 0.8) ? { kind: 'double', targetId: dbl.target.id } : { kind: 'none' },
+    aggression: intensityFor(opponent).aggression,
   });
 }
 
@@ -345,7 +368,29 @@ export interface Suggestion {
   offence: OffensiveFocus;
   defence: DefenceScheme;
   tempo: Tempo;
+  aggression: Aggression;
   reasons: string[];
+}
+
+/**
+ * How hard to defend against this opponent (the tactics lab's finding): pressure pays against poor
+ * ball handlers or poor free-throw shooters (their turnovers, and their missed free throws when it
+ * fouls); against sure ball handlers who make their free throws it only gives away points, so stay
+ * down. A plain reason comes with it.
+ */
+export function intensityFor(opponent: Team): { aggression: Aggression; reason: string } {
+  const top = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall).slice(0, 8);
+  const handling = top.reduce((s, p) => s + composite(p).ballSecurity, 0) / top.length;
+  const ft = top.reduce((s, p) => s + p.attrs.freeThrow, 0) / top.length;
+  const r = Math.round;
+  if (handling < 62 || ft < 66) {
+    return {
+      aggression: 'aggressive',
+      reason: handling < 62 ? `Their ball handling is shaky (${r(handling)}): pressure them into turnovers.` : `They miss free throws (${r(ft)}): fouling them is no disaster, so get up in them.`,
+    };
+  }
+  if (handling > 76 && ft > 78) return { aggression: 'careful', reason: `They keep the ball safe (${r(handling)}) and make their free throws (${r(ft)}): don't foul, stay down.` };
+  return { aggression: 'normal', reason: '' };
 }
 
 function best<K extends string>(dist: Record<K, number>): K {
@@ -360,6 +405,8 @@ export function suggestPlan(team: Team, opponent: Team): Suggestion {
   const offence = best(t.offence);
   const defence = best(t.defence);
   const tempo = best(t.tempo);
+  const intensity = intensityFor(opponent);
+  const aggression = intensity.aggression;
   const reasons: string[] = [];
   const r = Math.round;
 
@@ -374,7 +421,11 @@ export function suggestPlan(team: Team, opponent: Team): Suggestion {
       reasons.push(`Your playmaker (${r(me.bestHandler)}) and rolling big (${r(me.bestRoller)}) are made for the pick-and-roll.`);
       break;
     case 'fastBreak':
-      reasons.push(`You're quicker than them (speed ${r(me.speed)} vs ${r(them.speed)}): run!`);
+      reasons.push(
+        r(me.speed) > r(them.speed)
+          ? `You're quicker than them (speed ${r(me.speed)} vs ${r(them.speed)}): run!`
+          : `Your team is quick and fit (speed ${r(me.speed)}): run, even though they are as quick (${r(them.speed)}).`,
+      );
       break;
     case 'balanced':
       reasons.push('No single weapon stands out, so keep them guessing.');
@@ -399,5 +450,6 @@ export function suggestPlan(team: Team, opponent: Team): Suggestion {
     case 'normal':
       reasons.push('Neither team has a pace advantage.');
   }
-  return { offence, defence, tempo, reasons };
+  if (intensity.reason) reasons.push(intensity.reason);
+  return { offence, defence, tempo, aggression, reasons };
 }

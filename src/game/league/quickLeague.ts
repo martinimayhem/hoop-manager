@@ -7,8 +7,12 @@ import { simulateMatch } from '../../engine/match';
 import { createRng, next } from '../../engine/rng';
 import type { MatchState, Team } from '../../engine/types';
 import { buildBoxScore } from '../../engine/stats';
+import { positionGroup, type PositionGroup } from '../../engine/ratings';
+import type { Position } from '../../engine/types';
 import { aiDraftPick, aiGamePlan } from '../ai';
-import { canPick, createDraft, currentTurn, isComplete, pick, toTeam, type DraftState, type DraftTeam } from '../draft';
+import { canPick, createDraft, currentTurn, GROUPS, groupCounts, isComplete, MIN_PER_GROUP, pick, ROSTER_SIZE, toTeam, type DraftState, type DraftTeam } from '../draft';
+import { journeymen, playerPool, type PoolPlayer } from '../pool';
+import { MIN_PRICE } from '../pricing';
 import { DEFAULT_SCOUT_ACCURACY } from '../scouting';
 import { LEAGUES, leaguePool, type LeagueId } from './leagues';
 import { doubleRoundRobin, type Fixture, type Schedule } from './schedule';
@@ -22,8 +26,8 @@ export interface LeagueTeam {
   id: string;
   name: string;
   abbr: string;
-  /** null for an AI team; 0 or 1 for Player 1 or Player 2. */
-  human: 0 | 1 | null;
+  /** null for an AI team; 0 for the player's team. */
+  human: 0 | null;
 }
 
 /** The draft as saved: everything but the pool (rebuilt from the league). */
@@ -32,6 +36,10 @@ export interface SavedDraft {
   teams: DraftTeam[];
   pickNo: number;
   order: number[];
+  /** Minimum-contract players signed during the draft (not in the league's pool, so saved). */
+  extras?: PoolPlayer[];
+  /** Every pick in order: which team took whom. */
+  log?: { team: number; id: string }[];
 }
 
 export interface QuickLeague {
@@ -39,6 +47,8 @@ export interface QuickLeague {
   seed: number;
   league: LeagueId;
   teams: LeagueTeam[];
+  /** The player's own name, as manager of his club (older saves have none). */
+  manager?: string;
   draft: SavedDraft;
   phase: 'draft' | 'season' | 'finished';
   schedule: Schedule;
@@ -60,11 +70,12 @@ function abbrFor(name: string): string {
   return a.toUpperCase().padEnd(3, 'X').slice(0, 3);
 }
 
-/** A new league: the humans' teams, the league's AI teams, and a seeded first-round draft order. */
-export function createQuickLeague(league: LeagueId, humanNames: string[], seed: number): QuickLeague {
-  if (humanNames.length < 1 || humanNames.length > 2) throw new Error('createQuickLeague: 1 or 2 humans');
+/** A new league: the player's team, the league's AI teams, and a seeded first-round draft order. */
+/** `humanNames`: the player's club name. `manager`: his own name. */
+export function createQuickLeague(league: LeagueId, humanNames: string[], seed: number, manager?: string): QuickLeague {
+  if (humanNames.length !== 1) throw new Error('createQuickLeague: one player');
   const def = LEAGUES[league];
-  const humans: LeagueTeam[] = humanNames.map((name, i) => ({ id: `you-${i + 1}`, name, abbr: abbrFor(name), human: i as 0 | 1 }));
+  const humans: LeagueTeam[] = humanNames.map((name, i) => ({ id: `you-${i + 1}`, name, abbr: abbrFor(name), human: 0 as const }));
   const ai: LeagueTeam[] = def.teams.slice(0, TEAMS - humans.length).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
   const teams = [...humans, ...ai];
   const rng = createRng(mix(seed, 1));
@@ -74,16 +85,66 @@ export function createQuickLeague(league: LeagueId, humanNames: string[], seed: 
     [order[i], order[j]] = [order[j], order[i]];
   }
   const d = createDraft('snake', leaguePool(league), teams.map((t) => ({ name: t.name, abbr: t.abbr, controller: t.human === null ? 'ai' : 'human' })), def.budget, order);
-  return { kind: 'quick', seed, league, teams, draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] };
+  return { kind: 'quick', seed, league, teams, ...(manager ? { manager } : {}), draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] };
 }
 
-function saveDraft(d: DraftState): SavedDraft {
-  return { owner: d.owner, teams: d.teams, pickNo: d.pickNo, order: d.order };
+function saveDraft(d: DraftState, prev?: SavedDraft): SavedDraft {
+  return { owner: d.owner, teams: d.teams, pickNo: d.pickNo, order: d.order, extras: prev?.extras ?? [], log: prev?.log ?? [] };
+}
+
+/** The league's pool and any minimum-contract players signed so far. */
+export function poolOf(q: QuickLeague): PoolPlayer[] {
+  return q.draft.extras?.length ? [...leaguePool(q.league), ...q.draft.extras] : leaguePool(q.league);
 }
 
 /** The draft with its pool, to use the draft rules on. */
 export function draftOf(q: QuickLeague): DraftState {
-  return { mode: 'snake', pool: leaguePool(q.league), ...q.draft };
+  const { owner, teams, pickNo, order } = q.draft;
+  return { mode: 'snake', pool: poolOf(q), owner, teams, pickNo, order };
+}
+
+/** A pick, with the draft rules, recorded in the log. */
+function take(q: QuickLeague, team: number, id: string): QuickLeague {
+  const d = pick(draftOf(q), team, id);
+  return { ...q, draft: { ...saveDraft(d, q.draft), log: [...(q.draft.log ?? []), { team, id }] } };
+}
+
+/** The position a team's minimum signing plays: a group it is short of, else its thinnest position. */
+function minimumPosition(d: DraftState, team: number): Position {
+  const counts = groupCounts(d, team);
+  const short = GROUPS.find((g) => counts[g] < MIN_PER_GROUP);
+  const byGroup: Record<PositionGroup, Position> = { guard: 'PG', wing: 'SF', big: 'C' };
+  if (short) return byGroup[short];
+  const held: Record<Position, number> = { PG: 0, SG: 0, SF: 0, PF: 0, C: 0 };
+  for (const id of d.teams[team].picks) held[d.pool.find((p) => p.player.id === id)!.player.position]++;
+  return (Object.keys(held) as Position[]).sort((a, b) => held[a] - held[b])[0];
+}
+
+/**
+ * Signs a minimum-contract player for the team whose pick it is: a journeyman made for the purpose,
+ * at MIN_PRICE, in a position the team needs. Always possible while the team has a credit for each
+ * empty spot (the league budget rule), so no team can ever be left unable to fill its roster.
+ */
+export function signMinimum(q: QuickLeague): QuickLeague {
+  const d = draftOf(q);
+  const team = currentTurn(d);
+  if (team === null) throw new Error('No pick to make');
+  const t = d.teams[team];
+  if (t.budgetLeft < MIN_PRICE || t.picks.length >= ROSTER_SIZE) throw new Error('Cannot sign a minimum player');
+  const pos = minimumPosition(d, team);
+  const usedNames = new Set([...playerPool(), ...d.pool].map((p) => p.player.name));
+  const usedIds = new Set([...playerPool(), ...d.pool].map((p) => p.player.id));
+  const [made] = journeymen(1, mix(q.seed, 6, q.draft.extras?.length ?? 0), usedNames, { positions: [pos], quality: [34, 44], usedIds });
+  const extra: PoolPlayer = { ...made, player: { ...made.player, archetype: 'Minimum contract' }, price: MIN_PRICE };
+  const withExtra: QuickLeague = { ...q, draft: { ...q.draft, extras: [...(q.draft.extras ?? []), extra] } };
+  return afterPick(take(withExtra, team, extra.player.id));
+}
+
+/** Whether the team whose pick it is can sign a minimum-contract player now. */
+export function canSignMinimum(q: QuickLeague): boolean {
+  const d = draftOf(q);
+  const team = currentTurn(d);
+  return team !== null && d.teams[team].budgetLeft >= MIN_PRICE && d.teams[team].picks.length < ROSTER_SIZE;
 }
 
 /** Whose pick it is (team index), or null once the draft is done. */
@@ -92,21 +153,54 @@ export function draftTurn(q: QuickLeague): number | null {
 }
 
 /** When the draft is complete: the schedule is made and the season starts. */
-function afterPick(q: QuickLeague, d: DraftState): QuickLeague {
-  const next: QuickLeague = { ...q, draft: saveDraft(d) };
-  if (!isComplete(d)) return next;
-  return { ...next, phase: 'season', schedule: doubleRoundRobin(TEAMS, mix(q.seed, 2)), matchday: 0 };
+function afterPick(q: QuickLeague): QuickLeague {
+  if (!isComplete(draftOf(q))) return q;
+  return { ...q, phase: 'season', schedule: doubleRoundRobin(TEAMS, mix(q.seed, 2)), matchday: 0 };
+}
+
+/** The pick the AI would make for the team whose turn it is (a minimum signing if nothing fits). */
+function aiTurn(q: QuickLeague): QuickLeague {
+  const d = draftOf(q);
+  const turn = currentTurn(d)!;
+  const id = aiDraftPick(d, turn, createRng(mix(q.seed, 3, d.pickNo)));
+  return id ? afterPick(take(q, turn, id)) : signMinimum(q);
+}
+
+/**
+ * A new league: all eight clubs, their squads put together by the computer (the same draft rules,
+ * every pick the AI's), the season ready to start. The player then takes over one of them.
+ */
+export function createLeague(league: LeagueId, seed: number): QuickLeague {
+  const def = LEAGUES[league];
+  const teams: LeagueTeam[] = def.teams.slice(0, TEAMS).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
+  const rng = createRng(mix(seed, 1));
+  const order = teams.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(next(rng) * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const d = createDraft('snake', leaguePool(league), teams.map((t) => ({ name: t.name, abbr: t.abbr, controller: 'ai' as const })), def.budget, order);
+  return finishDraft({ kind: 'quick', seed, league, teams, draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] });
+}
+
+/** The player takes over a club (its squad as it is), with his own name as manager. */
+export function takeOver(q: QuickLeague, team: number, manager?: string): QuickLeague {
+  const teams = q.teams.map((t, i) => ({ ...t, human: i === team ? (0 as const) : null }));
+  return { ...q, teams, ...(manager ? { manager } : {}) };
+}
+
+/** Every pick left made by the computer, the player's club's too (an old save stopped mid-draft). */
+export function finishDraft(q: QuickLeague): QuickLeague {
+  let s = q;
+  while (draftTurn(s) !== null) s = aiTurn(s);
+  return s;
 }
 
 /** The AI teams pick until it is a human's turn (or the draft is over). Deterministic per pick. */
 export function runAiPicks(q: QuickLeague): QuickLeague {
-  let d = draftOf(q);
-  for (let turn = currentTurn(d); turn !== null && q.teams[turn].human === null; turn = currentTurn(d)) {
-    const id = aiDraftPick(d, turn, createRng(mix(q.seed, 3, d.pickNo)));
-    if (!id) throw new Error(`AI team ${q.teams[turn].name} could not pick`);
-    d = pick(d, turn, id);
-  }
-  return afterPick(q, d);
+  let s = q;
+  for (let turn = draftTurn(s); turn !== null && s.teams[turn].human === null; turn = draftTurn(s)) s = aiTurn(s);
+  return s;
 }
 
 /** A human's pick (it must be his turn), then the AI's picks up to the next human turn. */
@@ -116,7 +210,37 @@ export function humanPick(q: QuickLeague, playerId: string): QuickLeague {
   if (turn === null || q.teams[turn].human === null) throw new Error('Not a human pick');
   const check = canPick(d, turn, playerId);
   if (!check.ok) throw new Error(check.reason);
-  return runAiPicks(afterPick(q, pick(d, turn, playerId)));
+  return runAiPicks(afterPick(take(q, turn, playerId)));
+}
+
+/** A human signs a minimum-contract player on his turn, then the AI picks. */
+export function humanSignMinimum(q: QuickLeague): QuickLeague {
+  const turn = draftTurn(q);
+  if (turn === null || q.teams[turn].human === null) throw new Error('Not a human pick');
+  return runAiPicks(signMinimum(q));
+}
+
+/** Auto-pick: the AI's choice for the human whose pick it is, then the AI's picks. */
+export function autoPick(q: QuickLeague): QuickLeague {
+  const turn = draftTurn(q);
+  if (turn === null || q.teams[turn].human === null) throw new Error('Not a human pick');
+  return runAiPicks(aiTurn(q));
+}
+
+/** Auto-draft: the AI picks the rest of this human's roster (the other human still picks his own). */
+export function autoDraftRest(q: QuickLeague): QuickLeague {
+  const turn = draftTurn(q);
+  if (turn === null) return q;
+  const who = q.teams[turn].human;
+  if (who === null) throw new Error('Not a human pick');
+  let s = q;
+  for (let t = draftTurn(s); t !== null && s.teams[t].human === who; t = draftTurn(s)) s = autoPick(s);
+  return s;
+}
+
+/** Minimum-contract players are worth knowing about in a group check (exported for the screen). */
+export function groupOf(p: PoolPlayer): PositionGroup {
+  return positionGroup(p.player.position);
 }
 
 /** A team as the engine plays it. */

@@ -5,14 +5,15 @@
 import { useState } from 'react';
 import { composite } from '../../engine/ratings';
 import { playerRating } from '../../engine/stats';
-import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type Player, type PlayerStats, type Side } from '../../engine/types';
+import { AGGRESSIONS, DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type Player, type PlayerStats, type Side } from '../../engine/types';
 import { suggestPlan } from '../../game/ai';
 import type { Controller } from '../../game/draft';
 import { TALKS } from '../../game/teamTalk';
-import { DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO, periodLabel, type OptionInfo } from '../labels';
+import { AGGRESSION_INFO, DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO, periodLabel, type OptionInfo } from '../labels';
 import type { LiveMatch } from '../match/controller';
 import { EnergyBar, RatingBadge } from './common';
 import { Portrait, ShirtNumber } from './Portrait';
+import { useSort } from './sortable';
 
 const other = (s: Side): Side => (s === 0 ? 1 : 0);
 const pct = (made: number, att: number) => (att > 0 ? `${Math.round((100 * made) / att)}%` : '–');
@@ -51,11 +52,14 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
     onDone();
   };
   const editing = drafts[us] ? us : null;
+  const halftime = m.phase === 'break' && m.breakQuarter === 2;
+  // Redrawn as soon as the talk is given (the card and the way back), whatever else listens to the match.
+  const [, redraw] = useState(0);
 
   return (
     <div className="overlay">
       <div className="panel modal brk">
-        <BreakHeader m={m} title={title} valid={valid} onBack={apply} />
+        <BreakHeader m={m} title={title} valid={valid} onBack={apply} talkPending={halftime && editing !== null && !m.talks[editing]} />
         {ordered.length > 1 && (
           <div className="tabs">
             {ordered.map((s) => (
@@ -66,6 +70,8 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
             ))}
           </div>
         )}
+
+        {halftime && editing !== null && <TeamTalk m={m} side={editing} onSaid={() => redraw((n) => n + 1)} />}
 
         <div className="brk-top">
           <KeyPlayer m={m} side={0} />
@@ -96,14 +102,14 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
 }
 
 /** Title, the score by quarter, and the way back to the game. */
-function BreakHeader({ m, title, valid, onBack }: { m: LiveMatch; title: string; valid: boolean; onBack: () => void }) {
+function BreakHeader({ m, title, valid, onBack, talkPending = false }: { m: LiveMatch; title: string; valid: boolean; onBack: () => void; talkPending?: boolean }) {
   const periods = Math.max(4, ...m.s.teams.map((t) => t.quarterPoints.length));
   // Quarters played so far: at a break the one just finished, in a timeout the one under way.
   const played = m.phase === 'break' ? m.breakQuarter : m.quarter;
   return (
     <div className="brk-head">
       <h1>{title}</h1>
-      <table className="brk-quarters">
+      <table className="brk-quarters eq" style={{ width: 'auto' }}>
         <thead>
           <tr>
             <th />
@@ -132,8 +138,8 @@ function BreakHeader({ m, title, valid, onBack }: { m: LiveMatch; title: string;
         </tbody>
       </table>
       <div className="spacer" />
-      <button className="primary" disabled={!valid} onClick={onBack}>
-        Back to the game ▶
+      <button className={talkPending ? '' : 'primary'} disabled={!valid} onClick={onBack} title={talkPending ? 'You have not given your team talk yet (above).' : undefined}>
+        {talkPending ? 'Back without a team talk ▶' : 'Back to the game ▶'}
       </button>
     </div>
   );
@@ -192,7 +198,7 @@ function KeyPlayer({ m, side }: { m: LiveMatch; side: Side }) {
 }
 
 /** The two teams side by side: each row a stat, with a bar that leans to whoever is ahead on it. */
-function TeamCompare({ m }: { m: LiveMatch }) {
+export function TeamCompare({ m }: { m: LiveMatch }) {
   const tot = ([0, 1] as const).map((side) => {
     const t = m.s.teams[side];
     const sum = (k: keyof PlayerStats) => Object.values(t.players).reduce((a, p) => a + p.stats[k], 0);
@@ -245,6 +251,40 @@ function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: G
   const bench = [...plan.bench, ...t.team.players.map((p) => p.id).filter((id) => !plan.starters.includes(id) && !plan.bench.includes(id))];
   const [picked, setPicked] = useState<string | null>(null);
   const set = (patch: Partial<GamePlan>) => onChange?.({ ...plan, ...patch });
+  // Sorting reorders the players on court and the bench each among themselves; the sub order stays.
+  const sorter = useSort<string>((id, key) => {
+    const p = byId.get(id) as Player;
+    const ps = t.players[id];
+    const st = ps.stats;
+    switch (key) {
+      case 'name':
+        return p.name;
+      case 'pos':
+        return -['PG', 'SG', 'SF', 'PF', 'C'].indexOf(p.position);
+      case 'ovr':
+        return composite(p).overall;
+      case 'rtg':
+        return playerRating(st);
+      case 'min':
+        return st.seconds;
+      case 'pts':
+        return st.pts;
+      case 'reb':
+        return st.oreb + st.dreb;
+      case 'ast':
+        return st.ast;
+      case 'fg':
+        return st.fgm + st.fga / 1000;
+      case '3p':
+        return st.tpm + st.tpa / 1000;
+      case 'pf':
+        return ps.fouledOut ? 99 : ps.fouls;
+      case 'energy':
+        return ps.energy;
+      default:
+        return null;
+    }
+  });
 
   const pick = (id: string) => {
     if (!onChange || t.players[id].fouledOut) return;
@@ -334,30 +374,30 @@ function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: G
           {onChange ? (picked ? `${byId.get(picked)?.name} picked: now click who swaps with him.` : 'Click a player on court, then one on the bench, to swap.') : 'Their players'}
         </span>
       </div>
-      <table className="brk-table">
+      <table className="brk-table eq">
         <thead>
           <tr>
-            <th className="left">Player</th>
-            <th className="left">Pos</th>
-            <th title="Overall rating">OVR</th>
-            <th title="Match rating so far">RTG</th>
-            <th title="Minutes">MIN</th>
-            <th>PTS</th>
-            <th>REB</th>
-            <th>AST</th>
-            <th title="Field goals made/attempted">FG</th>
-            <th title="Three-pointers made/attempted">3P</th>
-            <th title="Personal fouls (6 = out); T = a technical">PF</th>
-            <th title="Energy: tired players play worse">Energy</th>
-            {onChange && <th title="Who comes off the bench first">Sub</th>}
+            {sorter.th('name', 'Player', { left: true, wide: true })}
+            {sorter.th('pos', 'Pos', { tip: 'Position' })}
+            {sorter.th('ovr', 'OVR', { tip: 'Overall rating' })}
+            {sorter.th('rtg', 'RTG', { tip: 'Match rating so far' })}
+            {sorter.th('min', 'MIN', { tip: 'Minutes' })}
+            {sorter.th('pts', 'PTS', { tip: 'Points' })}
+            {sorter.th('reb', 'REB', { tip: 'Rebounds' })}
+            {sorter.th('ast', 'AST', { tip: 'Assists' })}
+            {sorter.th('fg', 'FG', { tip: 'Field goals made/attempted' })}
+            {sorter.th('3p', '3P', { tip: 'Three-pointers made/attempted' })}
+            {sorter.th('pf', 'PF', { tip: 'Personal fouls (6 = out); T = a technical' })}
+            {sorter.th('energy', '🔋', { tip: 'Energy: tired players play worse' })}
+            {onChange && sorter.th('sub', 'Sub', { tip: 'Sub order: who comes off the bench first', plain: true, width: 74 })}
           </tr>
         </thead>
         <tbody>
-          {plan.starters.map((id) => row(id, true))}
+          {sorter.sorted(plan.starters).map((id) => row(id, true))}
           <tr className="brk-divider">
-            <td colSpan={13} />
+            <td colSpan={onChange ? 13 : 12} />
           </tr>
-          {bench.map((id, i) => row(id, false, i))}
+          {sorter.sorted(bench).map((id) => row(id, false, bench.indexOf(id)))}
         </tbody>
       </table>
     </div>
@@ -372,8 +412,9 @@ function Tactics({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: 
   const team = m.s.teams[side].team;
   const opponent = m.s.teams[other(side)].team;
   const suggestion = suggestPlan(team, opponent);
-  const follows = plan.offence === suggestion.offence && plan.defence === suggestion.defence && plan.tempo === suggestion.tempo;
-  const seen = m.tips.filter((t) => t.side === side).slice(0, 2);
+  const follows =
+    plan.offence === suggestion.offence && plan.defence === suggestion.defence && plan.tempo === suggestion.tempo && (plan.aggression ?? 'normal') === suggestion.aggression;
+  const seen = m.liveTips(side).slice(0, 2);
   const set = (patch: Partial<GamePlan>) => onChange({ ...plan, ...patch });
   const km = plan.keyMatchup;
   const oppSorted = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall);
@@ -387,24 +428,34 @@ function Tactics({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: 
             {follows ? 'Stick with it: ' : 'I would go '}
             <b>
               {OFFENCE_INFO[suggestion.offence].icon} {OFFENCE_INFO[suggestion.offence].label} · {DEFENCE_INFO[suggestion.defence].icon} {DEFENCE_INFO[suggestion.defence].label} ·{' '}
-              {TEMPO_INFO[suggestion.tempo].icon} {TEMPO_INFO[suggestion.tempo].label}
+              {TEMPO_INFO[suggestion.tempo].icon} {TEMPO_INFO[suggestion.tempo].label} · {AGGRESSION_INFO[suggestion.aggression].icon}{' '}
+              {AGGRESSION_INFO[suggestion.aggression].label} intensity
             </b>
           </span>
           <div className="spacer" />
-          <button className="small" disabled={follows} onClick={() => set({ offence: suggestion.offence, defence: suggestion.defence, tempo: suggestion.tempo })}>
+          <button className="small" disabled={follows} onClick={() => set({ offence: suggestion.offence, defence: suggestion.defence, tempo: suggestion.tempo, aggression: suggestion.aggression })}>
             {follows ? 'Using it ✓' : 'Use this'}
           </button>
         </div>
-        <div className="small">
-          {suggestion.reasons.join(' ')}
-          {seen.length > 0 && <span className="brk-seen"> In this game: {seen.map((t) => t.text).join(' ')}</span>}
+        <div className="brk-why small">
+          <span className="brk-why-label">Why</span>
+          <span>{suggestion.reasons.join(' ')}</span>
+          {seen.length > 0 && (
+            <>
+              <span className="brk-why-label">Right now</span>
+              <span>{seen.map((t) => t.text).join(' ')}</span>
+            </>
+          )}
         </div>
       </div>
-      {m.phase === 'break' && m.breakQuarter === 2 && <TeamTalk m={m} side={side} />}
+      {m.phase === 'timeout' && m.s.quarter <= 2 && (
+        <div className="brk-talk-hint">🗣️ At half-time you give your players a team talk: it can lift them for the second half.</div>
+      )}
       <div className="brk-choices">
         <Choice label="Attack" options={OFFENSIVE_FOCI} info={OFFENCE_INFO} value={plan.offence} onPick={(offence) => set({ offence })} />
         <Choice label="Defence" options={DEFENCE_SCHEMES} info={DEFENCE_INFO} value={plan.defence} onPick={(defence) => set({ defence })} />
         <Choice label="Tempo" options={TEMPOS} info={TEMPO_INFO} value={plan.tempo} onPick={(tempo) => set({ tempo })} />
+        <Choice label="Intensity" options={AGGRESSIONS} info={AGGRESSION_INFO} value={plan.aggression ?? 'normal'} onPick={(aggression) => set({ aggression })} />
         <div className="brk-choice">
           <span className="brk-choice-label">Matchup</span>
           <select
@@ -465,25 +516,50 @@ function Choice<K extends string>({ label, options, info, value, onPick }: { lab
 }
 
 /** Halftime: what the coach tells his players. */
-function TeamTalk({ m, side }: { m: LiveMatch; side: Side }) {
+/**
+ * The half-time team talk, at the top of the half-time screen: once a match, what to say to the players
+ * given the score. What each would say is on its button; once said, how they took it (green if it lifted
+ * them, red if it backfired).
+ */
+function TeamTalk({ m, side, onSaid }: { m: LiveMatch; side: Side; onSaid: () => void }) {
   const given = m.talks[side];
   const margin = m.s.teams[side].score - m.s.teams[other(side)].score;
+  const score = margin > 0 ? `You lead by ${margin}` : margin < 0 ? `You trail by ${-margin}` : 'It is tied';
+  const said = given ? TALKS.find((t) => t.talk === given.talk) : null;
   return (
-    <div className="brk-talk">
-      <b>Team talk {margin > 0 ? `(up ${margin})` : margin < 0 ? `(down ${-margin})` : '(tied)'}:</b>
-      {given ? (
-        <span>
-          {TALKS.find((t) => t.talk === given.talk)?.icon} {TALKS.find((t) => t.talk === given.talk)?.label}: {given.reaction}
+    <section className={`brk-talk ${given ? 'done' : ''}`}>
+      <div className="brk-talk-head">
+        <span className="brk-talk-title">🗣️ Half-time team talk</span>
+        <span className="brk-talk-sub">
+          {given ? 'Said.' : `Once a match. ${score}: read the room. The right words lift them for the second half; the wrong ones can backfire.`}
         </span>
+      </div>
+      {given && said ? (
+        <div className={`brk-talk-result ${given.morale > 0.25 ? 'good' : given.morale < 0 ? 'bad' : ''}`}>
+          <b>
+            {said.icon} {said.label}
+          </b>{' '}
+          {said.line} <span className="brk-talk-reaction">{given.reaction}</span>
+        </div>
       ) : (
-        <span className="brk-chips">
+        <div className="brk-talk-options">
           {TALKS.map((t) => (
-            <button key={t.talk} className="chip" title={t.line} onClick={() => m.teamTalk(side, t.talk)}>
-              {t.icon} {t.label}
+            <button
+              key={t.talk}
+              className="brk-talk-option"
+              onClick={() => {
+                m.teamTalk(side, t.talk);
+                onSaid();
+              }}
+            >
+              <b>
+                {t.icon} {t.label}
+              </b>
+              <small>{t.line}</small>
             </button>
           ))}
-        </span>
+        </div>
       )}
-    </div>
+    </section>
   );
 }

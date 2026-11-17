@@ -3,12 +3,13 @@
 
 import { useState } from 'react';
 import { composite } from '../../engine/ratings';
-import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type Side, type Team } from '../../engine/types';
+import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, AGGRESSIONS, type GamePlan, type KeyMatchup, type Side, type Team } from '../../engine/types';
 import { suggestPlan } from '../../game/ai';
 import type { TeamView } from '../match/controller';
-import { DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO, type OptionInfo } from '../labels';
+import { AGGRESSION_INFO, DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO, type OptionInfo } from '../labels';
 import { EnergyBar, Rating } from './common';
 import { Portrait, ShirtNumber } from './Portrait';
+import { useSort } from './sortable';
 
 interface Props {
   team: Team;
@@ -22,11 +23,11 @@ interface Props {
 }
 
 const COLUMNS = [
-  { key: 'overall', label: 'Overall', tip: 'Overall rating (what the market thinks)' },
-  { key: 'three', label: '3-pt', tip: 'Three-point shooting' },
+  { key: 'overall', label: 'OVR', tip: 'Overall rating (what the market thinks)' },
+  { key: 'three', label: '3PT', tip: 'Three-point shooting' },
   { key: 'insideScoring', label: 'Inside', tip: 'Scoring near the basket (size + finishing)' },
-  { key: 'playmaking', label: 'Passing', tip: 'Passing and ball handling' },
-  { key: 'perimeterD', label: 'Guarding', tip: 'Perimeter defence: staying in front of guards and wings' },
+  { key: 'playmaking', label: 'Pass', tip: 'Passing and ball handling' },
+  { key: 'perimeterD', label: 'Guard', tip: 'Perimeter defence: staying in front of guards and wings' },
   { key: 'rimProtection', label: 'Rim D', tip: 'Protecting the basket: blocks and contesting inside shots' },
   { key: 'rebounding', label: 'Boards', tip: 'Rebounding' },
 ] as const;
@@ -36,7 +37,21 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
   const bench = [...plan.bench, ...team.players.map((p) => p.id).filter((id) => !plan.starters.includes(id) && !plan.bench.includes(id))];
   const set = (patch: Partial<GamePlan>) => onChange({ ...plan, ...patch });
   const suggestion = suggestPlan(team, opponent);
-  const followsSuggestion = plan.offence === suggestion.offence && plan.defence === suggestion.defence && plan.tempo === suggestion.tempo;
+  // Sorting reorders the starters and the bench each among themselves; the sub order stays.
+  const sorter = useSort<string>((id, key) => {
+    const p = byId.get(id)!;
+    const lv = live?.players[id];
+    if (key === 'name') return p.name;
+    if (key === 'pos') return -['PG', 'SG', 'SF', 'PF', 'C'].indexOf(p.position);
+    if (key === 'speed') return p.attrs.speed;
+    if (key === 'energy') return lv?.energy;
+    if (key === 'min') return lv?.seconds;
+    if (key === 'fouls') return lv ? (lv.fouledOut ? 99 : lv.fouls) : null;
+    if (key === 'pts') return lv?.pts;
+    const col = COLUMNS.find((c) => c.key === key);
+    return col ? composite(p)[col.key] : null;
+  });
+  const followsSuggestion = plan.offence === suggestion.offence && plan.defence === suggestion.defence && plan.tempo === suggestion.tempo && (plan.aggression ?? 'normal') === suggestion.aggression;
   const [picked, setPicked] = useState<string | null>(null);
 
   /** Click one player on court and one on the bench: they swap places (rows never jump around). */
@@ -137,13 +152,13 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
           <b>🧑‍🏫 Assistant suggests:</b>
           <span>
             {OFFENCE_INFO[suggestion.offence].icon} {OFFENCE_INFO[suggestion.offence].label} · {DEFENCE_INFO[suggestion.defence].icon}{' '}
-            {DEFENCE_INFO[suggestion.defence].label} · {TEMPO_INFO[suggestion.tempo].icon} {TEMPO_INFO[suggestion.tempo].label}
+            {DEFENCE_INFO[suggestion.defence].label} · {TEMPO_INFO[suggestion.tempo].icon} {TEMPO_INFO[suggestion.tempo].label} · {AGGRESSION_INFO[suggestion.aggression].icon} {AGGRESSION_INFO[suggestion.aggression].label} intensity
           </span>
           <div className="spacer" />
           <button
             className="small"
             disabled={followsSuggestion}
-            onClick={() => set({ offence: suggestion.offence, defence: suggestion.defence, tempo: suggestion.tempo })}
+            onClick={() => set({ offence: suggestion.offence, defence: suggestion.defence, tempo: suggestion.tempo, aggression: suggestion.aggression })}
           >
             {followsSuggestion ? 'Using it ✓' : 'Use this'}
           </button>
@@ -158,6 +173,13 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
       <OptionPicker title="Attack: how do we score?" options={OFFENSIVE_FOCI} info={OFFENCE_INFO} value={plan.offence} onPick={(offence) => set({ offence })} />
       <OptionPicker title="Defence: how do we stop them?" options={DEFENCE_SCHEMES} info={DEFENCE_INFO} value={plan.defence} onPick={(defence) => set({ defence })} />
       <OptionPicker title="Tempo: how fast do we play?" options={TEMPOS} info={TEMPO_INFO} value={plan.tempo} onPick={(tempo) => set({ tempo })} />
+      <OptionPicker
+        title="Defensive intensity: how hard do we play them?"
+        options={AGGRESSIONS}
+        info={AGGRESSION_INFO}
+        value={plan.aggression ?? 'normal'}
+        onPick={(aggression) => set({ aggression })}
+      />
 
       <div>
         <h3>{live ? 'Players on court' : 'Starting five'} &amp; bench</h3>
@@ -167,33 +189,29 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
             : 'To swap: click a player on court, then a bench player.'}
         </div>
         <div>
-          <table className="brk-table">
+          <table className="brk-table eq">
             <thead>
               <tr>
-                <th className="left">Player</th>
-                <th className="left">Pos</th>
-                {COLUMNS.map((c) => (
-                  <th key={c.key} title={c.tip}>
-                    {c.label}
-                  </th>
-                ))}
-                <th title="Speed">Speed</th>
-                {live && <th title="Energy: tired players play worse">Energy</th>}
-                {live && <th title="Minutes played">Min</th>}
-                {live && <th title="Personal fouls (6 = out)">Fouls</th>}
-                {live && <th>Pts</th>}
-                <th title="Who comes off the bench first">Sub order</th>
+                {sorter.th('name', 'Player', { left: true, wide: true })}
+                {sorter.th('pos', 'Pos', { tip: 'Position' })}
+                {COLUMNS.map((c) => sorter.th(c.key, c.label, { tip: c.tip }))}
+                {sorter.th('speed', 'Speed', { tip: 'Speed' })}
+                {live && sorter.th('energy', 'Energy', { tip: 'Energy: tired players play worse' })}
+                {live && sorter.th('min', 'Min', { tip: 'Minutes played' })}
+                {live && sorter.th('fouls', 'Fouls', { tip: 'Personal fouls (6 = out)' })}
+                {live && sorter.th('pts', 'Pts', { tip: 'Points' })}
+                {sorter.th('sub', 'Sub', { tip: 'Sub order: who comes off the bench first', plain: true, width: 84 })}
               </tr>
             </thead>
             <tbody>
               <tr className="group-row">
-                <td colSpan={20}>{live ? 'ON COURT' : 'STARTERS'}</td>
+                <td colSpan={COLUMNS.length + (live ? 8 : 4)}>{live ? 'ON COURT' : 'STARTERS'}</td>
               </tr>
-              {plan.starters.map((id) => row(id, true))}
+              {sorter.sorted(plan.starters).map((id) => row(id, true))}
               <tr className="group-row">
-                <td colSpan={20}>BENCH</td>
+                <td colSpan={COLUMNS.length + (live ? 8 : 4)}>BENCH</td>
               </tr>
-              {bench.map((id, i) => row(id, false, i))}
+              {sorter.sorted(bench).map((id) => row(id, false, bench.indexOf(id)))}
             </tbody>
           </table>
         </div>

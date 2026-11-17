@@ -18,15 +18,18 @@ export type AttrKey = Exclude<keyof Attributes, 'injuryProneness' | 'potential'>
 export interface AttributeGroup {
   key: string;
   label: string;
+  /** For narrow tables. */
+  short: string;
   attrs: { key: AttrKey; label: string }[];
 }
 
 /** The five groups the UI shows (spec §3.1). Height/weight are shown as real values. */
 export const ATTRIBUTE_GROUPS: AttributeGroup[] = [
-  { key: 'physical', label: 'Physical', attrs: [{ key: 'speed', label: 'Speed' }, { key: 'stamina', label: 'Stamina' }] },
+  { key: 'physical', label: 'Physical', short: 'Phys', attrs: [{ key: 'speed', label: 'Speed' }, { key: 'stamina', label: 'Stamina' }] },
   {
     key: 'scoring',
     label: 'Scoring',
+    short: 'Score',
     attrs: [
       { key: 'shooting', label: 'Mid-range' },
       { key: 'three', label: '3-Point' },
@@ -35,8 +38,8 @@ export const ATTRIBUTE_GROUPS: AttributeGroup[] = [
       { key: 'dunk', label: 'Dunking' },
     ],
   },
-  { key: 'playmaking', label: 'Playmaking', attrs: [{ key: 'passing', label: 'Passing' }, { key: 'dribbling', label: 'Dribbling' }] },
-  { key: 'defence', label: 'Defence & Boards', attrs: [{ key: 'rebounding', label: 'Rebounding' }, { key: 'tactics', label: 'Tactics (IQ)' }] },
+  { key: 'playmaking', label: 'Playmaking', short: 'Play', attrs: [{ key: 'passing', label: 'Passing' }, { key: 'dribbling', label: 'Dribbling' }] },
+  { key: 'defence', label: 'Defence & Boards', short: 'D & Reb', attrs: [{ key: 'rebounding', label: 'Rebounding' }, { key: 'tactics', label: 'Tactics (IQ)' }] },
 ];
 
 /** Half-width of a range in rating points. */

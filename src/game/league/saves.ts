@@ -4,8 +4,9 @@
 // reported, never crashes, and leaves the other slots alone. The storage is passed in, so the tests
 // can use a plain object.
 
-import { leaguePool } from './leagues';
-import { MATCHDAYS, type QuickLeague } from './quickLeague';
+import { ROSTER_SIZE } from '../draft';
+import { LEAGUES } from './leagues';
+import { MATCHDAYS, poolOf, table, type QuickLeague } from './quickLeague';
 
 /** The save format this version of the game writes. */
 export const SAVE_FORMAT = 1;
@@ -36,11 +37,34 @@ export type SlotInfo =
  */
 const MIGRATIONS: Record<number, (file: SaveFile) => SaveFile> = {};
 
-/** One line about a save, for the slot list. */
+/** A save at a glance, for the slot list: the club, its league and manager, and how far it has got. */
+export interface SaveSummary {
+  club: string;
+  league: string;
+  manager?: string;
+  /** "Draft · pick 8 of 96", "Matchday 6 of 14 · 3rd, 4–1", "Season over · finished 2nd". */
+  progress: string;
+}
+
+const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th')}`;
+
+export function summarise(q: QuickLeague): SaveSummary {
+  const me = q.teams.findIndex((t) => t.human !== null);
+  const base = { club: q.teams[me]?.name ?? '?', league: LEAGUES[q.league]?.name ?? 'Quick League', manager: q.manager };
+  if (q.phase === 'draft') return { ...base, progress: `Draft · pick ${q.draft.pickNo + 1} of ${q.teams.length * ROSTER_SIZE}` };
+  const rows = table(q);
+  const at = rows.findIndex((r) => r.team === me);
+  const r = rows[at];
+  // A place in the table only once games have been played.
+  const place = r && r.played ? ` · ${ordinal(at + 1)}, ${r.won}–${r.lost}` : '';
+  if (q.phase === 'finished') return { ...base, progress: `Season over · finished ${ordinal(at + 1)}${r ? `, ${r.won}–${r.lost}` : ''}` };
+  return { ...base, progress: `Matchday ${q.matchday + 1} of ${MATCHDAYS}${place}` };
+}
+
+/** One line about a save. */
 export function describe(q: QuickLeague): string {
-  const you = q.teams.filter((t) => t.human !== null).map((t) => t.name).join(' & ');
-  const where = q.phase === 'draft' ? 'draft' : q.phase === 'finished' ? 'season over' : `matchday ${q.matchday + 1} of ${MATCHDAYS}`;
-  return `Quick League · ${you} · ${where}`;
+  const x = summarise(q);
+  return `${x.club} · ${x.league} · ${x.progress}`;
 }
 
 /** Brings a save to the current format, or says why it can't be loaded. */
@@ -55,7 +79,7 @@ function upgrade(raw: unknown): { file: SaveFile } | { status: 'newer' | 'broken
     file = step(file);
   }
   // Every player it names must still exist in its league (the pool is rebuilt from data, not saved).
-  const pool = new Set(leaguePool(file.data.league).map((p) => p.player.id));
+  const pool = new Set(poolOf(file.data).map((p) => p.player.id));
   const missing = Object.keys(file.data.draft.owner).some((id) => !pool.has(id));
   if (missing) return { status: 'incompatible', message: 'This save needs players this version of the game no longer has.' };
   return { file };

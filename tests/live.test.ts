@@ -46,7 +46,8 @@ describe('live match controller', () => {
     expect(m.score).toEqual([m.s.teams[0].score, m.s.teams[1].score]);
     expect(m.feed.some((f) => f.kind === 'score')).toBe(true);
     expect(m.feed[0].text).toMatch(/FINAL/);
-  });
+    // About 2 s on its own; with the whole suite running alongside it can pass 5.
+  }, 30000);
 
   it('a human timeout request pauses at the next dead ball and is used up', () => {
     const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], 3, ['human', 'human'], 'fast');
@@ -190,17 +191,17 @@ describe('highlights', () => {
     return { shown, plays, extraNotFreeThrows, clutchShown, sounds, events: m.s.events, score: [m.s.teams[0].score, m.s.teams[1].score] };
   }
 
-  it('shows five plays a quarter (plus clutch moments), and never changes the result', () => {
+  it('shows three plays in each of the first three quarters and five in the fourth (plus clutch moments), and never changes the result', () => {
     const full = watch(false, 4);
     const best = watch(true, 4);
     // The same game either way: highlights only decide what is animated.
     expect(best.score).toEqual(full.score);
     expect(best.events).toEqual(full.events);
-    // Five best plays a quarter; on top of them only trips to the line that matter (late in a
-    // quarter, a close finish, an and-one).
+    // Three best plays in each of the first three quarters, five in the fourth; on top of them only
+    // trips to the line that matter (an and-one, the last two minutes of a close fourth quarter).
     for (const q of [1, 2, 3]) {
-      expect(best.plays[q]).toBe(5);
-      expect(best.shown[q]).toBeGreaterThanOrEqual(5);
+      expect(best.plays[q]).toBe(3);
+      expect(best.shown[q]).toBeGreaterThanOrEqual(3);
     }
     expect(best.plays[4] ?? 0).toBeLessThanOrEqual(5);
     expect(best.extraNotFreeThrows).toEqual([]);

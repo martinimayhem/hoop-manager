@@ -4,7 +4,7 @@
 
 import { positionGroup, type PositionGroup } from '../engine/ratings';
 import type { Player, Team } from '../engine/types';
-import { BUDGET } from './pricing';
+import { BUDGET, MIN_PRICE } from './pricing';
 import type { PoolPlayer } from './pool';
 
 export const ROSTER_SIZE = 12;
@@ -84,24 +84,23 @@ export function isComplete(state: DraftState): boolean {
   return state.teams.every((_, i) => isTeamComplete(state, i));
 }
 
-/**
- * What `n` more players will cost at least, from what is still on the market (excluding one id).
- * Two teams: the cheapest `n`. More teams (a league): every team's remaining slots will use up the
- * cheapest R players there are (R: all teams' open slots), shared out as a snake draft shares them:
- * this team's `n` at evenly spread ranks among those R. Exact by the last round, fair before it.
- */
-function cheapestFill(state: DraftState, n: number, excludeId: string, team: number): number {
+/** The cheapest total for `n` more players from what is still on the market (excluding one id). */
+function cheapestFill(state: DraftState, n: number, excludeId: string): number {
   if (n <= 0) return 0;
   const prices = state.pool
     .filter((p) => !(p.player.id in state.owner) && p.player.id !== excludeId)
     .map((p) => p.price)
     .sort((a, b) => a - b);
-  if (state.teams.length <= 2) return prices.slice(0, n).reduce((s, x) => s + x, 0);
-  const open = state.teams.reduce((s, t, i) => s + (i === team ? n : Math.max(0, ROSTER_SIZE - t.picks.length)), 0);
-  const upTo = Math.min(prices.length, open);
-  let sum = 0;
-  for (let j = 1; j <= n; j++) sum += prices[Math.min(upTo, Math.ceil((j * upTo) / n)) - 1] ?? 0;
-  return sum;
+  return prices.slice(0, n).reduce((s, x) => s + x, 0);
+}
+
+/**
+ * A league (more than two teams): the budget rule is simply to keep at least MIN_PRICE for every
+ * empty roster spot, because a minimum-contract player can always be signed for that (see the Quick
+ * League's minimum signings), so no team can ever be left unable to fill its roster.
+ */
+export function isLeagueDraft(state: DraftState): boolean {
+  return state.teams.length > 2;
 }
 
 export interface PickCheck {
@@ -117,7 +116,9 @@ export function canPick(state: DraftState, team: number, id: string): PickCheck 
   const p = findPool(state, id);
   if (p.price > t.budgetLeft) return { ok: false, reason: 'Too expensive' };
   const slotsAfter = ROSTER_SIZE - t.picks.length - 1;
-  if (t.budgetLeft - p.price < cheapestFill(state, slotsAfter, id, team)) {
+  if (isLeagueDraft(state)) {
+    if (t.budgetLeft - p.price < slotsAfter * MIN_PRICE) return { ok: false, reason: `Keep at least ${MIN_PRICE} credit for each empty roster spot` };
+  } else if (t.budgetLeft - p.price < cheapestFill(state, slotsAfter, id)) {
     return { ok: false, reason: 'Would leave too little budget to fill the roster' };
   }
   const counts = groupCounts(state, team);

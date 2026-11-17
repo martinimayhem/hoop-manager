@@ -1,22 +1,22 @@
-// Screen flow: menu → draft → game plan → live match → result (→ rematch).
+// Screen flow: menu → choose the league → choose the club → the season (hub, game plan, live match,
+// result); or a friendly: menu → game plan → live match → result (→ rematch).
 
 import { useState } from 'react';
 import { HARBOR_HAMMERS, SKYLINE_SPARKS } from '../data/teams';
 import type { GamePlan, Team } from '../engine/types';
 import type { LiveMatch, Speed } from './match/controller';
-import { DraftScreen } from './screens/DraftScreen';
 import { MainMenu } from './screens/MainMenu';
 import { MatchScreen } from './screens/MatchScreen';
 import { PrepScreen } from './screens/PrepScreen';
 import { ResultScreen } from './screens/ResultScreen';
 import { LeagueFlow } from './screens/league/LeagueFlow';
 import { LeagueMenu } from './screens/league/LeagueMenu';
+import { ClubPicker } from './screens/league/ClubPicker';
 import type { QuickLeague } from '../game/league/quickLeague';
+import type { LeagueId } from '../game/league/leagues';
 import { abbrOf } from './labels';
 
 export interface Setup {
-  mode: 'ai' | 'pvp';
-  draft: 'free' | 'snake' | 'quick';
   names: [string, string];
   speed: Speed;
   /** How the court is shown in the match: the 2D court or the 3D view. Switchable during the match too. */
@@ -26,8 +26,8 @@ export interface Setup {
 type Screen =
   | { kind: 'menu' }
   | { kind: 'league-menu' }
+  | { kind: 'club'; league: LeagueId }
   | { kind: 'league'; league: QuickLeague; slot: number; key: number }
-  | { kind: 'draft'; setup: Setup }
   | { kind: 'prep'; setup: Setup; teams: [Team, Team] }
   | { kind: 'match'; setup: Setup; teams: [Team, Team]; plans: [GamePlan, GamePlan]; seed: number }
   | { kind: 'result'; setup: Setup; teams: [Team, Team]; match: LiveMatch };
@@ -49,11 +49,17 @@ export function App() {
       return (
         <div className="app">
           <MainMenu
-            onStart={(setup) =>
-              setScreen(setup.draft === 'quick' ? { kind: 'prep', setup, teams: quickTeams(setup) } : { kind: 'draft', setup })
-            }
-            onLeague={() => setScreen({ kind: 'league-menu' })}
+            onFriendly={(setup) => setScreen({ kind: 'prep', setup, teams: quickTeams(setup) })}
+            onLeague={(league) => setScreen({ kind: 'club', league })}
+            onLoad={() => setScreen({ kind: 'league-menu' })}
+            onContinue={(league, slot) => setScreen({ kind: 'league', league, slot, key: Date.now() })}
           />
+        </div>
+      );
+    case 'club':
+      return (
+        <div className="app">
+          <ClubPicker league={screen.league} onBack={menu} onStart={(league, slot) => setScreen({ kind: 'league', league, slot, key: Date.now() })} />
         </div>
       );
     case 'league-menu':
@@ -65,20 +71,13 @@ export function App() {
     case 'league':
       return (
         <div className="app">
-          <LeagueFlow key={screen.key} initial={screen.league} slot={screen.slot} onMenu={menu} onNewLeague={() => setScreen({ kind: 'league-menu' })} />
-        </div>
-      );
-    case 'draft':
-      return (
-        <div className="app">
-          <DraftScreen setup={screen.setup} onDone={(teams) => setScreen({ kind: 'prep', setup: screen.setup, teams })} />
+          <LeagueFlow key={screen.key} initial={screen.league} slot={screen.slot} onMenu={menu} onNewLeague={menu} />
         </div>
       );
     case 'prep':
       return (
         <div className="app">
           <PrepScreen
-            setup={screen.setup}
             teams={screen.teams}
             onMenu={menu}
             onReady={(plans) => setScreen({ kind: 'match', setup: screen.setup, teams: screen.teams, plans, seed: Date.now() >>> 0 })}

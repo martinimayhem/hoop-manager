@@ -1,4 +1,4 @@
-// npm run frames -- --seed <n> --quarter <q> --from <clock> --to <clock> --every <seconds> [--view 2d|3d|both] [--zoom] [--follow <key>] [--warm <s>] [--out <dir>]
+// npm run frames -- --seed <n> --quarter <q> --from <clock> --to <clock> --every <seconds> [--view 2d|3d|both] [--zoom] [--follow <key>] [--warm <s>] [--highlights] [--out <dir>]
 //
 // Plays a match headlessly (Chrome via Playwright, with the game's own renderers) up to a moment and
 // saves PNG frames of the court, the clock and the commentary line burnt into each one, to
@@ -57,6 +57,8 @@ try {
   });
   const params = new URLSearchParams({ capture: '', seed, q: quarter, from, every, view });
   if (a.zoom) params.set('zoom', '1');
+  // As highlights mode plays it: only the best plays shown, cut in near the moment.
+  if (a.highlights) params.set('hl', '1');
   if (a.follow) params.set('follow', a.follow);
   if (a.warm) params.set('warm', a.warm);
   if (a.cam) params.set('cam', a.cam);

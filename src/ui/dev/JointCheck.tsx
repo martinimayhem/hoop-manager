@@ -64,6 +64,8 @@ export function JointCheck() {
       let worstOff = 0;
       const set = new Set<object>();
       const probeBones = (q.get('probe') ?? '').split(',').filter(Boolean);
+      // ?only=upperarm: the worst moments only for joints whose name has that in it.
+      const only = q.get('only');
       const probes: Record<string, { du: number[]; dv: number[]; twist: number[] }> = {};
       const end = 720 - minutes * 60;
       while (!cancelled && m.phase !== 'final' && (m.quarter < quarter || (m.quarter === quarter && m.clock > end))) {
@@ -107,7 +109,7 @@ export function JointCheck() {
               const b = (perBone[`${e.bone} ${kind}`] ??= { frames: 0, max: 0 });
               b.frames++;
               b.max = Math.max(b.max, deg);
-              worst.push({ bone: e.bone, deg, kind, clock: clockString(m.clock), quarter: m.quarter, who: key, arms: rig.state.arms });
+              if (!only || e.bone.includes(only)) worst.push({ bone: e.bone, deg, kind, clock: clockString(m.clock), quarter: m.quarter, who: key, arms: rig.state.arms });
               if (worst.length > 4000) {
                 worst.sort((x, y) => y.deg - x.deg);
                 worst.length = 200;
@@ -129,6 +131,7 @@ export function JointCheck() {
       // The worst moments, one per player and second.
       const seen = new Set<string>();
       const top = worst.filter((w) => {
+        if (only && !w.bone.includes(only)) return false;
         const k = `${w.who}|${w.clock}`;
         if (seen.has(k)) return false;
         seen.add(k);

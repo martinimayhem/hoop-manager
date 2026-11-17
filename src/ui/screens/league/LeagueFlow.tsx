@@ -1,13 +1,12 @@
-// A Quick League from the draft to the end of the season: the hub between matchdays, and a matchday's
-// human games played live through the usual prep, match and result screens. When the humans meet it
-// is one hot-seat match; otherwise Player 1 plays, then Player 2. The rest of the matchday is then
-// simulated and the league saved (SEASON_SPEC R2.4, R11.2). Closing mid-match loses only that
+// A Quick League season: the hub between matchdays, and the player's
+// game each matchday played live through the usual prep, match and result screens. The rest of the
+// matchday is then simulated and the league saved (SEASON_SPEC R2.4, R11.2). Closing mid-match loses only that
 // matchday's progress: the save is from its start.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GamePlan, Team } from '../../../engine/types';
 import { leaguePool } from '../../../game/league/leagues';
-import { SCOUT_MIN_HALF, completeMatchday, gameSeed, humanGames, recordFrom, scoutAccuracy, teamOf, type QuickLeague } from '../../../game/league/quickLeague';
+import { MATCHDAYS, SCOUT_MIN_HALF, completeMatchday, finishDraft, gameSeed, humanGames, recordFrom, scoutAccuracy, teamOf, type QuickLeague } from '../../../game/league/quickLeague';
 import { writeSlot } from '../../../game/league/saves';
 import type { GameRecord } from '../../../game/league/standings';
 import type { Fixture } from '../../../game/league/schedule';
@@ -15,19 +14,18 @@ import type { Setup } from '../../App';
 import type { LiveMatch, Speed } from '../../match/controller';
 import type { ScoutView } from '../../components/ScoutingReport';
 import { MatchScreen } from '../MatchScreen';
+import { useConfirm } from '../../components/Confirm';
 import { PrepScreen } from '../PrepScreen';
 import { ResultScreen } from '../ResultScreen';
-import { VIEW_3D_KEY } from '../MainMenu';
-import { LeagueDraft } from './LeagueDraft';
+import { VIEW_3D_KEY, lastSpeed } from '../MainMenu';
 import { LeagueHub } from './LeagueHub';
 import { browserStorage } from './storage';
 
 interface Game {
   game: number;
   fixture: Fixture;
-  /** The team index on each side of the live match (a human on side 0). */
+  /** The team index on each side of the live match (the player on side 0). */
   sides: [number, number];
-  pvp: boolean;
 }
 
 type Step =
@@ -44,25 +42,22 @@ function lastView(): Setup['view'] {
   }
 }
 
-/** This matchday's human games, Player 1's first; a meeting of the two humans is one game. */
+/** This matchday's game for the player: his team on side 0 of the live match. */
 function gamesOf(q: QuickLeague): Game[] {
-  return humanGames(q)
-    .map(({ game, fixture }) => {
-      const h = q.teams[fixture.home].human;
-      const a = q.teams[fixture.away].human;
-      const pvp = h !== null && a !== null;
-      const homeFirst = pvp ? h! <= a! : h !== null;
-      return { game, fixture, pvp, sides: (homeFirst ? [fixture.home, fixture.away] : [fixture.away, fixture.home]) as [number, number] };
-    })
-    // A human is on side 0 of each: Player 1's game first.
-    .sort((x, y) => q.teams[x.sides[0]].human! - q.teams[y.sides[0]].human!);
+  return humanGames(q).map(({ game, fixture }) => ({
+    game,
+    fixture,
+    sides: (q.teams[fixture.home].human !== null ? [fixture.home, fixture.away] : [fixture.away, fixture.home]) as [number, number],
+  }));
 }
 
 export function LeagueFlow({ initial, slot, onMenu, onNewLeague }: { initial: QuickLeague; slot: number; onMenu: () => void; onNewLeague: () => void }) {
-  const [league, setLeagueState] = useState(initial);
+  // An old save stopped mid-draft: the computer makes the rest of the picks, the player's club's too.
+  const [league, setLeagueState] = useState(() => (initial.phase === 'draft' ? finishDraft(initial) : initial));
   const [step, setStep] = useState<Step>({ kind: 'hub' });
-  const [speed, setSpeed] = useState<Speed>('normal');
+  const [speed, setSpeed] = useState<Speed>(lastSpeed);
   const [saveFailed, setSaveFailed] = useState(false);
+  const confirm = useConfirm();
 
   /** Every change of league state is saved at once (after a pick, after a matchday). */
   const setLeague = (q: QuickLeague) => {
@@ -70,20 +65,15 @@ export function LeagueFlow({ initial, slot, onMenu, onNewLeague }: { initial: Qu
     setSaveFailed(!writeSlot(browserStorage, slot, q));
   };
   const banner = saveFailed ? <div className="panel" style={{ borderColor: 'var(--away)' }}>⚠ The browser would not save this league (storage full or blocked). Progress may be lost when you close the page.</div> : null;
-
-  if (league.phase === 'draft') {
-    return (
-      <>
-        {banner}
-        <LeagueDraft league={league} onChange={setLeague} onMenu={onMenu} />
-      </>
-    );
-  }
+  // Saved as soon as it opens: a new game (or a finished draft) is there to continue at once.
+  useEffect(() => {
+    setSaveFailed(!writeSlot(browserStorage, slot, league));
+    // Once, on opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const teamsOf = (g: Game): [Team, Team] => [teamOf(league, g.sides[0]), teamOf(league, g.sides[1])];
   const setupOf = (g: Game): Setup => ({
-    mode: g.pvp ? 'pvp' : 'ai',
-    draft: 'snake',
     names: [league.teams[g.sides[0]].name, league.teams[g.sides[1]].name],
     speed,
     view: lastView(),
@@ -103,17 +93,10 @@ export function LeagueFlow({ initial, slot, onMenu, onNewLeague }: { initial: Qu
       return (
         <>
           {banner}
-          <div className="row" style={{ justifyContent: 'flex-end' }}>
-            <span className="muted small">Match speed</span>
-            <button className={speed === 'normal' ? 'active small' : 'small'} onClick={() => setSpeed('normal')}>
-              Normal
-            </button>
-            <button className={speed === 'fast' ? 'active small' : 'small'} onClick={() => setSpeed('fast')}>
-              Fast
-            </button>
-          </div>
           <LeagueHub
             league={league}
+            speed={speed}
+            onSpeed={setSpeed}
             onMenu={onMenu}
             onNewLeague={onNewLeague}
             onPlay={() => {
@@ -122,13 +105,23 @@ export function LeagueFlow({ initial, slot, onMenu, onNewLeague }: { initial: Qu
               else setStep({ kind: 'prep', games, at: 0, played: {} });
             }}
             onSimMine={() => finish({})}
-            onSimSeason={() => {
-              if (!window.confirm('The computer plays every remaining match, yours included. Results stand. Go ahead?')) return;
-              let q = league;
-              while (q.phase === 'season') q = completeMatchday(q);
-              setLeague(q);
-            }}
+            onSimSeason={() =>
+              confirm.ask(
+                {
+                  title: 'Sim to the end of the season?',
+                  body: `The computer plays all ${MATCHDAYS - league.matchday} remaining matchdays, your matches included, with the plans it would choose. The results stand.`,
+                  confirm: 'Sim the season ▶',
+                  cancel: 'Keep playing',
+                },
+                () => {
+                  let q = league;
+                  while (q.phase === 'season') q = completeMatchday(q);
+                  setLeague(q);
+                },
+              )
+            }
           />
+          {confirm.dialog}
         </>
       );
     case 'prep': {
@@ -136,7 +129,6 @@ export function LeagueFlow({ initial, slot, onMenu, onNewLeague }: { initial: Qu
       return (
         <PrepScreen
           key={`${league.matchday}-${step.at}`}
-          setup={setupOf(g)}
           teams={teamsOf(g)}
           scout={scoutOf(g)}
           onMenu={() => setStep({ kind: 'hub' })}

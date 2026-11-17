@@ -8,7 +8,7 @@ import { chance, createRng } from './rng';
 import { sortLineup, updateRotation } from './rotation';
 import { emit, other, playerOf } from './state';
 import { buildBoxScore, emptyExtras, emptyStats, type BoxScore } from './stats';
-import type { GamePlan, MatchState, Side, Team, TeamGameState, TimedEvent } from './types';
+import type { GamePlan, MatchRules, MatchState, Side, Team, TeamGameState, TimedEvent } from './types';
 
 export const QUARTER_SECONDS = 720;
 export const OVERTIME_SECONDS = 300;
@@ -53,6 +53,8 @@ export function makePlan(team: Team, tactics: Partial<Omit<GamePlan, 'starters' 
     defence: tactics.defence ?? 'man',
     tempo: tactics.tempo ?? 'normal',
     keyMatchup: tactics.keyMatchup ?? { kind: 'none' },
+    // Only when chosen: a plan without it is 'normal' (and equal to what it always was).
+    ...(tactics.aggression && tactics.aggression !== 'normal' ? { aggression: tactics.aggression } : {}),
   };
 }
 
@@ -84,10 +86,12 @@ function teamState(team: Team, plan: GamePlan): TeamGameState {
   };
 }
 
-export function createMatch(home: Team, away: Team, homePlan: GamePlan, awayPlan: GamePlan, seed: number): MatchState {
+/** `rules`: the competition's (default: the NBA's, 6 fouls to foul out). */
+export function createMatch(home: Team, away: Team, homePlan: GamePlan, awayPlan: GamePlan, seed: number, rules?: MatchRules): MatchState {
   const s: MatchState = {
     seed,
     rng: createRng(seed),
+    ...(rules ? { rules } : {}),
     quarter: 1,
     clock: QUARTER_SECONDS,
     possession: 0,
@@ -201,8 +205,8 @@ export interface MatchResult {
   winner: Side;
 }
 
-export function simulateMatch(home: Team, away: Team, homePlan: GamePlan, awayPlan: GamePlan, seed: number): MatchResult {
-  const s = createMatch(home, away, homePlan, awayPlan, seed);
+export function simulateMatch(home: Team, away: Team, homePlan: GamePlan, awayPlan: GamePlan, seed: number, rules?: MatchRules): MatchResult {
+  const s = createMatch(home, away, homePlan, awayPlan, seed, rules);
   let guard = 0;
   while (!s.finished) {
     stepPossession(s);

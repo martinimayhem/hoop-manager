@@ -59,7 +59,10 @@ const SPECS: Spec[] = [
   { bone: 'neck_01', u: 'fwd', uPlus: 20, uMinus: 64, v: 'right', vPlus: 25, vMinus: 25, twist: [-45, 45] },
   { bone: 'Head', u: 'fwd', uPlus: 28, uMinus: 32, v: 'right', vPlus: 18, vMinus: 18, twist: [-45, 45] },
   ...both((s) => ({ bone: `clavicle_${s}`, u: 'up', uPlus: 25, uMinus: 15, v: 'fwd', vPlus: 32, vMinus: 15, twist: [-20, 25] })),
-  ...both((s) => ({ bone: `upperarm_${s}`, centre: { out: 0.62, fwd: 0.68, down: 0.4 }, u: 'up', uPlus: 118, uMinus: 118, v: 'fwd', vPlus: 118, vMinus: 118, twist: [-160, 160] })),
+  // The shoulder: overhead (a little past straight up), across the chest, down by the side, and out
+  // to the side up to about 40 degrees behind it; never straight back at shoulder height or up and
+  // back over the head (the arm cannot go there: vMinus, the backward side, is the tight one).
+  ...both((s) => ({ bone: `upperarm_${s}`, centre: { out: 0.62, fwd: 0.68, down: 0.4 }, u: 'up', uPlus: 126, uMinus: 118, v: 'fwd', vPlus: 118, vMinus: 90, twist: [-160, 160] })),
   ...both((s) => ({ bone: `lowerarm_${s}`, u: 'fwd', uPlus: 150, uMinus: 3, v: 'up', vPlus: 32, vMinus: 16, twist: [-90, 90] })),
   ...both((s) => ({ bone: `hand_${s}`, u: 'palm', uPlus: 88, uMinus: 75, v: 'fwd', vPlus: 40, vMinus: 35, twist: [-25, 25], twistToParent: true })),
   ...both((s) => ({ bone: `thigh_${s}`, u: 'fwd', uPlus: 125, uMinus: 32, v: 'out', vPlus: 47, vMinus: 30, twist: [-45, 45] })),

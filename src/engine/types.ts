@@ -60,6 +60,14 @@ export const OFFENSIVE_FOCI: readonly OffensiveFocus[] = ['inside', 'balanced', 
 export const DEFENCE_SCHEMES: readonly DefenceScheme[] = ['man', 'zone', 'press'];
 export const TEMPOS: readonly Tempo[] = ['slow', 'normal', 'fast'];
 
+/**
+ * How hard the defence plays: careful (stay down, don't reach: fewer fouls, looser contests, fewer
+ * steals and blocks) or aggressive (crowd the ball, jump at shots: more turnovers and blocks and
+ * tighter contests, but more fouls, free throws and foul trouble).
+ */
+export type Aggression = 'careful' | 'normal' | 'aggressive';
+export const AGGRESSIONS: readonly Aggression[] = ['careful', 'normal', 'aggressive'];
+
 export type KeyMatchup =
   | { kind: 'none' }
   | { kind: 'assign'; defenderId: string; targetId: string }
@@ -74,6 +82,8 @@ export interface GamePlan {
   defence: DefenceScheme;
   tempo: Tempo;
   keyMatchup: KeyMatchup;
+  /** Defensive intensity; absent means 'normal'. */
+  aggression?: Aggression;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,9 +257,21 @@ export interface PossessionCalls {
   argue?: Side;
 }
 
+/**
+ * Rules that differ between competitions. NBA (the default): a player fouls out on his 6th personal
+ * foul. FIBA (Europe and international): on his 5th.
+ */
+export interface MatchRules {
+  foulLimit: number;
+}
+export const NBA_RULES: MatchRules = { foulLimit: 6 };
+export const FIBA_RULES: MatchRules = { foulLimit: 5 };
+
 export interface MatchState {
   seed: number;
   rng: RngState;
+  /** The competition's rules; absent means NBA_RULES. */
+  rules?: MatchRules;
   quarter: number; // 1–4, 5+ = overtime
   clock: number; // seconds left in the period
   possession: Side;

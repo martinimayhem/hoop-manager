@@ -19,6 +19,7 @@ import {
   type ShotZone,
 } from '../../engine/court';
 import type { Side, TimedEvent } from '../../engine/types';
+import { useSort } from './sortable';
 
 type Shot = Extract<TimedEvent, { type: 'shot' }>;
 
@@ -64,7 +65,13 @@ function Lines() {
   );
 }
 
-export function ShotChart({ events, side, name }: { events: TimedEvent[]; side: Side; name: string }) {
+type ZoneLine = { zone: (typeof ZONES)[number]; att: number; made: number; pts: number };
+
+/** `compact`: no title, the court beside the zones and as tall as the space it is given (the result screen). */
+export function ShotChart({ events, side, name, compact = false }: { events: TimedEvent[]; side: Side; name: string; compact?: boolean }) {
+  const sorter = useSort<ZoneLine>((z, key) =>
+    key === 'zone' ? ZONE_LABEL[z.zone] : key === 'fg' ? z.made + z.att / 1000 : !z.att ? null : key === 'pct' ? z.made / z.att : z.pts / z.att,
+  );
   const shots = events.filter((e): e is Shot => e.type === 'shot' && e.side === side);
   const cells = new Map<string, { att: number; pts: number; x: number; y: number }>();
   for (const s of shots) {
@@ -85,11 +92,18 @@ export function ShotChart({ events, side, name }: { events: TimedEvent[]; side: 
   });
 
   return (
-    <div style={{ display: 'grid', gap: 8 }}>
-      <h3 style={{ margin: 0 }} className={side === 0 ? 'home' : 'away'}>
-        {name}
-      </h3>
-      <svg viewBox={`-0.3 -0.3 ${W + 0.6} ${H + 0.6}`} style={{ width: '100%', maxWidth: 360, background: 'var(--panel-2)', borderRadius: 6 }} role="img" aria-label={`${name} shot chart`}>
+    <div className={compact ? 'shot-compact' : undefined} style={compact ? undefined : { display: 'grid', gap: 8 }}>
+      {!compact && (
+        <h3 style={{ margin: 0 }} className={side === 0 ? 'home' : 'away'}>
+          {name}
+        </h3>
+      )}
+      <svg
+        viewBox={`-0.3 -0.3 ${W + 0.6} ${H + 0.6}`}
+        style={compact ? { background: 'var(--panel-2)', borderRadius: 6 } : { width: '100%', maxWidth: 360, background: 'var(--panel-2)', borderRadius: 6 }}
+        role="img"
+        aria-label={`${name} shot chart`}
+      >
         {[...cells.values()].map((c) => (
           <rect key={`${c.x},${c.y}`} x={c.x + 0.05} y={c.y + 0.05} width={0.9} height={0.9} rx={0.12} fill={heat(c.pts / c.att)} opacity={0.3 + 0.65 * (c.att / most)}>
             <title>{`${c.att} shot${c.att === 1 ? '' : 's'}, ${(c.pts / c.att).toFixed(2)} points a shot`}</title>
@@ -97,17 +111,18 @@ export function ShotChart({ events, side, name }: { events: TimedEvent[]; side: 
         ))}
         <Lines />
       </svg>
-      <table style={{ maxWidth: 360 }}>
+      <div className="shot-zones">
+      <table className="eq" style={{ maxWidth: 360 }}>
         <thead>
           <tr>
-            <th className="left">Zone</th>
-            <th>FGM-A</th>
-            <th>FG%</th>
-            <th>Pts/shot</th>
+            {sorter.th('zone', 'Zone', { left: true, wide: true })}
+            {sorter.th('fg', 'FGM-A', { tip: 'Made-attempted' })}
+            {sorter.th('pct', 'FG%', { tip: 'Field-goal percentage' })}
+            {sorter.th('pts', 'Pts/shot', { tip: 'Points a shot' })}
           </tr>
         </thead>
         <tbody>
-          {byZone.map((z) => (
+          {sorter.sorted(byZone).map((z) => (
             <tr key={z.zone}>
               <td className="left">{ZONE_LABEL[z.zone]}</td>
               <td>
@@ -122,6 +137,7 @@ export function ShotChart({ events, side, name }: { events: TimedEvent[]; side: 
       <div className="muted" style={{ fontSize: 12 }}>
         Squares are 1 m. <span style={{ color: 'var(--good)' }}>■</span> 1.2+ points a shot <span style={{ color: 'var(--warn)' }}>■</span> 0.9–1.2{' '}
         <span style={{ color: 'var(--bad)' }}>■</span> under 0.9; fainter means fewer shots.
+      </div>
       </div>
     </div>
   );

@@ -7,8 +7,8 @@ import { createMatch, simulateMatch, stepPossession } from '../src/engine/match'
 import { other, playerOf } from '../src/engine/state';
 import { TECHNICAL } from '../src/engine/tactics';
 import type { MatchState, TimedEvent } from '../src/engine/types';
-import { buildScript, isRef, type Frame } from '../src/ui/court/animation';
-import { ARGUE_SECONDS, LiveMatch } from '../src/ui/match/controller';
+import { beatAt, buildScript, isRef, type Frame, type Script } from '../src/ui/court/animation';
+import { ARGUE_SECONDS, LiveMatch, freeThrowJumps, freeThrowsThatMatter } from '../src/ui/match/controller';
 
 const play = (seed: number) => simulateMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, DEFAULT_PLANS.ham, DEFAULT_PLANS.sky, seed);
 const defaults = { ...TECHNICAL };
@@ -194,25 +194,42 @@ describe('arguing the call in a live match', () => {
 });
 
 describe('free throws in highlights mode', () => {
-  it('shows the trips to the line that matter, on top of the best plays', () => {
-    // A match with trips to the line late in quarters.
+  it('shows a trip to the line on top of the best plays only if it is an and-one or late in a close fourth quarter', () => {
+    const s0 = (q: number, clock: number, margin: number) => ({ quarter: q, clock, teams: [{ score: 100 + margin }, { score: 100 }] }) as unknown as MatchState;
+    const ft = [{ type: 'freeThrow', technical: false }] as unknown as TimedEvent[];
+    const andOne = [{ type: 'shot', made: true }, { type: 'freeThrow', technical: false }] as unknown as TimedEvent[];
+    expect(freeThrowsThatMatter(s0(4, 90, 4), ft)).toBe(true);
+    expect(freeThrowsThatMatter(s0(4, 90, 15), ft)).toBe(false);
+    expect(freeThrowsThatMatter(s0(2, 30, 2), ft)).toBe(false);
+    expect(freeThrowsThatMatter(s0(1, 500, 20), andOne)).toBe(true);
+  });
+
+  it('a trip of two or three shown in highlights shows only its last free throw', () => {
     const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [DEFAULT_PLANS.ham, DEFAULT_PLANS.sky], 2, ['ai', 'ai'], 'normal');
-    const inner = m as unknown as { script: unknown; scriptEvents: TimedEvent[] };
+    m.highlights = true;
+    const inner = m as unknown as { script: Script | null; scriptEvents: TimedEvent[]; t: number; durations: number[] };
     let seen: unknown = null;
-    let late = 0;
-    let lateShown = 0;
+    let hidden: { from: number; to: number }[] = [];
+    let trips = 0;
+    let onScreen = 0;
     while (m.phase !== 'final') {
       m.tick(1 / 30);
       if (m.phase === 'timeout' || m.phase === 'break') m.resume();
-      if (inner.script && inner.script !== seen) {
-        seen = inner.script;
-        const ft = inner.scriptEvents.find((e) => e.type === 'freeThrow' && !e.technical);
-        if (ft && ft.clock <= 100) lateShown++;
+      if (m.phase === 'clutch') while (m.clutch) m.submitClutch(m.clutch.pending[0], null);
+      if (m.phase === 'argue') m.letItGo();
+      const sc = inner.script;
+      if (!sc) continue;
+      if (sc !== seen) {
+        seen = sc;
+        hidden = freeThrowJumps(sc, inner.scriptEvents);
+        trips += hidden.length;
       }
+      // The free throws before the last one of a trip are never on screen.
+      const { index } = beatAt(sc, inner.durations, inner.t);
+      if (hidden.some((h) => index >= h.from && index < h.to)) onScreen++;
     }
-    // Every trip to the line in the last two minutes of a quarter is shown (before, hardly any were).
-    for (const e of m.s.events) if (e.type === 'freeThrow' && !e.technical && e.attempt === 1 && e.clock <= 100) late++;
-    expect(late).toBeGreaterThan(0);
-    expect(lateShown).toBeGreaterThanOrEqual(late * 0.9);
+    expect(trips).toBeGreaterThan(0);
+    expect(onScreen).toBe(0);
+    // (That they still count, the match the same as without highlights, is checked in live.test.ts.)
   }, 600000);
 });

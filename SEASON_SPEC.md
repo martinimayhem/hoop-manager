@@ -44,7 +44,8 @@ play and in the balance lab, not promises.
 
 ### R1.1 Choosing a mode
 The new-game screen SHALL offer **Quick League** (one season, 8 teams, draft at the start) and
-**Career** (the 48-club world, seasons that follow on). Both offer vs AI or hot-seat.
+**Career** (the 48-club world, seasons that follow on). Both are one player against the computer
+(the two-player hot-seat mode has been removed).
 
 - **WHEN** the player picks Quick League **THEN** the flow is: league → teams → snake draft → season (Part 2).
 - **WHEN** the player picks Career **THEN** the flow is: take over a club or create one (Part 3) → season, with no draft at the start.
@@ -62,12 +63,28 @@ Three leagues with their own pool, budget and quality: Street (70 credits), Pro 
 - **WHEN** the player picks Pro **THEN** every team's budget is 100 and the Pro pool is used.
 - **WHEN** the same league is built twice **THEN** both pools are identical.
 
-### R2.2 Snake draft for all 8 teams
-12 rounds, order 1→8 then 8→1, the first-round order drawn from the seed and shown first. AI teams
-pick instantly, humans on their turn. Today's rules hold: at least 2 guards, wings and bigs, and no
-pick that leaves too little budget to fill the roster.
+### R2.2 Start: choose the league, then the club
+*(Changed 2026-11-17: the player no longer drafts.)* A new game starts with the league to start in
+(Street, Pro or Legends), then the club to manage: the eight clubs are shown with their squads, how
+strong each is, what kind of team it is and its best players. Their squads are put together by the
+computer before the player chooses, by the draft below, every pick the AI's. An old save stopped
+mid-draft has its draft finished by the computer when it is opened.
+
+- **WHEN** a new league is made **THEN** all eight clubs have full squads and the season is ready to
+  start; the player takes over the club he chooses.
+
+The behind-the-scenes draft: 12 rounds, order 1→8 then 8→1, from **one shared pool**, the first-round
+order drawn from the seed. At least 2 guards, wings and bigs. The budget rule is
+simple and the same for everyone: **keep at least 1 credit for each empty roster spot**. A
+**minimum-contract player** (a journeyman made for the purpose, 1 credit, in a position the team
+needs) can always be signed, so no team can ever be stuck. The AI is more careful with its money than
+the rule asks (its own strategy). The screen shows the latest picks and, if wanted, the signed players
+with their teams.
 
 - **WHEN** the draft ends **THEN** every team has 12 players, at least 2 per group, within budget.
+- **WHEN** a human spends most of his budget on his first three picks **THEN** on every later turn he
+  can still make a pick (from the market or a minimum signing), and the draft finishes.
+- **WHEN** a human chooses Auto-draft the rest **THEN** the AI fills his roster and the draft runs on.
 - **WHEN** 100 seeded drafts are run **THEN** the weakest team's average top-8 overall is within 6
   points of the league average *(tune)*.
 
@@ -152,16 +169,17 @@ roster and contracts; its market size comes from the new city. There is no draft
 - **WHEN** the player creates "Rotterdam Kites" in place of a Europe tier-2 club **THEN** that club
   is renamed and recoloured, keeps its roster, and its market size is Rotterdam's.
 
-### R3.4 Hot-seat in Career
-Both humans SHALL be able to manage clubs in the same world, in any tiers. On a matchday, each plays
-his own match in turn (Player 1 first); if they meet, it is the live hot-seat match. They cannot
-trade with each other (SPEC.md §1).
+### R3.5 Each region plays by its own rules
+Matches SHALL use the rules of where they are played: **America** (its tiers 2 and 3, and the Big
+League's America Conference) by **NBA rules**, a player fouling out on his **6th** foul; **Europe**
+(its tiers 2 and 3, and the Big League's Europe Conference) by **FIBA rules**, out on his **5th**. The
+**Big League playoffs and the Finals** use NBA rules (6). The rule shows on the prep screen. Quick League
+uses NBA rules. Only the foul limit differs for now (the engine's `MatchRules`); the "foul trouble"
+point at which a coach sits a player follows it (one foul earlier with 5).
 
-- **WHEN** both humans are in different leagues **THEN** each plays his match live, then the rest of the world is simulated.
-
----
-
-## Part 4 — Matchdays, promotion and relegation (slice 5b)
+- **WHEN** a Europe Tier 2 match is played **THEN** a player with 5 fouls is out of the game.
+- **WHEN** an America Tier 3 match is played **THEN** a player with 5 fouls stays in; with 6 he is out.
+- **WHEN** a match is played with NBA rules **THEN** it is the same as before the rules existed (`npm run lab` identical).
 
 ### R4.1 A matchday covers the whole world
 Each matchday SHALL play all 6 leagues' games (24 games): the human's live, the rest simulated, each
@@ -623,7 +641,7 @@ that. 5e and 5f follow the same way: logic and lab first, screens second.
 
 | Slice | Contents | Done when… |
 |---|---|---|
-| **5a — Quick League** | Part 2; names generator and journeyman fix (R10.5); saves (R11.2) | A one-league season (snake draft, 14 matchdays, live or simulated, table, tiebreakers) can be played, saved, reloaded and finished, vs AI and hot-seat. |
+| **5a — Quick League** | Part 2; names generator and journeyman fix (R10.5); saves (R11.2) | A one-league season (snake draft, 14 matchdays, live or simulated, table, tiebreakers) can be played, saved, reloaded and finished. |
 | **5b — World, schedule, promotion and relegation** (logic first) | Parts 3 and 4: 48 clubs, cities and nicknames, start options, all leagues on the same matchdays, promotion and relegation by final table, budgets by tier | A Career season can be played in any tier, and the next season starts with the right clubs promoted and relegated (simple placeholder playoffs). |
 | **5c — Playoffs and awards** | Part 5: all playoff formats, awards, summary, history | Both modes end with real playoffs and awards; Career keeps a history. |
 | **5d — Offseason** | Parts 6 and 7, and R10.1–R10.4, R10.6: contracts, budgets, retirements, lottery, world draft, re-signing, free agency, ageing | A Career runs season after season, with rookies, retirements and free agency, and the lab's R12.1–R12.3 pass. |

@@ -1,0 +1,600 @@
+{
+  "date": "2026-11-17",
+  "games": [
+    "01.01.2016.CHA.at.TOR",
+    "01.01.2016.DAL.at.MIA",
+    "01.01.2016.NYK.at.CHI",
+    "01.02.2016.DEN.at.GSW"
+  ],
+  "possessions": 200,
+  "seed": 1,
+  "real": [
+    {
+      "group": "Movement",
+      "name": "standing (< 0.5 m/s), share of time",
+      "unit": "%",
+      "value": 14.168873783715565,
+      "se": 0.3429468568155962,
+      "n": 2812870,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "walking (< 2 m/s), share of time",
+      "unit": "%",
+      "value": 62.24980180385158,
+      "se": 0.6598775534064294,
+      "n": 2812870,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "jogging (2-4 m/s)",
+      "unit": "%",
+      "value": 29.01847579162919,
+      "se": 0.3659842112464746,
+      "n": 2812870,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "running (4-5.5 m/s)",
+      "unit": "%",
+      "value": 7.900258454887712,
+      "se": 0.31110066420576765,
+      "n": 2812870,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "sprinting (> 5.5 m/s)",
+      "unit": "%",
+      "value": 0.8314639496315152,
+      "se": 0.06545655562261866,
+      "n": 2812870,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "acceleration, hard (90th pct)",
+      "unit": "m/s²",
+      "value": 2.7395815490132387,
+      "se": 0.03166380367906376,
+      "n": 1357879,
+      "pct": false
+    },
+    {
+      "group": "Movement",
+      "name": "deceleration, hard (90th pct)",
+      "unit": "m/s²",
+      "value": 2.59469588054868,
+      "se": 0.018010673487299605,
+      "n": 1434851,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: on the ball (median)",
+      "unit": "m",
+      "value": 1.6923388232105634,
+      "se": 0.03876992576502765,
+      "n": 101456,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: on the ball, loose (90th pct)",
+      "unit": "m",
+      "value": 3.4999971987270397,
+      "se": 0.10776757344283593,
+      "n": 101456,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: one pass away (< 6.5 m from ball)",
+      "unit": "m",
+      "value": 1.8812890740468935,
+      "se": 0.038481749534286194,
+      "n": 271620,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: help side",
+      "unit": "m",
+      "value": 3.1676788921764625,
+      "se": 0.10235475988428545,
+      "n": 354054,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "closeout: distance to the catcher at the catch",
+      "unit": "m",
+      "value": 2.5776467938082788,
+      "se": 0.05321124476972611,
+      "n": 1195,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "closeout: top speed in the next second (from > 1.8 m)",
+      "unit": "m/s",
+      "value": 2.4538576895397375,
+      "se": 0.06037687831526664,
+      "n": 880,
+      "pct": false
+    },
+    {
+      "group": "Spacing",
+      "name": "half court: average distance between teammates",
+      "unit": "m",
+      "value": 7.5945271721037075,
+      "se": 0.045041996608823,
+      "n": 145426,
+      "pct": false
+    },
+    {
+      "group": "Contact",
+      "name": "an opponent within 0.5 m, share of time",
+      "unit": "%",
+      "value": 2.6010800356930823,
+      "se": 0.16181251221768864,
+      "n": 2812870,
+      "pct": true
+    },
+    {
+      "group": "Contact",
+      "name": "drive: closest defender to the driver (median)",
+      "unit": "m",
+      "value": 0.7207501731647457,
+      "se": 0.02531815996301574,
+      "n": 680,
+      "pct": false
+    },
+    {
+      "group": "Contact",
+      "name": "drive: with contact (a defender within 0.6 m)",
+      "unit": "%",
+      "value": 32.64705882352941,
+      "se": 2.179030467734595,
+      "n": 680,
+      "pct": true
+    },
+    {
+      "group": "Transition",
+      "name": "time to get back past half court (median)",
+      "unit": "s",
+      "value": 2.32,
+      "se": 0.17276316479826107,
+      "n": 266,
+      "pct": false
+    },
+    {
+      "group": "Transition",
+      "name": "time to get back past half court (90th pct)",
+      "unit": "s",
+      "value": 4.32,
+      "se": 0.1508553390945555,
+      "n": 266,
+      "pct": false
+    },
+    {
+      "group": "Transition",
+      "name": "defenders back as the ball crosses half court (mean)",
+      "unit": "",
+      "value": 3.185185185185185,
+      "se": 0.2860458393723324,
+      "n": 54,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "offence: distance to the rim at the shot",
+      "unit": "m",
+      "value": 6.230332355297431,
+      "se": 0.04724351439889661,
+      "n": 672,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "defence: distance to the rim at the shot",
+      "unit": "m",
+      "value": 3.6182471156611746,
+      "se": 0.058898749593138754,
+      "n": 672,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "where the rebound is taken: distance from the rim",
+      "unit": "m",
+      "value": 1.493751887702173,
+      "se": 0.07652363358298589,
+      "n": 283,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "rebounder: distance (at the shot) to where he takes it",
+      "unit": "m",
+      "value": 2.14050152163609,
+      "se": 0.1531430882821925,
+      "n": 283,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "ball speed (median)",
+      "unit": "m/s",
+      "value": 9.359456176240633,
+      "se": 0.04653971195025529,
+      "n": 1676,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "ball speed, fast ones (90th pct)",
+      "unit": "m/s",
+      "value": 12.179115230033569,
+      "se": 0.10396732443962312,
+      "n": 1676,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "ball speed, slow ones (10th pct)",
+      "unit": "m/s",
+      "value": 5.574484644981676,
+      "se": 0.21903940997011576,
+      "n": 1676,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "length (median)",
+      "unit": "m",
+      "value": 4.328280753666021,
+      "se": 0.06756343667456495,
+      "n": 1676,
+      "pct": false
+    },
+    {
+      "group": "Ball",
+      "name": "dribbles a second with the ball low in hand",
+      "unit": "/s",
+      "value": 0.9540871482547871,
+      "se": 0.017785407318911203,
+      "n": 186854,
+      "pct": false
+    }
+  ],
+  "sim": [
+    {
+      "group": "Movement",
+      "name": "standing (< 0.5 m/s), share of time",
+      "unit": "%",
+      "value": 28.507880690737835,
+      "se": 0.6639786295663561,
+      "n": 796250,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "walking (< 2 m/s), share of time",
+      "unit": "%",
+      "value": 58.880376766091054,
+      "se": 0.45682644698783326,
+      "n": 796250,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "jogging (2-4 m/s)",
+      "unit": "%",
+      "value": 24.05701726844584,
+      "se": 0.6229715097122039,
+      "n": 796250,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "running (4-5.5 m/s)",
+      "unit": "%",
+      "value": 12.282448979591837,
+      "se": 0.30000446866506486,
+      "n": 796250,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "sprinting (> 5.5 m/s)",
+      "unit": "%",
+      "value": 4.780156985871272,
+      "se": 0.34829135964820157,
+      "n": 796250,
+      "pct": true
+    },
+    {
+      "group": "Movement",
+      "name": "acceleration, hard (90th pct)",
+      "unit": "m/s²",
+      "value": 5.895209385145078,
+      "se": 0.01499016473758035,
+      "n": 388727,
+      "pct": false
+    },
+    {
+      "group": "Movement",
+      "name": "deceleration, hard (90th pct)",
+      "unit": "m/s²",
+      "value": 6.693479156680564,
+      "se": 0.0315307360996063,
+      "n": 403143,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: on the ball (median)",
+      "unit": "m",
+      "value": 1.5728392202626396,
+      "se": 0.016506390729715617,
+      "n": 25443,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: on the ball, loose (90th pct)",
+      "unit": "m",
+      "value": 3.2726497625901123,
+      "se": 0.23047174030258774,
+      "n": 25443,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: one pass away (< 6.5 m from ball)",
+      "unit": "m",
+      "value": 1.824807496878414,
+      "se": 0.07232499087042488,
+      "n": 99548,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "distance to his man: help side",
+      "unit": "m",
+      "value": 3.3989654775371405,
+      "se": 0.07251358123092642,
+      "n": 75859,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "closeout: distance to the catcher at the catch",
+      "unit": "m",
+      "value": 1.708907374919361,
+      "se": 0.08338347171940776,
+      "n": 450,
+      "pct": false
+    },
+    {
+      "group": "Defence",
+      "name": "closeout: top speed in the next second (from > 1.8 m)",
+      "unit": "m/s",
+      "value": 3.035701558313024,
+      "se": 0.0714519174298763,
+      "n": 207,
+      "pct": false
+    },
+    {
+      "group": "Spacing",
+      "name": "half court: average distance between teammates",
+      "unit": "m",
+      "value": 7.289890983043131,
+      "se": 0.05464377610854673,
+      "n": 40170,
+      "pct": false
+    },
+    {
+      "group": "Contact",
+      "name": "an opponent within 0.5 m, share of time",
+      "unit": "%",
+      "value": 0,
+      "se": 0,
+      "n": 796250,
+      "pct": true
+    },
+    {
+      "group": "Contact",
+      "name": "drive: closest defender to the driver (median)",
+      "unit": "m",
+      "value": 1.3580487908472654,
+      "se": 0.03549970052689013,
+      "n": 273,
+      "pct": false
+    },
+    {
+      "group": "Contact",
+      "name": "drive: with contact (a defender within 0.6 m)",
+      "unit": "%",
+      "value": 0,
+      "se": 0,
+      "n": 273,
+      "pct": true
+    },
+    {
+      "group": "Transition",
+      "name": "time to get back past half court (median)",
+      "unit": "s",
+      "value": 2.12,
+      "se": 0.30648110327827177,
+      "n": 67,
+      "pct": false
+    },
+    {
+      "group": "Transition",
+      "name": "time to get back past half court (90th pct)",
+      "unit": "s",
+      "value": 4.16,
+      "se": 0.2694653141974966,
+      "n": 67,
+      "pct": false
+    },
+    {
+      "group": "Transition",
+      "name": "defenders back as the ball crosses half court (mean)",
+      "unit": "",
+      "value": 2.8125,
+      "se": null,
+      "n": 16,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "offence: distance to the rim at the shot",
+      "unit": "m",
+      "value": 6.665264751142593,
+      "se": 0.055032209924220664,
+      "n": 204,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "defence: distance to the rim at the shot",
+      "unit": "m",
+      "value": 4.481951930876289,
+      "se": 0.0719707345262325,
+      "n": 204,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "where the rebound is taken: distance from the rim",
+      "unit": "m",
+      "value": 2.3274359673928955,
+      "se": 0.2792304660780462,
+      "n": 87,
+      "pct": false
+    },
+    {
+      "group": "Rebounds",
+      "name": "rebounder: distance (at the shot) to where he takes it",
+      "unit": "m",
+      "value": 2.2630993486036624,
+      "se": 0.19220837087557543,
+      "n": 87,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "ball speed (median)",
+      "unit": "m/s",
+      "value": 10.099087825239094,
+      "se": 0.2154808633367948,
+      "n": 576,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "ball speed, fast ones (90th pct)",
+      "unit": "m/s",
+      "value": 10.655446337316606,
+      "se": 0.03504107309915696,
+      "n": 576,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "ball speed, slow ones (10th pct)",
+      "unit": "m/s",
+      "value": 7.343277944941501,
+      "se": 0.07786297123651885,
+      "n": 576,
+      "pct": false
+    },
+    {
+      "group": "Passes",
+      "name": "length (median)",
+      "unit": "m",
+      "value": 3.9146742317439207,
+      "se": 0.13305858204686866,
+      "n": 576,
+      "pct": false
+    },
+    {
+      "group": "Ball",
+      "name": "dribbles a second with the ball low in hand",
+      "unit": "/s",
+      "value": 1.9790882475951486,
+      "se": 0.010843694916820466,
+      "n": 59775,
+      "pct": false
+    }
+  ],
+  "gaps": [
+    101.2007526208769,
+    5.412748217861879,
+    17.097584858728368,
+    55.46895142389883,
+    78.97386072479513,
+    115.18649033347647,
+    157.96777213309278,
+    7.061210279465149,
+    6.495646231363112,
+    3.002280614269468,
+    7.301452995501215,
+    33.70281067893793,
+    23.711394155152536,
+    4.01125945245899,
+    52.021600713861645,
+    88.4215698324708,
+    100,
+    8.620689655172402,
+    3.703703703703707,
+    11.700581395348836,
+    6.980885947045093,
+    23.870807814001036,
+    55.81141597572622,
+    5.727528139006647,
+    7.902506674223733,
+    12.510505598630113,
+    31.730167228142733,
+    9.555907887254733,
+    107.43264923076364
+  ],
+  "gapSes": [
+    4.686177883308366,
+    0.7338600826831356,
+    2.1468098951355308,
+    3.7974006847770765,
+    6.9658271929640305,
+    0.5471698677113521,
+    1.2151996823974123,
+    0.9753596917667513,
+    6.584912136112882,
+    3.8444379371663797,
+    2.2891708313623758,
+    3.2348680168168022,
+    2.911819937010215,
+    0.7195151833713203,
+    0,
+    4.925382171053017,
+    0,
+    13.210392382684129,
+    6.237623013830939,
+    0,
+    0.883294931729103,
+    1.9891050065296891,
+    18.69322933593639,
+    8.979595152479089,
+    2.302279740181934,
+    0.287714439327629,
+    1.3967743422993102,
+    3.074167079715637,
+    1.1365518272262356
+  ],
+  "total": 39.39947360397346
+}

@@ -20,7 +20,10 @@ export interface LeagueDef {
   /** And the cheaper bench players' band, for this share of the journeymen (every league has role players on small money). */
   bench: [number, number];
   benchShare: number;
-  /** The AI teams' names. */
+  /**
+   * The computer clubs: real basketball cities, American and European, with invented nicknames (no
+   * real club's name: SEASON_SPEC R3.2, checked by a test).
+   */
   teams: { name: string; abbr: string }[];
 }
 
@@ -39,13 +42,14 @@ export const LEAGUES: Record<LeagueId, LeagueDef> = {
     bench: [34, 46],
     benchShare: 0.3,
     teams: [
-      { name: 'Alley Cats', abbr: 'ALC' },
-      { name: 'Blacktop Bandits', abbr: 'BTB' },
-      { name: 'Chainlink Chargers', abbr: 'CLC' },
-      { name: 'Corner Store Kings', abbr: 'CSK' },
-      { name: 'Hydrant Hoppers', abbr: 'HYH' },
-      { name: 'Rooftop Ravens', abbr: 'RTR' },
-      { name: 'Sidewalk Sliders', abbr: 'SWS' },
+      { name: 'Kaunas Ambers', abbr: 'KAU' },
+      { name: 'Memphis Paddlers', abbr: 'MEM' },
+      { name: 'Bologna Porticos', abbr: 'BOL' },
+      { name: 'Sacramento Prospectors', abbr: 'SAC' },
+      { name: 'Vitoria Foxes', abbr: 'VIT' },
+      { name: 'Indianapolis Speedsters', abbr: 'IND' },
+      { name: 'Valencia Oranges', abbr: 'VAL' },
+      { name: 'Lyon Larks', abbr: 'LYO' },
     ],
   },
   pro: {
@@ -58,13 +62,14 @@ export const LEAGUES: Record<LeagueId, LeagueDef> = {
     bench: [42, 54],
     benchShare: 0.35,
     teams: [
-      { name: 'Bayside Breakers', abbr: 'BAY' },
-      { name: 'Copper Canyon Coyotes', abbr: 'CCC' },
-      { name: 'Granite Peak Goats', abbr: 'GPG' },
-      { name: 'Lakeshore Lanterns', abbr: 'LKL' },
-      { name: 'Prairie Pilots', abbr: 'PRP' },
-      { name: 'Riverbend Rafters', abbr: 'RVR' },
-      { name: 'Timberline Tusks', abbr: 'TBT' },
+      { name: 'Philadelphia Bells', abbr: 'PHI' },
+      { name: 'Milan Herons', abbr: 'MIL' },
+      { name: 'Miami Flamingos', abbr: 'MIA' },
+      { name: 'Athens Owls', abbr: 'ATH' },
+      { name: 'Denver Peaks', abbr: 'DEN' },
+      { name: 'Belgrade Kestrels', abbr: 'BEL' },
+      { name: 'Paris Swifts', abbr: 'PAR' },
+      { name: 'Seattle Squalls', abbr: 'SEA' },
     ],
   },
   legends: {
@@ -77,13 +82,14 @@ export const LEAGUES: Record<LeagueId, LeagueDef> = {
     bench: [46, 58],
     benchShare: 0.45,
     teams: [
-      { name: 'Aurora Comets', abbr: 'AUR' },
-      { name: 'Crown City Monarchs', abbr: 'CRM' },
-      { name: 'Golden Gate Griffins', abbr: 'GGG' },
-      { name: 'Midnight Meteors', abbr: 'MDM' },
-      { name: 'Olympus Titans', abbr: 'OLT' },
-      { name: 'Starlight Sentinels', abbr: 'SLS' },
-      { name: 'Thunder Valley Thrones', abbr: 'TVT' },
+      { name: 'Los Angeles Palms', abbr: 'LAP' },
+      { name: 'Madrid Meteors', abbr: 'MAD' },
+      { name: 'New York Skyliners', abbr: 'NYS' },
+      { name: 'Barcelona Breakers', abbr: 'BCN' },
+      { name: 'Chicago Gales', abbr: 'CHI' },
+      { name: 'Istanbul Crescents', abbr: 'IST' },
+      { name: 'Boston Lanterns', abbr: 'BOS' },
+      { name: 'Houston Orbits', abbr: 'HOU' },
     ],
   },
 };

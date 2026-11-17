@@ -2,13 +2,13 @@
 
 > Working title. A browser-based basketball management game in the spirit of Football Manager:
 > build a squad under a budget, scout opponents, set tactics, and out-coach the other side in fast,
-> watchable matches. Built to play father vs son, or vs AI, across a full season.
+> watchable matches. One player against the computer, across a full season.
 
 ---
 
 ## 1. Purpose and audience
 
-- **Modes:** Player vs AI, and Player vs Player on the same device (hot-seat).
+- **Mode:** one player against the computer. (A two-player hot-seat mode was built and then removed: it will not be used.)
 - **Feel:** Quick to play (a match takes about 5–8 minutes including timeouts), fun to watch, and
   **skill-based**: the better manager should win more often, not the one who spent the most on
   ratings.
@@ -78,11 +78,10 @@ To keep skill in the game, attributes interact rather than simply add up:
   reputation/hype, so some players are overpriced stars and some are bargains *for the right system*.
   Finding bargains is a core skill (the Moneyball idea).
 - Constraint: at least 2 players per position group (guards / wings / bigs) to stop silly squads.
-- **Draft modes:**
-  - *Free draft* (vs AI): buy freely from the market until budget or roster is full.
-  - *Snake draft* (vs son): players alternate picks from a shared pool, so you can't both have the
-    best player. Both still bound by budget.
-- The AI teams build sensible squads using the same rules.
+- **No drafting by the player** (changed 2026-11-17): a new game starts by choosing the league, then
+  taking over one of its clubs with the squad it has. The computer puts every club's squad together
+  with these rules (a snake draft between the clubs, behind the scenes). The single-match free and
+  snake drafts were removed; a friendly uses two ready-made squads.
 
 ---
 
@@ -123,7 +122,10 @@ better at the game *and* gives you more information.
 2. **Offensive focus:** Inside / Balanced / 3-Point heavy / Pick-and-roll / Fast break
 3. **Defence:** Man-to-man / 2-3 zone / Full-court press
 4. **Tempo:** Slow / Normal / Fast
-5. **Key matchup:** who guards their best player (or "double-team their star")
+5. **Defensive intensity:** Careful / Normal / Aggressive. Aggressive forces turnovers (most from poor
+   ball handlers), contests harder and blocks more, but fouls more: more free throws for them and foul
+   trouble for you. Careful is the reverse. Normal changes nothing. (`npm run tactics` measures it.)
+6. **Key matchup:** who guards their best player (or "double-team their star")
 
 These form a **counter system** (rock-paper-scissors with nuance), e.g.:
 - Zone defence weakens inside scoring but is vulnerable to good 3-point shooting.
@@ -136,8 +138,6 @@ These form a **counter system** (rock-paper-scissors with nuance), e.g.:
   players, following your rotation).
 - **Live feedback** to read what's working: momentum bar, a mini box score, player fatigue bars, and
   assistant-coach tips. Better staff = clearer tips.
-- **Hot-seat (vs son):** each player has a timeout key (e.g. Player 1 = `Q`, Player 2 = `P`). The
-  team calling the timeout makes its changes; the other team may also adjust during the same pause.
 
 ### 7.4 Match engine (FM-inspired, loosely)
 For each possession:
@@ -224,4 +224,3 @@ Each phase must be playable and fun before starting the next.
 - Exact budget numbers and price curve (tune in Phase 3).
 - How many possessions to show in full vs fast-forward (tune in Phase 2).
 - Should the AI difficulty be adjustable (easy for learning, hard for a challenge)?
-- How much hidden information the opponent sees about *your* tactics in hot-seat mode.

@@ -53,6 +53,18 @@ change must keep those tests passing.
 Engine results (scores, make rates, `npm run lab`) must be identical before and after an
 animation-only change. Check `npm run lab` against a run from before the change.
 
+## Measured against real NBA movement
+
+`npm run realism` measures our players (200 simulated possessions, the Frame data the renderer
+draws) and real NBA players (2015-16 SportVU tracking, downloaded by `npm run sportvu` into the
+git-ignored `data/sportvu/`) with the same code, line by line: speeds, acceleration, defender
+distances, closeouts, spacing, transition, rebounds, passes. Each line's gap is how far ours is from
+the real value; the total is the average gap. The saved baseline is `scripts/realism/baseline.json`.
+
+Every animation change runs `npm run realism` before and after. A change that makes the total
+worse, or any single line clearly worse (marked WORSE), is not done: fix it or revert it. Report the
+before/after table. Save a new baseline (`-- --save`) only when a change is kept.
+
 ## Look at what you draw
 
 For every animation change (2D or 3D), capture frames of the affected situation **before and after**

@@ -396,6 +396,9 @@ describe('possession phases', () => {
     let trailing = 0;
     for (const [offence, defence, seed] of [['three', 'man', 5], ['inside', 'zone', 5], ['pickAndRoll', 'man', 5], ['three', 'zone', 6], ['balanced', 'man', 6]] as const) {
       const m = new LiveMatch(HARBOR_HAMMERS, SKYLINE_SPARKS, [{ ...DEFAULT_PLANS.ham, offence, defence }, { ...DEFAULT_PLANS.sky, offence, defence }], seed, ['ai', 'ai'], 'normal');
+      // Played through, every possession at full speed: highlights now cut in after the set-up, so
+      // they show too few set-ups to judge.
+      m.highlights = false;
       const inner = m as unknown as { script: Script | null; durations: number[]; t: number; motion: Motion };
       let seen: Script | null = null;
       for (let i = 0; i < 60000; i++) {
@@ -403,9 +406,11 @@ describe('possession phases', () => {
         if (m.phase === 'timeout' || m.phase === 'break') m.resume();
         const s = inner.script;
         if (!s || s === seen || s.clockStart - s.clockEnd < 8) continue;
-        const { index, u } = beatAt(s, inner.durations, inner.t);
-        const beat = s.beats[index];
-        if (beat.phase !== 'setUp' || s.beats[index + 1]?.phase !== 'play' || u < 0.9) continue;
+        // At the moment the play starts: the first frame past the end of the set-up (which waits, as
+        // it plays, for teammates still on their way).
+        const { index } = beatAt(s, inner.durations, inner.t);
+        if (index === 0 || s.beats[index].phase !== 'play' || s.beats[index - 1].phase !== 'setUp') continue;
+        const beat = s.beats[index - 1];
         seen = s;
         const handler = beat.ball.kind === 'held' ? beat.ball.holder : '';
         for (const [k, p] of Object.entries(beat.players)) {
@@ -507,7 +512,10 @@ describe('the ball', () => {
         const before = script.beats[i - 1].players;
         const from = before[b.ball.from];
         const to = b.players[b.ball.to];
-        const defs = Object.entries(before).filter(([k]) => !k.startsWith(`${script.offence}:`)).map(([, p]) => p);
+        // Defenders only: an official standing out of bounds by the sideline is not in the lane.
+        const defs = Object.entries(before)
+          .filter(([k]) => !k.startsWith(`${script.offence}:`) && !isRef(k))
+          .map(([, p]) => p);
         const d = apart(from, to);
         const style = b.ball.style ?? 'chest';
         passes++;
@@ -758,11 +766,29 @@ describe('contesting and rebounding', () => {
     eachScript(planWith({}), 2, (script) => {
       const durations = beatDurations(script, 8);
       const total = durations.reduce((a, b) => a + b, 0);
+      let last: { x: number; y: number; z: number } | undefined;
       for (let t = 0; t < total; t += dt) {
         const { index, u } = beatAt(script, durations, t);
         const beat = script.beats[index];
-        m.update(beat.players, dt, 1, beat.ball.kind === 'held' ? beat.ball.holder : null, beat.pace, beat.outOfBounds);
+        // The live play as the game hands it over (the match controller): who guards whom, who
+        // goes at once, the open floor; so the players move here as they do on screen.
+        m.update(beat.players, dt, 1, beat.ball.kind === 'held' ? beat.ball.holder : null, beat.pace, beat.outOfBounds, {
+          offence: script.offence,
+          dir: script.dir,
+          marking: beat.marking,
+          pressing: beat.pressing,
+          ball: last,
+          dead: beat.dead,
+          posting: beat.posting,
+          through: beat.through,
+          action: beat.ball,
+          openBreak: beat.openBreak,
+          chase: beat.chase,
+          goNow: beat.goNow,
+          openFloor: beat.phase === 'bringUp' || !!beat.openBreak,
+        });
         const ball = m.ball(beat.ball, u, script.dir);
+        last = ball;
         m.updateFacing(facingScene(script, durations, index, u, ball, 1), dt, 1);
         m.updateArms(beat, ball, u, dt, 1);
         check({ script, beat, u, m, ball, lift: m.jumps(beat, u) });
@@ -947,7 +973,15 @@ describe('playback', () => {
   it('fast-forward shortens bring-up and set-up but never the action, and only when routine', () => {
     const m = live();
     const inner = m as unknown as { durations: number[]; script: Script | null; skipping: boolean };
-    while (!m.isFastForwarding() || inner.skipping || !inner.script) m.tick(1 / 60);
+    // Plays on through breaks and timeouts (with highlights the first fast-forward may come after the
+    // first break), and stops at the final whistle rather than waiting for ever.
+    while ((!m.isFastForwarding() || inner.skipping || !inner.script) && m.phase !== 'final') {
+      m.tick(1 / 60);
+      if (m.phase === 'timeout' || m.phase === 'break') m.resume();
+      if (m.phase === 'clutch') while (m.clutch) m.submitClutch(m.clutch.pending[0], null);
+      if (m.phase === 'argue') m.letItGo();
+    }
+    expect(m.phase).not.toBe('final');
     const before = [...inner.durations];
     m.toggleHighlights();
     expect(m.isFastForwarding()).toBe(false);

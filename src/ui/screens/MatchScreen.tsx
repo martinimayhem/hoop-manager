@@ -16,7 +16,7 @@ import { CourtOverlays, Gamecast, PlayByPlay } from '../components/Gamecast';
 import { CANVAS_H, CANVAS_W, CourtRenderer } from '../court/render';
 import { courtDots } from '../court/dots';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
-import { ARGUE_SECONDS, HIGHLIGHTS_PER_QUARTER, LiveMatch, type TeamView } from '../match/controller';
+import { ARGUE_SECONDS, LiveMatch, type TeamView } from '../match/controller';
 
 const TIMEOUT_KEYS = ['q', 'p'] as const;
 /** What the match screen needs of the 3D scene; the scene itself loads only when the view is turned on. */
@@ -42,7 +42,8 @@ export function MatchScreen({
   seed: number;
   onFinish: (m: LiveMatch) => void;
 }) {
-  const controllers: [Controller, Controller] = setup.mode === 'ai' ? ['human', 'ai'] : ['human', 'human'];
+  // You (side 0) against the computer (side 1).
+  const controllers: [Controller, Controller] = ['human', 'ai'];
   const ref = useRef<LiveMatch | null>(null);
   if (!ref.current) {
     ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed);
@@ -242,7 +243,7 @@ export function MatchScreen({
     sound.resume();
   };
 
-  // Keyboard: Q / P timeouts, space pauses.
+  // Keyboard: Q for a timeout, space pauses.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
@@ -264,7 +265,7 @@ export function MatchScreen({
   // Twice as sensitive as the effect itself, so that a run shows: an 8-0 run is about a quarter of the
   // way to the end. The engine's momentum is unchanged; this is only the needle.
   const momentumPct = 50 - Math.max(-1, Math.min(1, m.momentum * MOMENTUM_DISPLAY)) * 46;
-  const humanTips = m.tips.filter((t) => controllers[t.side] === 'human');
+  const humanTips = humanSides.flatMap((sd) => m.liveTips(sd)).sort((a, b) => b.id - a.id);
   const unreadTips = showFeed || roomy ? 0 : humanTips.filter((t) => t.id > seenTip).length;
 
   return (
@@ -328,7 +329,7 @@ export function MatchScreen({
           </button>
           <button
             className={`small ${m.highlights ? 'active' : ''}`}
-            title={`Show only the ${HIGHLIGHTS_PER_QUARTER} best plays of each quarter; the rest is played out instantly. Clutch moments are always shown.`}
+            title="Show only the best plays: 3 in each of the first three quarters, 5 in the fourth. The rest is played out instantly. A close finish is always shown."
             onClick={() => m.toggleHighlights()}
           >
             ★ Highlights
@@ -385,14 +386,25 @@ export function MatchScreen({
 
       {m.phase === 'final' && (
         <div className="overlay">
-          <div className="panel" style={{ marginTop: 120, textAlign: 'center', minWidth: 420 }}>
+          <div className="panel final-card">
             <h3>Final</h3>
-            <h1>
-              <span className="home">{m.s.teams[0].team.name}</span> {m.score[0]}, {m.score[1]} <span className="away">{m.s.teams[1].team.name}</span>
-            </h1>
-            <p>{m.feed[0]?.text}</p>
+            <div className="final-board">
+              {([0, 1] as const).map((side) => {
+                const won = m.score[side] > m.score[1 - side];
+                return (
+                  <div key={side} className={`final-team ${side === 0 ? 'home' : 'away'} ${won ? 'won' : 'lost'}`}>
+                    <div className="final-name">{m.s.teams[side].team.name}</div>
+                    <div className="final-score">{m.score[side]}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="final-verdict">
+              <span className={m.score[0] > m.score[1] ? 'home' : 'away'}>{m.s.teams[m.score[0] > m.score[1] ? 0 : 1].team.name}</span> win by{' '}
+              {Math.abs(m.score[0] - m.score[1])}
+            </div>
             <button className="primary" onClick={() => onFinish(m)}>
-              Box score &amp; result ▶
+              See the result ▶
             </button>
           </div>
         </div>
