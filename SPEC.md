@@ -22,7 +22,8 @@
 - Online multiplayer (two devices over the internet)
 - Mobile or touch layout
 - Real player names, photos, team logos or league branding (see §8)
-- Trading between the two human players (trades with AI clubs are in, Career mode)
+- Trading between two human players, and a salary cap (contracts, trades and multi-season careers
+  are designed in [WORLD_SPEC.md](WORLD_SPEC.md))
 
 ---
 
@@ -186,9 +187,10 @@ generator. That means:
 
 ## 8. Leagues and season
 
-> **Phase 5 is specified in detail in [SEASON_SPEC.md](SEASON_SPEC.md)**: Quick League (one 8-team
-> season) and Career (a 48-club world: America and Europe, three tiers, promotion and relegation, a
-> world draft, contracts, ageing, seasons that follow on). Where the two differ, SEASON_SPEC.md wins.
+> **Career mode is designed in [WORLD_SPEC.md](WORLD_SPEC.md)**: a world of 126 clubs in the US and
+> Europe with promotion and relegation. It replaces the 48-club Career of SEASON_SPEC.md (Parts 3–12).
+> The **Quick League** (one 8-team season, SEASON_SPEC.md Part 2) is built and stays as it is; the
+> three leagues below are its Street, Pro and Legends.
 
 - **3 leagues** with different budgets and player quality, e.g. *Street League* (low budget),
   *Pro League*, *Legends League* (high budget).
@@ -228,17 +230,16 @@ Each phase must be playable and fun before starting the next.
 | **2. Playable match** ✅ | 2D court, commentary, timeouts, subs, speed setting. Fixed squads. | Two players enjoy a full 4-quarter match head-to-head. |
 | **3. Draft + budget + scouting** ✅ | Player pool, pricing, free and snake draft, fuzzy scouting. | Two different drafting strategies can both win. |
 | **4. Coaches** | 3 coach roles with real effects. | Spending on staff is a real trade-off vs players. |
-| **5. Season and Career** (SEASON_SPEC.md) | 5a Quick League → 5b world, promotion/relegation → 5c playoffs, awards → 5d offseason, contracts, draft → 5e injuries, development, morale, news → 5f trade deadline. Career logic first, checked by `npm run world`, then its screens. | A Quick League season can be played and saved; a Career runs for 10 seasons with every lab target passing, then is playable. |
+| **5. Season and Career** | 5a Quick League ✅ (SEASON_SPEC.md Part 2). Career: slices W1–W9 of [WORLD_SPEC.md](WORLD_SPEC.md), each checked by the world lab. | A Quick League season can be played and saved; a Career runs for 20 seasons with every world-lab check green, then is playable. |
 | **6. Polish** | Sounds, better animations, more presentation. | — |
 
 ### Roadmap after phase 3
 
 Phases 1–3 are done. Next, in this order:
 
-1. **Franchise layer (phases 4–5):** league, schedule, standings, playoffs and saves; player
-   development and aging; coaches; a simple budget for coaching, facilities and scouting. Designed
-   first in `SEASON_SPEC.md`, then built. **Depth ceiling:** about Hoop Land's level. No salary-cap
-   sheets, luxury tax or debt.
+1. **Career mode** as designed in [WORLD_SPEC.md](WORLD_SPEC.md), built in slices W1–W9
+   (foundation, one season, years go by, talent pipeline, free agency, trades, the club, scouting,
+   living world). Phases 4 (coaches) and 5 (season) are part of it.
 2. **Daily Clutch:** the same late-game scenario for everyone each day (seeded), using the clutch
    play-calls.
 3. **Match feel:** arcade banners for big plays ("ALLEY-OOP!"), a play-of-the-game replay, a

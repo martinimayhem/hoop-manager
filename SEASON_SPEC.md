@@ -1,6 +1,8 @@
 # Season and Career — Phase 5 spec (SEASON_SPEC.md)
 
 > Status: **approved** (revision 3, with the decisions of the approval folded in).
+> **2026-11-17: the Career (Parts 3–12) is replaced by [WORLD_SPEC.md](WORLD_SPEC.md)** (126 clubs).
+> Part 2, the Quick League, is built and still holds; the rest is kept for its reasoning.
 > Two modes: **Quick League** (one 8-team season, the first design) and **Career** (a fictional
 > 48-club world with tiers, promotion and relegation, a world draft, contracts and seasons that
 > follow on). Coaches (phase 4) come after this; every place a coach will matter has a factor that is

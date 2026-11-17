@@ -50,9 +50,10 @@ the next dead ball; both coaches may adjust during it.
 
 ## Roadmap
 
-Next up is the franchise layer: leagues, a full season with playoffs and saves, player development,
-coaches and a simple budget. After that: a Daily Clutch challenge, arcade-style match moments and
-team codes for head-to-head play at a distance. See the roadmap in [SPEC.md](SPEC.md).
+Next up is **career mode**: a world of 126 clubs in the US and Europe with promotion and relegation,
+scouting, a draft, free agents, trades, youth development, staff and money, designed in
+[WORLD_SPEC.md](WORLD_SPEC.md). After that: a Daily Clutch challenge, arcade-style match moments
+and team codes for head-to-head play at a distance. See the roadmap in [SPEC.md](SPEC.md).
 
 ## Rights
 
