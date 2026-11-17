@@ -1,6 +1,6 @@
 // Player-facing names and one-line explanations for every tactic.
 
-import type { DefenceScheme, OffensiveFocus, Tempo } from '../engine/types';
+import type { DefenceScheme, OffensiveFocus, Tempo, Aggression } from '../engine/types';
 
 export interface OptionInfo {
   icon: string;
@@ -90,6 +90,24 @@ export const TEMPO_INFO: Record<Tempo, OptionInfo> = {
     blurb: 'Shoot early: more possessions for both teams.',
     good: 'Your team is quicker and fitter, or you are behind.',
     weak: 'Tires everyone; slow, big teams suffer most.',
+  },
+};
+
+export const AGGRESSION_INFO: Record<Aggression, OptionInfo> = {
+  careful: {
+    icon: '🧊',
+    label: 'Careful',
+    blurb: "Stay down, don't reach: few fouls, but looser contests and fewer steals.",
+    good: 'They handle the ball well and make their free throws, or your bigs are in foul trouble.',
+    weak: 'Against shaky ball handlers: you let them off the hook.',
+  },
+  normal: { icon: '▶️', label: 'Normal', blurb: 'Standard defence.', good: 'No clear reason to change.', weak: 'Nothing in particular.' },
+  aggressive: {
+    icon: '🔥',
+    label: 'Aggressive',
+    blurb: 'Crowd the ball, jump at shots: more turnovers and blocks, but more fouls and free throws.',
+    good: 'They turn the ball over easily, or miss their free throws.',
+    weak: 'Good ball handlers and free-throw shooters punish it, and your players get into foul trouble.',
   },
 };
 

@@ -1,38 +1,53 @@
 import { playerRating, type BoxScore, type TeamBox } from '../../engine/stats';
 import type { Side } from '../../engine/types';
 import { Portrait, ShirtNumber } from './Portrait';
+import { useSort } from './sortable';
+
+type Line = TeamBox['players'][number];
+/** The box score's columns: key, header, hover text, and the number it sorts by. */
+const COLS: { key: string; label: string; tip?: string; v: (s: Line['stats']) => number }[] = [
+  { key: 'rtg', label: 'RTG', tip: 'Match rating, 1-10', v: (s) => playerRating(s) ?? 0 },
+  { key: 'min', label: 'MIN', tip: 'Minutes', v: (s) => s.seconds },
+  { key: 'pts', label: 'PTS', tip: 'Points', v: (s) => s.pts },
+  { key: 'fg', label: 'FG', tip: 'Field goals made-attempted', v: (s) => s.fgm + s.fga / 1000 },
+  { key: '3p', label: '3P', tip: 'Three-pointers made-attempted', v: (s) => s.tpm + s.tpa / 1000 },
+  { key: 'ft', label: 'FT', tip: 'Free throws made-attempted', v: (s) => s.ftm + s.fta / 1000 },
+  { key: 'reb', label: 'REB', tip: 'Rebounds', v: (s) => s.oreb + s.dreb },
+  { key: 'ast', label: 'AST', tip: 'Assists', v: (s) => s.ast },
+  { key: 'stl', label: 'STL', tip: 'Steals', v: (s) => s.stl },
+  { key: 'blk', label: 'BLK', tip: 'Blocks', v: (s) => s.blk },
+  { key: 'to', label: 'TO', tip: 'Turnovers', v: (s) => s.tov },
+  { key: 'pf', label: 'PF', tip: 'Personal fouls', v: (s) => s.pf },
+  { key: 't', label: 'T', tip: 'Technical fouls', v: (s) => s.tf },
+  { key: 'pm', label: '+/-', tip: 'Points for minus points against while on court', v: (s) => s.plusMinus },
+];
 
 const pct = (m: number, a: number) => (a ? `${Math.round((100 * m) / a)}%` : '–');
 
-function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side }) {
+/** One team's box score. `head`: its name and score above it (off where a tab already says whose it is). */
+export function TeamTable({ t, colour, side, head = true }: { t: TeamBox; colour: string; side: Side; head?: boolean }) {
+  const sorter = useSort<Line>((l, key) => {
+    if (key === 'name') return l.player.name;
+    if (l.stats.seconds === 0) return null; // DNP: always last
+    return COLS.find((c) => c.key === key)!.v(l.stats);
+  });
   return (
     <div className="box-team" style={{ ['--team' as string]: colour }}>
-      <div className="box-head">
-        <b>{t.name}</b>
-        <span className="box-score">{t.score}</span>
-      </div>
-      <table className="brk-table">
+      {head && (
+        <div className="box-head">
+          <b>{t.name}</b>
+          <span className="box-score">{t.score}</span>
+        </div>
+      )}
+      <table className="brk-table eq">
         <thead>
           <tr>
-            <th className="left">Player</th>
-            <th title="Match rating, 1-10">RTG</th>
-            <th>MIN</th>
-            <th>PTS</th>
-            <th>FG</th>
-            <th>3P</th>
-            <th>FT</th>
-            <th>REB</th>
-            <th>AST</th>
-            <th>STL</th>
-            <th>BLK</th>
-            <th>TO</th>
-            <th>PF</th>
-            <th title="Technical fouls">T</th>
-            <th>+/-</th>
+            {sorter.th('name', 'Player', { left: true, wide: true })}
+            {COLS.map((c) => sorter.th(c.key, c.label, { tip: c.tip }))}
           </tr>
         </thead>
         <tbody>
-          {t.players.map(({ player, starter, stats: s }) => (
+          {sorter.sorted(t.players).map(({ player, starter, stats: s }) => (
             <tr key={player.id}>
               <td className="left">
                 <span className="player-cell">
@@ -81,14 +96,14 @@ function TeamTable({ t, colour, side }: { t: TeamBox; colour: string; side: Side
 export function LineScore({ box }: { box: BoxScore }) {
   const periods = Math.max(box.teams[0].quarterPoints.length, box.teams[1].quarterPoints.length);
   return (
-    <table style={{ width: 'auto' }}>
+    <table className="eq" style={{ width: 'auto' }}>
       <thead>
         <tr>
-          <th className="left"></th>
+          <th className="left" style={{ width: 56 }}></th>
           {Array.from({ length: periods }, (_, i) => (
-            <th key={i}>{i < 4 ? `Q${i + 1}` : `OT${i - 3}`}</th>
+            <th key={i} style={{ width: 44 }}>{i < 4 ? `Q${i + 1}` : `OT${i - 3}`}</th>
           ))}
-          <th>T</th>
+          <th style={{ width: 44 }}>T</th>
         </tr>
       </thead>
       <tbody>

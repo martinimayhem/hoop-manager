@@ -93,7 +93,7 @@ export function CourtOverlays({ m, humanSides }: { m: LiveMatch; humanSides: Sid
   const star = lines(m)
     .filter((l) => playerRating(l.s) !== null)
     .sort((a, b) => ratingOf(b) - ratingOf(a))[0];
-  const tip = m.tips.find((t) => humanSides.includes(t.side));
+  const tip = humanSides.flatMap((sd) => m.liveTips(sd)).sort((a, b) => b.id - a.id)[0];
   return (
     <>
       {tip && (

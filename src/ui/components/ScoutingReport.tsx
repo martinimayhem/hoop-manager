@@ -1,36 +1,56 @@
 // Pre-match report on the opponent: fuzzy ratings and a guess at their game plan.
 
 import { composite } from '../../engine/ratings';
-import type { Side, Team } from '../../engine/types';
+import type { Player, Side, Team } from '../../engine/types';
 import { scoutedTendencies } from '../../game/ai';
 import { poolById } from '../../game/pool';
 import { ATTRIBUTE_GROUPS, DEFAULT_SCOUT_ACCURACY, potentialStars, scoutGroup } from '../../game/scouting';
 import { DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO } from '../labels';
 import { ProbBars, RangeCell, Stars } from './common';
 import { Portrait, ShirtNumber } from './Portrait';
+import { useSort } from './sortable';
 
 const HYPE_FALLBACK = 50;
 
-export function ScoutingReport({ opponent, us, side }: { opponent: Team; us: Team; /** The opponent's kit. */ side?: Side }) {
+/** How well the opponent is known: in a league, ranges narrow each time you have played them (never below `minHalf`). */
+export interface ScoutView {
+  accuracy: number;
+  minHalf: number;
+  /** Players' reputations (a league's own pool); default: the single-match market's. */
+  hypes?: Map<string, number>;
+}
+
+export function ScoutingReport({ opponent, us, side, scout }: { opponent: Team; us: Team; /** The opponent's kit. */ side?: Side; scout?: ScoutView }) {
   const pool = poolById();
-  const hype = (id: string) => pool.get(id)?.hype ?? HYPE_FALLBACK;
-  const t = scoutedTendencies(opponent, us, DEFAULT_SCOUT_ACCURACY);
-  const players = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall);
+  const hype = (id: string) => scout?.hypes?.get(id) ?? pool.get(id)?.hype ?? HYPE_FALLBACK;
+  const accuracy = scout?.accuracy ?? DEFAULT_SCOUT_ACCURACY;
+  const minHalf = scout?.minHalf ?? 0;
+  const t = scoutedTendencies(opponent, us, accuracy);
+  const sorter = useSort<Player>((p, key) => {
+    if (key === 'name') return p.name;
+    if (key === 'pos') return -['PG', 'SG', 'SF', 'PF', 'C'].indexOf(p.position);
+    if (key === 'ht') return p.heightCm;
+    if (key === 'wt') return p.weightKg;
+    if (key === 'pot') return potentialStars(p, accuracy);
+    const g = ATTRIBUTE_GROUPS.find((x) => x.key === key);
+    if (!g) return null;
+    const r = scoutGroup(p, g, hype(p.id), accuracy, minHalf);
+    return (r.lo + r.hi) / 2;
+  });
+  const players = sorter.sorted([...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall));
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div className="muted small">Ranges are your scout's estimates. Famous players are easy to read; unknowns could surprise you.</div>
       <div>
-        <table className="brk-table scout-table">
+        <table className="brk-table scout-table eq">
           <thead>
             <tr>
-              <th className="left">Player</th>
-              <th className="left">Pos</th>
-              <th>Ht</th>
-              <th>Wt</th>
-              {ATTRIBUTE_GROUPS.map((g) => (
-                <th key={g.key}>{g.label}</th>
-              ))}
-              <th>Pot.</th>
+              {sorter.th('name', 'Player', { left: true, wide: true })}
+              {sorter.th('pos', 'Pos', { tip: 'Position' })}
+              {sorter.th('ht', 'Ht', { tip: 'Height (cm)' })}
+              {sorter.th('wt', 'Wt', { tip: 'Weight (kg)' })}
+              {ATTRIBUTE_GROUPS.map((g) => sorter.th(g.key, g.short, { tip: g.label }))}
+              {sorter.th('pot', 'Pot.', { tip: 'Development potential (scout estimate)' })}
             </tr>
           </thead>
           <tbody>
@@ -45,16 +65,16 @@ export function ScoutingReport({ opponent, us, side }: { opponent: Team; us: Tea
                     </span>
                   </span>
                 </td>
-                <td className="left">{p.position}</td>
+                <td>{p.position}</td>
                 <td>{p.heightCm}</td>
                 <td>{p.weightKg}</td>
                 {ATTRIBUTE_GROUPS.map((g) => (
                   <td key={g.key}>
-                    <RangeCell r={scoutGroup(p, g, hype(p.id), DEFAULT_SCOUT_ACCURACY)} />
+                    <RangeCell r={scoutGroup(p, g, hype(p.id), accuracy, minHalf)} />
                   </td>
                 ))}
                 <td>
-                  <Stars n={potentialStars(p, DEFAULT_SCOUT_ACCURACY)} />
+                  <Stars n={potentialStars(p, accuracy)} />
                 </td>
               </tr>
             ))}

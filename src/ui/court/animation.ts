@@ -4,6 +4,7 @@
 // running, and works out where the ball is from whoever holds it. Pure: no DOM, no timing. Everything is court space: metres on
 // the NBA court (engine/court.ts), plus height for the ball; internally everything is laid out as if the offence attacks to the right.
 
+import type { FakeCue } from './fakes';
 import { FREE_THROW_LINE_X, HALF_X, KEY_HALF_WIDTH, fromHoop, shotPoint } from '../../engine/court';
 import { other } from '../../engine/state';
 import { POSITIONS, type ReboundLanding, type DefenceScheme, type KeyMatchup, type OffensiveFocus, type Position, type ShotType, type Side, type Tempo, type TimedEvent, type Transition } from '../../engine/types';
@@ -45,6 +46,10 @@ export interface Frame {
   stance?: Record<string, number>;
   /** How far each player's hands are up, 0..1; anyone missing has them down. */
   reach?: Record<string, number>;
+  /** Why the hands are up and at what, court x/y (motion.ts ReachAim): the 3D body's pose. */
+  reachAim?: Record<string, { kind: 'contest' | 'help' | 'deny' | 'closeout' | 'rebound'; x: number; y: number }>;
+  /** A fake under way (drawing only, see fakes.ts): who, what, and how far through. */
+  fake?: FakeCue | null;
 }
 
 /** Chest: flat and fast. Bounce: off the floor past a defender. Lob: up and over, for long or crowded passes. */
@@ -58,7 +63,8 @@ export type ShotStyle = 'jumper' | 'layup' | 'dunk' | 'hook' | 'set' | 'throw';
 
 /** What the ball does during a beat. Player references are player keys. */
 export type BallAction =
-  | { kind: 'held'; holder: string; dribble: boolean }
+  /** routine: the bounces at the free-throw line before the shot (dead ball, upright, feet set). */
+  | { kind: 'held'; holder: string; dribble: boolean; routine?: boolean }
   | { kind: 'pass'; from: string; to: string; arc: number; style?: PassStyle }
   | { kind: 'toPlayer'; from: Ball; to: string; arc: number; high?: boolean }
   | { kind: 'fromPlayer'; from: string; to: Ball; arc: number; style: ShotStyle }
@@ -245,10 +251,16 @@ const BACKCOURT: Spot[] = [[-5.1, 0], [-2.1, -4.57], [-2.1, 4.57], [-3.9, -2.44]
 const THREE: Spot[] = [[0.82, -7.02], [5.17, -5.36], [7.53, 0], [5.17, 5.36], [0.82, 7.02]].map(([b, a]) => hoopSpot(b, a));
 const MID: Spot[] = [[4.27, -2.8], [4.75, 0], [4.27, 2.8]].map(([b, a]) => hoopSpot(b, a));
 const POST: Spot[] = [[1.73, -1.8], [1.73, 1.8]].map(([b, a]) => hoopSpot(b, a));
-/** The shooter's feet just behind the free-throw line. */
-const FT_SPOT: Pos = { x: FREE_THROW_LINE_X - 0.15, y: MID_Y };
-/** Free-throw lane places, from the basket out (x), either side of the lane (y). */
-const LANE_X = [1.03, 1.93, 2.83].map((b) => HOOP_X - b);
+/**
+ * The shooter at the free-throw line: his hips 0.32 m behind it, so that the toes of his front foot
+ * (about 0.18 m ahead of his hips in his stance, player3d FT_FEET_*) are a hand's width behind it.
+ */
+const FT_SPOT: Pos = { x: FREE_THROW_LINE_X - 0.32, y: MID_Y };
+/**
+ * Free-throw lane places, from the basket out (x), either side of the lane (y): the middle of each
+ * marked space (NBA: 8-11, 11-14 and 14-17 ft from the end line), the hoop 1.6 m in from it.
+ */
+const LANE_X = [2.9, 3.81, 4.72].map((fromEnd) => COURT.w - fromEnd);
 const LANE_Y = [MID_Y - KEY_HALF_WIDTH - 0.46, MID_Y + KEY_HALF_WIDTH + 0.46];
 /** On the last free throw the lane steps in as the ball is released. */
 const STEP_IN_M = 0.9;
@@ -1034,15 +1046,21 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
 
   /** The opening jump: the centres in the circle, the rest round it, and an official tosses it up. */
   const tipOff = () => {
+    // Everyone stands where the rule puts him: the offence is not spread and nobody is put on his man.
+    spacing = false;
+    autoDefence = false;
     const mid: Pos = { x: COURT.w / 2, y: MID_Y };
     const ring = (deg: number, r = 2.5): Pos => ({ x: mid.x + Math.cos((deg * Math.PI) / 180) * r, y: mid.y + Math.sin((deg * Math.PI) / 180) * r });
     const defKeys = defIds.map(kDef);
     const centres = [offKeys[offKeys.length - 1], defKeys[defKeys.length - 1]];
-    at[centres[0]] = { x: mid.x - 0.45, y: MID_Y };
-    at[centres[1]] = { x: mid.x + 0.45, y: MID_Y };
-    offKeys.slice(0, -1).forEach((k, j) => (at[k] = ring([135, 225, 60, 300][j])));
-    const defRing = [ring(90), ring(270), ring(180, 2.05), { x: mid.x + 5.5, y: MID_Y }];
-    defKeys.slice(0, -1).forEach((k, j) => (at[k] = defRing[j]));
+    // NBA Rule No. 6: the two jumpers in the centre circle, each in the half farthest from his own
+    // basket (the offence attacks to the right here); the other eight outside the restraining circle
+    // (6 ft), in alternating spots round it.
+    at[centres[0]] = { x: mid.x + 0.45, y: MID_Y };
+    at[centres[1]] = { x: mid.x - 0.45, y: MID_Y };
+    const around = 2.6;
+    offKeys.slice(0, -1).forEach((k, j) => (at[k] = ring([202.5, 112.5, 292.5, 22.5][j], around)));
+    defKeys.slice(0, -1).forEach((k, j) => (at[k] = ring([157.5, 247.5, 67.5, 337.5][j], around)));
     refSpot = { [trail]: { x: mid.x, y: MID_Y - 1.2 }, [lead]: { x: mid.x + 4, y: TRAIL_Y }, [centre]: { x: mid.x - 2.5, y: CENTRE_Y } };
     holder = trail;
     deadBeat = true;
@@ -1247,6 +1265,8 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
       const share = seconds < EARLY_OFFENCE_SECONDS ? 0.6 : transition ? 0.85 : 1;
       // Pushed up the floor at a run, he comes into the set under control; over the press too, at a
       // jog: the press may have held him up short of half court, and the eight seconds are running.
+      // (Teammates the motion has not yet got to their spots by then are waited for as it plays:
+      // LiveMatch.waitForTheSet.)
       if (transition || pressed) paceFor[pg] = 'jog';
       push(0, dribble(), [], startX < BRING_UP_X ? undefined : `${pgName()} brings it up…`, pg, Math.min(5, Math.max(0.3, Math.max(defenceBack, offenceIn) * share - since(0))));
     }
@@ -1413,11 +1433,14 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     if (d1) out[d1] = { x: LANE_X[2], y: at[d1].y < MID_Y ? LANE_Y[0] : LANE_Y[1] };
     if (o0) out[o0] = { x: LANE_X[1], y: LANE_Y[0] };
     if (o1) out[o1] = { x: LANE_X[1], y: LANE_Y[1] };
+    // Off the lane, behind the arc. The defence: one at the top to box out the shooter, one on a wing
+    // for a long rebound. The offence: one on the other wing, and a safety just past the top of the
+    // arc, back for defence.
     const behind: [string | undefined, Pos][] = [
       [defs[0], fromHoop(7.71, 1.81)],
-      [defs[1], fromHoop(11.32, -1.99)],
-      [offs[0], fromHoop(7.57, -4.04)],
-      [offs[1], fromHoop(11.71, 2.4)],
+      [defs[1], fromHoop(7.6, -4.6)],
+      [offs[0], fromHoop(7.57, 4.3)],
+      [offs[1], fromHoop(9.6, -1.6)],
     ];
     for (const [k, p] of behind) if (k) out[k] = p;
     return out;
@@ -1806,6 +1829,9 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           if (!plan.loose) {
             const up: Ball = { ...plan.spot, z: REBOUND_CATCH_Z };
             reachers = [k, ...rivals];
+            // They go up as it comes down (the rebounder catches it at the top of his jump): the
+            // jumpers are on the flight down as well as the catch (motion.ts jumps times it).
+            jumpers = [k, ...rivals];
             push(0.3, { kind: 'fixed', from: ballAbs(hit), to: ballAbs(up), arc: 0.5 + dist(plan.spot, HOOP) * 0.08 }, [], undefined, undefined, plan.flight);
             jumpers = [k, ...rivals];
             reachers = [k, ...rivals];
@@ -1981,7 +2007,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           deadBeat = true;
           push(0, { kind: 'pass', from: lead, to: k, arc: 0, style: 'bounce' }, [], undefined, undefined, dist(FT_LEAD, FT_SPOT) / PASS_SPEED.bounce + 0.3);
           deadBeat = true;
-          push(0, dribble(), [], undefined, undefined, 1.1);
+          push(0, { kind: 'held', holder, dribble: true, routine: true }, [], undefined, undefined, 1.1);
           deadBeat = true;
           push(0, hold(), [], undefined, undefined, 0.5);
           const to = ev.made ? RIM : rimContact(FT_SPOT, seed + i);
@@ -2019,7 +2045,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         deadBeat = true;
         push(0, { kind: 'pass', from: lead, to: k, arc: 0, style: 'bounce' }, [], undefined, undefined, dist(FT_LEAD, FT_SPOT) / PASS_SPEED.bounce + 0.3);
         deadBeat = true;
-        push(0, dribble(), [], undefined, undefined, 1.3);
+        push(0, { kind: 'held', holder, dribble: true, routine: true }, [], undefined, undefined, 1.3);
         deadBeat = true;
         push(0, hold(), [], undefined, undefined, 0.6);
         // On the last one the lane comes in as the ball leaves his hands; before that nobody moves.
@@ -2065,6 +2091,15 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
   if (pendingFire.length > 0 || beats.length === 0) {
     push(0.05, holder ? hold() : { kind: 'fixed', from: ballAbs(ballSpot), to: ballAbs(ballSpot), arc: 0 });
   }
+  // The man who blocks the shot reads the play at once: from the move before the shot (the drive,
+  // the catch) he goes for it, no moment's hesitation, so he is on the shooter at the release.
+  beats.forEach((b, i) => {
+    if (!b.block || !b.contest) return;
+    for (const k of [i - 1, i]) {
+      const beat = beats[k];
+      if (beat && !beat.goNow?.includes(b.contest)) beat.goNow = [...(beat.goNow ?? []), b.contest];
+    }
+  });
   return { offence: off, dir, guards: guarding, beats, clockStart: ctx.clockStart, clockEnd: ctx.clockEnd, quarter: ctx.quarter };
 }
 

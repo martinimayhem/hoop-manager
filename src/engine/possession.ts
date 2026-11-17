@@ -14,6 +14,8 @@ import {
   PNR_ZONE_DAMPING,
   RIM_SHARE,
   SHOOTING_FOUL_RATE,
+  AGGRESSION,
+  SCHEME_COUNTER,
   SHOT_TYPE_MOD,
   SPACING_INSIDE_MOD,
   SPACING_PIVOT,
@@ -45,9 +47,23 @@ import {
   turnoverPlanMod,
   type HalfCourtPlay,
 } from './tactics';
-import { DEFENDERS_BACK, type MatchState, type ReboundLanding, type OffenceCall, type PossessionCalls, type ShotType, type Side, type TransitionPlan, type TransitionSituation, type TurnoverCause } from './types';
+import { DEFENDERS_BACK, NBA_RULES, type MatchState, type ReboundLanding, type OffenceCall, type PossessionCalls, type ShotType, type Side, type TransitionPlan, type TransitionSituation, type TurnoverCause } from './types';
 
-const FOUL_LIMIT = 6;
+/**
+ * The players who may still take part in play: the lineup, less anyone who has fouled out (or been
+ * ejected) and is waiting for the next dead ball to be replaced. He leaves the floor by the rules, so
+ * he can't foul, rebound or shoot again meanwhile. (When nobody is waiting, it is the lineup itself, so
+ * such a game plays exactly as before.)
+ */
+function onCourt(s: MatchState, side: Side): string[] {
+  const team = s.teams[side];
+  return team.lineup.some((id) => team.players[id].fouledOut) ? team.lineup.filter((id) => !team.players[id].fouledOut) : team.lineup;
+}
+
+/** Personal fouls that foul a player out: the match's rules (6 by default, the NBA's). */
+function foulLimit(s: MatchState): number {
+  return s.rules?.foulLimit ?? NBA_RULES.foulLimit;
+}
 const BONUS_FOULS = 5;
 /** NBA: in the last two minutes of a period, the second team foul there puts the other side in the bonus. */
 const LATE_BONUS_FOULS = 2;
@@ -135,7 +151,7 @@ export function playPossession(s: MatchState): void {
     if (!spend(c, halfCourtTime(c, base))) break;
     if (c.shotClock <= 0) {
       // Nobody got a shot away in time.
-      turnover(c, weighted(s.rng, s.teams[c.off].lineup, (id) => eff(s, c.off, id, 'playmaking')), undefined, 'shotClock');
+      turnover(c, weighted(s.rng, onCourt(s, c.off), (id) => eff(s, c.off, id, 'playmaking')), undefined, 'shotClock');
       break;
     }
     runHalfCourt(c);
@@ -199,8 +215,8 @@ function spend(c: Ctx, seconds: number): boolean {
 function intentionalFoul(c: Ctx): void {
   const s = c.s;
   spend(c, range(s.rng, 2, 4));
-  const target = [...s.teams[c.off].lineup].sort((a, b) => eff(s, c.off, a, 'freeThrow') - eff(s, c.off, b, 'freeThrow'))[0];
-  const fouler = [...s.teams[c.def].lineup].sort((a, b) => pstate(s, c.def, a).fouls - pstate(s, c.def, b).fouls)[0];
+  const target = [...onCourt(s, c.off)].sort((a, b) => eff(s, c.off, a, 'freeThrow') - eff(s, c.off, b, 'freeThrow'))[0];
+  const fouler = [...onCourt(s, c.def)].sort((a, b) => pstate(s, c.def, a).fouls - pstate(s, c.def, b).fouls)[0];
   commitFoul(c, fouler, target, false);
   freeThrows(c, target, 2);
 }
@@ -211,7 +227,7 @@ function calledPlay(c: Ctx, doubled: string | null): { shotType: ShotType; shoot
   const call = c.calls.offence;
   if (!call || call === 'runClock' || c.setUsed) return null;
   c.setUsed = true;
-  const lineup = s.teams[c.off].lineup;
+  const lineup = onCourt(s, c.off);
   const best = (key: RatingKey, exclude?: string) =>
     lineup.filter((id) => id !== exclude).reduce((a, b) => (eff(s, c.off, b, key) > eff(s, c.off, a, key) ? b : a));
   switch (call) {
@@ -253,7 +269,7 @@ function clockShotMod(c: Ctx): number {
 
 /** How many credible shooters the offence has on the floor (0-5). */
 function spacing(c: Ctx): number {
-  return spacingScore(c.s.teams[c.off].lineup.map((id) => eff(c.s, c.off, id, 'three')));
+  return spacingScore(onCourt(c.s, c.off).map((id) => eff(c.s, c.off, id, 'three')));
 }
 
 /** What the defence gives up and takes away this possession: its scheme, any call, and how stretched it is. */
@@ -298,7 +314,7 @@ export function planTransition(s: MatchState, side: Side, trigger: 'rebound' | '
   const offPlan = s.teams[side].plan;
   const speedEdge = teamAvg(s, side, 'speed') - teamAvg(s, def, 'speed');
   if (!chance(s.rng, fastBreakChance(trigger, offPlan, s.teams[def].plan, speedEdge))) return { situation: 'none' };
-  const lineup = s.teams[side].lineup;
+  const lineup = onCourt(s, side);
   // The quickest of them has the ball; a guard more often than a big.
   const handlerId = weighted(s.rng, lineup, (id) => Math.exp((eff(s, side, id, 'speed') - 60) / 10) * (lineup.indexOf(id) < 2 ? 1.6 : 1));
   // A steal leaves the floor open more often than a rebound and outlet.
@@ -313,7 +329,7 @@ function runTransition(c: Ctx, trigger: 'rebound' | 'steal', planned: Transition
   const plan = planned ?? planTransition(s, c.off, trigger);
   if (plan.situation === 'none') return false;
   const { handlerId: handler, situation, attack } = plan;
-  const lineup = s.teams[c.off].lineup;
+  const lineup = onCourt(s, c.off);
   if (!lineup.includes(handler)) return false;
   emit(s, { type: 'transition', side: c.off, handlerId: handler, situation, attack });
   if (!attack) {
@@ -373,11 +389,11 @@ function runTransition(c: Ctx, trigger: 'rebound' | 'steal', planned: Transition
 function runPress(c: Ctx): boolean {
   const s = c.s;
   const handling = teamAvg(s, c.off, 'ballSecurity');
-  const handler = weighted(s.rng, s.teams[c.off].lineup, (id) => Math.exp((eff(s, c.off, id, 'ballSecurity') - 60) / 8));
+  const handler = weighted(s.rng, onCourt(s, c.off), (id) => Math.exp((eff(s, c.off, id, 'ballSecurity') - 60) / 8));
   const execution = s.teams[c.def].team.execution;
   if (chance(s.rng, pressTurnoverChance(handling, execution))) {
     spend(c, range(s.rng, 3, 7));
-    const trapper = weighted(s.rng, s.teams[c.def].lineup, (id) => eff(s, c.def, id, 'perimeterD'));
+    const trapper = weighted(s.rng, onCourt(s, c.def), (id) => eff(s, c.def, id, 'perimeterD'));
     turnover(c, handler, chance(s.rng, 0.6) ? trapper : undefined, 'pressTrap');
     return true;
   }
@@ -387,7 +403,7 @@ function runPress(c: Ctx): boolean {
     emit(s, { type: 'pressBroken', side: c.off, handlerId: handler });
     const finisher = weighted(
       s.rng,
-      s.teams[c.off].lineup.filter((id) => id !== handler),
+      onCourt(s, c.off).filter((id) => id !== handler),
       (id) => Math.exp((eff(s, c.off, id, 'rollFinish') - 60) / 10),
     );
     shoot(c, 'pressBreak', finisher, handler, 0);
@@ -403,12 +419,13 @@ function runHalfCourt(c: Ctx): void {
   const s = c.s;
   const offPlan = s.teams[c.off].plan;
   const defPlan = s.teams[c.def].plan;
-  const lineup = s.teams[c.off].lineup;
+  const lineup = onCourt(s, c.off);
 
+  const intensity = AGGRESSION[defPlan.aggression ?? 'normal'];
   // Non-shooting foul (reach-in, hold). Side-out unless in the bonus.
-  if (chance(s.rng, nonShootingFoulRate(defPlan))) {
+  if (chance(s.rng, nonShootingFoulRate(defPlan) * intensity.reachFoul)) {
     const onId = weighted(s.rng, lineup, (id) => eff(s, c.off, id, 'ballSecurity'));
-    const fouler = weighted(s.rng, s.teams[c.def].lineup, (id) => 110 - eff(s, c.def, id, 'perimeterD'));
+    const fouler = weighted(s.rng, onCourt(s, c.def), (id) => 110 - eff(s, c.def, id, 'perimeterD'));
     const bonus = commitFoul(c, fouler, onId, false);
     afterCall(c, fouler);
     if (bonus) {
@@ -428,13 +445,15 @@ function runHalfCourt(c: Ctx): void {
       0.08 * ((pressure - 70) / 100) +
       0.06 * ((teamAvg(s, c.off, 'ballSecurity') - 65) / -100) +
       turnoverPlanMod(offPlan, defPlan) +
+      intensity.turnover +
+      intensity.vsHandling * (70 - eff(s, c.off, handler, 'ballSecurity')) +
       (c.calls.offence && !c.setUsed ? CALL_TURNOVER[c.calls.offence] : 0),
     0.05,
     0.3,
   );
   if (chance(s.rng, toChance)) {
     const stealer =
-      chance(s.rng, 0.55) ? weighted(s.rng, s.teams[c.def].lineup, (id) => Math.exp((eff(s, c.def, id, 'perimeterD') - 60) / 10)) : undefined;
+      chance(s.rng, 0.55) ? weighted(s.rng, onCourt(s, c.def), (id) => Math.exp((eff(s, c.def, id, 'perimeterD') - 60) / 10)) : undefined;
     const causes: TurnoverCause[] = offPlan.tempo === 'slow' ? ['badPass', 'travel', 'offensiveFoul', 'shotClock'] : ['badPass', 'travel', 'offensiveFoul'];
     turnover(c, handler, stealer, stealer ? 'steal' : pick(s.rng, causes));
     return;
@@ -505,7 +524,7 @@ function runHalfCourt(c: Ctx): void {
     const trap = clamp(DOUBLE_TEAM.trapBase + (70 - handling) * DOUBLE_TEAM.trapPerHandling + (trappers - 70) * DOUBLE_TEAM.trapPerDefence, DOUBLE_TEAM.trapMin, DOUBLE_TEAM.trapMax);
     if (chance(s.rng, trap)) {
       emit(s, { type: 'doubleTeam', side: c.off, targetId: doubled });
-      const stealer = weighted(s.rng, s.teams[c.def].lineup, (id) => Math.exp((eff(s, c.def, id, 'perimeterD') - 60) / 10));
+      const stealer = weighted(s.rng, onCourt(s, c.def), (id) => Math.exp((eff(s, c.def, id, 'perimeterD') - 60) / 10));
       turnover(c, doubled, chance(s.rng, 0.6) ? stealer : undefined, 'pressTrap');
       return;
     }
@@ -552,7 +571,7 @@ function postBias(pos: string): number {
 /** Weighted pick of a shooter by rating; tired players and a doubled star get the ball less. */
 function pickShooter(c: Ctx, rating: (id: string) => number, doubled: string | null, exclude?: string): string {
   const s = c.s;
-  const pool = s.teams[c.off].lineup.filter((id) => id !== exclude);
+  const pool = onCourt(s, c.off).filter((id) => id !== exclude);
   return weighted(s.rng, pool, (id) => {
     let w = Math.exp((rating(id) - 60) / 12) * fatigueFactor(pstate(s, c.off, id).energy);
     if (id === doubled) w *= DOUBLE_TEAM.targetUsage;
@@ -563,7 +582,10 @@ function pickShooter(c: Ctx, rating: (id: string) => number, doubled: string | n
 /** Pick-and-roll: quick handler vs a slow big punishes man defence. */
 function pnrEdge(c: Ctx, handler: string): number {
   const s = c.s;
-  const bigs = s.teams[c.def].lineup.slice(3);
+  // The bigs by slot (the real lineup), less one who fouled out and is waiting to be replaced.
+  const slotBigs = s.teams[c.def].lineup.slice(3);
+  const activeBigs = slotBigs.filter((id) => !pstate(s, c.def, id).fouledOut);
+  const bigs = activeBigs.length ? activeBigs : slotBigs;
   const bigSpeed = bigs.reduce((sum, id) => sum + eff(s, c.def, id, 'speed'), 0) / bigs.length;
   const gap = eff(s, c.off, handler, 'speed') - bigSpeed;
   const edge = clamp(gap * PNR_SPEED_EDGE.perPoint, PNR_SPEED_EDGE.min, PNR_SPEED_EDGE.max);
@@ -575,6 +597,18 @@ function pnrEdge(c: Ctx, handler: string): number {
 
 /** Who guards `shooterId` in man defence: same slot, unless the key matchup says otherwise. */
 function matchedDefender(s: MatchState, off: Side, shooterId: string): string {
+  const def = other(off);
+  const guard = slotDefender(s, off, shooterId);
+  if (!pstate(s, def, guard).fouledOut) return guard;
+  // He has fouled out and waits to be replaced: the nearest teammate by slot picks the man up.
+  const defLineup = s.teams[def].lineup;
+  const at = defLineup.indexOf(guard);
+  const active = onCourt(s, def);
+  return active.reduce((best, id) => (Math.abs(defLineup.indexOf(id) - at) < Math.abs(defLineup.indexOf(best) - at) ? id : best), active[0]);
+}
+
+/** The defender by slot (lineups pair up by position), with the key matchup applied. */
+function slotDefender(s: MatchState, off: Side, shooterId: string): string {
   const def = other(off);
   const offLineup = s.teams[off].lineup;
   const defLineup = s.teams[def].lineup;
@@ -596,7 +630,7 @@ function contest(c: Ctx, shooter: string, type: ShotType): { rating: number; def
   if (scheme === 'zone') {
     // Zone: no individual mismatches. The paint is guarded by the two best rim protectors.
     if (inside) {
-      const sorted = [...s.teams[c.def].lineup].sort((a, b) => eff(s, c.def, b, 'rimProtection') - eff(s, c.def, a, 'rimProtection'));
+      const sorted = [...onCourt(s, c.def)].sort((a, b) => eff(s, c.def, b, 'rimProtection') - eff(s, c.def, a, 'rimProtection'));
       const rating = (eff(s, c.def, sorted[0], 'rimProtection') + eff(s, c.def, sorted[1], 'rimProtection')) / 2;
       return { rating, defenderId: sorted[0] };
     }
@@ -643,7 +677,7 @@ function makeChance(c: Ctx, type: ShotType, zone: ShotZone, shooter: string, def
   if (!c.fastBreak && type !== 'pressBreak') {
     const athleticism = (teamAvg(s, c.off, 'speed') + avgStamina(s, c.off)) / 2;
     const iq = avgAttr(s, c.off, 'tactics');
-    p += (tempoShotMod(offTeam.plan.tempo, athleticism, iq) + focusShotMod(offTeam.plan.offence)) * offTeam.team.execution;
+    p += (tempoShotMod(offTeam.plan.tempo, athleticism, iq) + focusShotMod(offTeam.plan.offence) + SCHEME_COUNTER[offTeam.plan.offence][defTeam.plan.defence]) * offTeam.team.execution;
   }
 
   const momentumForOffence = c.off === 0 ? s.momentum : -s.momentum;
@@ -659,7 +693,7 @@ function avgStamina(s: MatchState, side: Side): number {
 }
 
 function avgAttr(s: MatchState, side: Side, key: 'stamina' | 'tactics'): number {
-  const lineup = s.teams[side].lineup;
+  const lineup = onCourt(s, side);
   return lineup.reduce((sum, id) => sum + playerOf(s, side, id).attrs[key], 0) / lineup.length;
 }
 
@@ -697,7 +731,10 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
   const { zone, courtSide } = open ? { zone: 'restricted' as const, courtSide: 'centre' as const } : chooseZone(c, type);
   const points = zonePoints(zone);
   const chaser = open ? chaseDown(c, shooter) : null;
-  const { rating, defenderId } = chaser ? { rating: 0, defenderId: chaser.chaserId } : contest(c, shooter, type);
+  const intensity = AGGRESSION[s.teams[c.def].plan.aggression ?? 'normal'];
+  const contested = chaser ? { rating: 0, defenderId: chaser.chaserId } : contest(c, shooter, type);
+  const rating = chaser ? contested.rating : contested.rating + intensity.contest;
+  const defenderId = contested.defenderId;
   const p = open ? openFinishChance(c, shooter) : makeChance(c, type, zone, shooter, rating, extra);
   usageDrain(s, c.off, shooter);
   const shooterP = playerOf(s, c.off, shooter);
@@ -722,7 +759,7 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
     0.005,
     0.3,
   );
-  const fouled = chance(s.rng, foulChance);
+  const fouled = chance(s.rng, foulChance * intensity.shootingFoul);
   const made = chance(s.rng, fouled ? p * 0.45 : p);
 
   if (fouled) commitFoul(c, defenderId, shooter, true);
@@ -759,8 +796,8 @@ function shoot(c: Ctx, type: ShotType, shooter: string, assist: string | undefin
   let blockerId: string | undefined;
   // (An open finish has nobody there to block it: only a chaser, decided above.)
   const blockChance = INSIDE_SHOTS.has(type) ? 0.15 + 0.4 * ((teamTop(s, c.def, 'rimProtection') - 70) / 100) : 0.02;
-  if (!open && chance(s.rng, clamp(blockChance, 0.01, 0.3))) {
-    blockerId = weighted(s.rng, s.teams[c.def].lineup, (id) => Math.exp((eff(s, c.def, id, 'rimProtection') - 60) / 8));
+  if (!open && chance(s.rng, clamp(blockChance * intensity.block, 0.01, 0.3))) {
+    blockerId = weighted(s.rng, onCourt(s, c.def), (id) => Math.exp((eff(s, c.def, id, 'rimProtection') - 60) / 8));
     pstate(s, c.def, blockerId).stats.blk++;
     s.momentum = clamp(s.momentum + (c.def === 0 ? 0.03 : -0.03), -1, 1);
   }
@@ -774,7 +811,7 @@ function clockFlags(c: Ctx): { lateClock?: true; buzzer?: true } {
 
 function pickPasser(c: Ctx, shooter: string): string {
   const s = c.s;
-  const pool = s.teams[c.off].lineup.filter((id) => id !== shooter);
+  const pool = onCourt(s, c.off).filter((id) => id !== shooter);
   return weighted(s.rng, pool, (id) => Math.exp((eff(s, c.off, id, 'playmaking') - 60) / 10));
 }
 
@@ -801,7 +838,7 @@ function commitFoul(c: Ctx, fouler: string, onId: string, shooting: boolean): bo
   if (s.clock <= LATE_PERIOD_SECONDS) team.lateFouls++;
   const bonus = !shooting && (team.quarterFouls >= BONUS_FOULS || team.lateFouls >= LATE_BONUS_FOULS);
   emit(s, { type: 'foul', side: c.def, playerId: fouler, onId, shooting, bonus });
-  if (ps.fouls >= FOUL_LIMIT && !ps.fouledOut) {
+  if (ps.fouls >= foulLimit(s) && !ps.fouledOut) {
     ps.fouledOut = true;
     emit(s, { type: 'foulOut', side: c.def, playerId: fouler });
   }
@@ -840,7 +877,7 @@ function heat(s: MatchState, side: Side, playerId: string): number {
   if (s.quarter >= 4 && s.clock <= 300 && margin <= 6) h += TECHNICAL.closeGame;
   const against = side === 0 ? -s.momentum : s.momentum;
   if (against > 0.3) h += TECHNICAL.runAgainst;
-  if (pstate(s, side, playerId).fouls >= 4) h += TECHNICAL.foulTrouble;
+  if (pstate(s, side, playerId).fouls >= foulLimit(s) - 2) h += TECHNICAL.foulTrouble;
   return h;
 }
 
@@ -948,7 +985,7 @@ function rebound(c: Ctx, miss: Miss): void {
   const angle = range(s.rng, -1.3, 1.3);
   const land: ReboundLanding = { back: Math.max(0.6, out * Math.cos(angle)), across: out * Math.sin(angle), long };
   const plan = s.teams[side].plan;
-  const rebounder = weighted(s.rng, s.teams[side].lineup, (id) => {
+  const rebounder = weighted(s.rng, onCourt(s, side), (id) => {
     const pos = playerOf(s, side, id).position;
     let w = Math.pow(eff(s, side, id, 'rebounding') / 50, 2.2) * (afterFreeThrow ? REBOUND.freeThrowPosition[pos] : REBOUND.position[pos][long ? 1 : 0]);
     if (offensive && id === miss.shooter) w *= long ? REBOUND.shooterLong : REBOUND.shooterShort;
@@ -992,7 +1029,7 @@ function turnover(c: Ctx, playerId: string, stealerId: string | undefined, cause
     const ps = pstate(s, c.off, playerId);
     ps.fouls++;
     ps.stats.pf++;
-    if (ps.fouls >= FOUL_LIMIT && !ps.fouledOut) {
+    if (ps.fouls >= foulLimit(s) && !ps.fouledOut) {
       ps.fouledOut = true;
       emit(s, { type: 'foulOut', side: c.off, playerId });
     }

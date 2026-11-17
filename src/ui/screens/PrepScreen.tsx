@@ -1,27 +1,36 @@
-// Pre-match: each human sets a game plan while studying the scouting report.
-// In hot-seat mode the screen hands over between players so plans stay secret.
+// Pre-match: you set your game plan while studying the scouting report on the computer's team.
 
 import { useMemo, useState } from 'react';
 import { makePlan } from '../../engine/match';
 import { createRng } from '../../engine/rng';
 import type { GamePlan, Side, Team } from '../../engine/types';
 import { aiGamePlan } from '../../game/ai';
-import type { Setup } from '../App';
 import { PlanEditor } from '../components/PlanEditor';
-import { ScoutingReport } from '../components/ScoutingReport';
+import { ScoutingReport, type ScoutView } from '../components/ScoutingReport';
 
-export function PrepScreen({ setup, teams, onReady, onMenu }: { setup: Setup; teams: [Team, Team]; onReady: (plans: [GamePlan, GamePlan]) => void; onMenu: () => void }) {
-  const humans: Side[] = setup.mode === 'ai' ? [0] : [0, 1];
+export function PrepScreen({
+  teams,
+  onReady,
+  onMenu,
+  scout,
+}: {
+  teams: [Team, Team];
+  onReady: (plans: [GamePlan, GamePlan]) => void;
+  onMenu: () => void;
+  /** In a league: how well each side knows the other (by side). */
+  scout?: [ScoutView, ScoutView];
+}) {
+  const humans: Side[] = [0];
   const initial = useMemo<[GamePlan, GamePlan]>(() => {
     const rng = createRng(Date.now() >>> 0);
     return [
       makePlan(teams[0]),
-      setup.mode === 'ai' ? aiGamePlan(teams[1], teams[0], rng) : makePlan(teams[1]),
+      aiGamePlan(teams[1], teams[0], rng),
     ];
-  }, [teams, setup.mode]);
+  }, [teams]);
   const [plans, setPlans] = useState<[GamePlan, GamePlan]>(initial);
   const [step, setStep] = useState(0);
-  const [handover, setHandover] = useState(setup.mode === 'pvp');
+  const [handover, setHandover] = useState(false);
 
   const side = humans[step];
   const team = teams[side];
@@ -76,7 +85,7 @@ export function PrepScreen({ setup, teams, onReady, onMenu }: { setup: Setup; te
         </div>
         <div className="panel">
           <h3>Scouting report: {opponent.name}</h3>
-          <ScoutingReport opponent={opponent} us={team} side={side === 0 ? 1 : 0} />
+          <ScoutingReport opponent={opponent} us={team} side={side === 0 ? 1 : 0} scout={scout?.[side]} />
         </div>
       </div>
     </div>

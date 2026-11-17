@@ -10,13 +10,23 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "match": "tsx scripts/play-match.ts",
-    "lab": "tsx scripts/balance-lab.ts"
+    "lab": "tsx scripts/balance-lab.ts",
+    "tactics": "tsx scripts/tactics-lab.ts",
+    "frames": "node scripts/frames.mjs",
+    "sportvu": "tsx scripts/sportvu.ts",
+    "realism": "tsx scripts/realism.ts",
+    "heads": "node scripts/heads.mjs",
+    "shots": "node scripts/shots.mjs",
+    "joints": "node scripts/shots.mjs jointcheck --out frames/jointcheck",
+    "retarget": "node scripts/retarget-mixamo.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.170.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "playwright-core": "^1.49.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
@@ -25,6 +35,7 @@
   "dependencies": {
     "facesjs": "5.0.4",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "three": "^0.170.0"
   }
 }

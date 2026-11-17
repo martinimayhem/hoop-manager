@@ -53,6 +53,39 @@ change must keep those tests passing.
 Engine results (scores, make rates, `npm run lab`) must be identical before and after an
 animation-only change. Check `npm run lab` against a run from before the change.
 
+## Measured against real NBA movement
+
+`npm run realism` measures our players (200 simulated possessions, the Frame data the renderer
+draws) and real NBA players (2015-16 SportVU tracking, downloaded by `npm run sportvu` into the
+git-ignored `data/sportvu/`) with the same code, line by line: speeds, acceleration, defender
+distances, closeouts, spacing, transition, rebounds, passes. Each line's gap is how far ours is from
+the real value; the total is the average gap. The saved baseline is `scripts/realism/baseline.json`.
+
+Every animation change runs `npm run realism` before and after. A change that makes the total
+worse, or any single line clearly worse (marked WORSE), is not done: fix it or revert it. Report the
+before/after table. Save a new baseline (`-- --save`) only when a change is kept.
+
+## Look at what you draw
+
+For every animation change (2D or 3D), capture frames of the affected situation **before and after**
+the change, **look at them**, and fix what looks wrong before reporting back. Say in the report which
+frames you checked (the folder and file names) and what you saw in them. Numbers and test results
+are not a substitute: the user judges the animation by eye, so judge it by eye too, against any
+reference pictures the user gave.
+
+- `npm run frames -- --seed <n> --quarter <q> --from <clock> --to <clock> --every <seconds> [--view 2d|3d|both] [--zoom]`
+  plays a match headlessly up to a moment and saves PNG frames (the game's own renderers, the clock
+  and the commentary line in each image) to `frames/`. `--zoom` frames the area round the ball.
+- `?movelab` (dev server) loops one move in slow motion: dribble standing, dribble while running,
+  jump shot, layup, dunk, rebound, defensive closeout, fast-break chase.
+
+## Reference values
+
+- **Ball**: radius 11.93 cm, mass 623.7 g, floor bounce restitution 0.8, gravity 9.81 m/s².
+- **Dribble cycle**: about 0.75 s standing, about 0.6 s while running.
+- **The ball always follows physics**; the hand meets it at the top of the bounce. It never sticks
+  to a hand or changes direction in the air.
+
 ## Git
 
 Commit or push only when asked.

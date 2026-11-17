@@ -1,9 +1,10 @@
 // Draft rules: budget, roster size, position-group minimums, free and snake modes.
-// State is immutable so React can hold it directly.
+// State is immutable so React can hold it directly. Two teams for a single match; any number for a
+// league (the Quick League's 8-team snake draft).
 
 import { positionGroup, type PositionGroup } from '../engine/ratings';
 import type { Player, Team } from '../engine/types';
-import { BUDGET } from './pricing';
+import { BUDGET, MIN_PRICE } from './pricing';
 import type { PoolPlayer } from './pool';
 
 export const ROSTER_SIZE = 12;
@@ -25,24 +26,24 @@ export interface DraftState {
   mode: DraftMode;
   pool: PoolPlayer[];
   /** playerId → team index */
-  owner: Record<string, 0 | 1>;
-  teams: [DraftTeam, DraftTeam];
+  owner: Record<string, number>;
+  teams: DraftTeam[];
   /** Number of picks made so far (snake order). */
   pickNo: number;
+  /** Snake: the first round's order of team indexes (the next round reverses it, and so on). */
+  order: number[];
 }
 
 export type TeamSetup = Pick<DraftTeam, 'name' | 'abbr' | 'controller'>;
 
-export function createDraft(mode: DraftMode, pool: PoolPlayer[], teams: readonly [TeamSetup, TeamSetup]): DraftState {
+export function createDraft(mode: DraftMode, pool: PoolPlayer[], teams: readonly TeamSetup[], budget = BUDGET, order: number[] = teams.map((_, i) => i)): DraftState {
   return {
     mode,
     pool,
     owner: {},
-    teams: [
-      { ...teams[0], picks: [], budgetLeft: BUDGET },
-      { ...teams[1], picks: [], budgetLeft: BUDGET },
-    ],
+    teams: teams.map((t) => ({ ...t, picks: [], budgetLeft: budget })),
     pickNo: 0,
+    order,
   };
 }
 
@@ -52,32 +53,38 @@ export function findPool(state: DraftState, id: string): PoolPlayer {
   return p;
 }
 
-export function groupCounts(state: DraftState, team: 0 | 1): Record<PositionGroup, number> {
+export function groupCounts(state: DraftState, team: number): Record<PositionGroup, number> {
   const counts: Record<PositionGroup, number> = { guard: 0, wing: 0, big: 0 };
   for (const id of state.teams[team].picks) counts[positionGroup(findPool(state, id).player.position)]++;
   return counts;
 }
 
-/** Snake order: 0,1,1,0,0,1,1,0… skipping a team that is already full. */
-export function currentTurn(state: DraftState): 0 | 1 | null {
+/**
+ * Snake order: the first round in `order`, the next reversed, and so on (two teams: 0,1,1,0,0,1…),
+ * skipping a team that is already full.
+ */
+export function currentTurn(state: DraftState): number | null {
   if (isComplete(state)) return null;
   if (state.mode === 'free') return null;
-  const round = Math.floor(state.pickNo / 2);
-  const first: 0 | 1 = round % 2 === 0 ? 0 : 1;
-  const turn: 0 | 1 = state.pickNo % 2 === 0 ? first : first === 0 ? 1 : 0;
-  if (state.teams[turn].picks.length >= ROSTER_SIZE) return turn === 0 ? 1 : 0;
-  return turn;
+  const n = state.teams.length;
+  for (let k = state.pickNo; k < state.pickNo + n * 2; k++) {
+    const round = Math.floor(k / n);
+    const at = k % n;
+    const turn = state.order[round % 2 === 0 ? at : n - 1 - at];
+    if (state.teams[turn].picks.length < ROSTER_SIZE) return turn;
+  }
+  return null;
 }
 
-export function isTeamComplete(state: DraftState, team: 0 | 1): boolean {
+export function isTeamComplete(state: DraftState, team: number): boolean {
   return state.teams[team].picks.length >= ROSTER_SIZE;
 }
 
 export function isComplete(state: DraftState): boolean {
-  return isTeamComplete(state, 0) && isTeamComplete(state, 1);
+  return state.teams.every((_, i) => isTeamComplete(state, i));
 }
 
-/** Cheapest total for `n` more players from what is still on the market (excluding one id). */
+/** The cheapest total for `n` more players from what is still on the market (excluding one id). */
 function cheapestFill(state: DraftState, n: number, excludeId: string): number {
   if (n <= 0) return 0;
   const prices = state.pool
@@ -87,12 +94,21 @@ function cheapestFill(state: DraftState, n: number, excludeId: string): number {
   return prices.slice(0, n).reduce((s, x) => s + x, 0);
 }
 
+/**
+ * A league (more than two teams): the budget rule is simply to keep at least MIN_PRICE for every
+ * empty roster spot, because a minimum-contract player can always be signed for that (see the Quick
+ * League's minimum signings), so no team can ever be left unable to fill its roster.
+ */
+export function isLeagueDraft(state: DraftState): boolean {
+  return state.teams.length > 2;
+}
+
 export interface PickCheck {
   ok: boolean;
   reason?: string;
 }
 
-export function canPick(state: DraftState, team: 0 | 1, id: string): PickCheck {
+export function canPick(state: DraftState, team: number, id: string): PickCheck {
   const t = state.teams[team];
   if (id in state.owner) return { ok: false, reason: 'Already signed' };
   if (t.picks.length >= ROSTER_SIZE) return { ok: false, reason: 'Roster full' };
@@ -100,7 +116,9 @@ export function canPick(state: DraftState, team: 0 | 1, id: string): PickCheck {
   const p = findPool(state, id);
   if (p.price > t.budgetLeft) return { ok: false, reason: 'Too expensive' };
   const slotsAfter = ROSTER_SIZE - t.picks.length - 1;
-  if (t.budgetLeft - p.price < cheapestFill(state, slotsAfter, id)) {
+  if (isLeagueDraft(state)) {
+    if (t.budgetLeft - p.price < slotsAfter * MIN_PRICE) return { ok: false, reason: `Keep at least ${MIN_PRICE} credit for each empty roster spot` };
+  } else if (t.budgetLeft - p.price < cheapestFill(state, slotsAfter, id)) {
     return { ok: false, reason: 'Would leave too little budget to fill the roster' };
   }
   const counts = groupCounts(state, team);
@@ -110,20 +128,20 @@ export function canPick(state: DraftState, team: 0 | 1, id: string): PickCheck {
   return { ok: true };
 }
 
-export function pick(state: DraftState, team: 0 | 1, id: string): DraftState {
+export function pick(state: DraftState, team: number, id: string): DraftState {
   const check = canPick(state, team, id);
   if (!check.ok) throw new Error(check.reason);
   const p = findPool(state, id);
-  const teams = [...state.teams] as [DraftTeam, DraftTeam];
+  const teams = [...state.teams];
   teams[team] = { ...teams[team], picks: [...teams[team].picks, id], budgetLeft: teams[team].budgetLeft - p.price };
   return { ...state, teams, owner: { ...state.owner, [id]: team }, pickNo: state.pickNo + 1 };
 }
 
 /** Releases a player back to the market (free draft only). */
-export function release(state: DraftState, team: 0 | 1, id: string): DraftState {
+export function release(state: DraftState, team: number, id: string): DraftState {
   if (state.mode !== 'free' || state.owner[id] !== team) return state;
   const p = findPool(state, id);
-  const teams = [...state.teams] as [DraftTeam, DraftTeam];
+  const teams = [...state.teams];
   teams[team] = { ...teams[team], picks: teams[team].picks.filter((x) => x !== id), budgetLeft: teams[team].budgetLeft + p.price };
   const owner = { ...state.owner };
   delete owner[id];
@@ -131,7 +149,7 @@ export function release(state: DraftState, team: 0 | 1, id: string): DraftState 
 }
 
 /** Converts a drafted roster into an engine Team, fixing duplicate jersey numbers. */
-export function toTeam(state: DraftState, team: 0 | 1, id: string): Team {
+export function toTeam(state: DraftState, team: number, id: string): Team {
   const t = state.teams[team];
   const used = new Set<number>();
   const players: Player[] = t.picks.map((pid) => {

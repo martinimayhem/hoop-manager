@@ -15,6 +15,25 @@ import {
 import { FEATURE_BOX, FEATURE_CENTRE, lookOf, type SpriteLook } from '../looks';
 import type { Fx } from '../match/controller';
 import { COURT, HOOP_X, MID_Y, PACE_M_S, RIM_HEIGHT, type Frame } from './animation';
+import {
+  BASELINE_HASH,
+  BOARD_BOTTOM,
+  BOARD_H,
+  BOARD_RECT_H,
+  BOARD_RECT_W,
+  BOARD_W,
+  FT_CIRCLE_HASH,
+  INNER_CIRCLE_R,
+  LANE_BLOCK,
+  LANE_MARKS_AT,
+  LANE_MARK_OUT,
+  LANE_MARK_W,
+  LINE_W,
+  NET_LEN,
+  RIM_R,
+  SIDELINE_HASH,
+  SUB_BOX,
+} from './markings';
 
 // Walk or run. Below WALK_TOP_M_S a player walks; from RUN_FROM_M_S (a run) he runs in full; a jog
 // is in between. Speeds are match metres a second, smoothed over GAIT_SMOOTH_S of match time.
@@ -45,7 +64,10 @@ const FLOOR_Y = 270;
 const FLOOR_RX = TILE_X * Math.SQRT2;
 const FLOOR_RY = TILE_Y * Math.SQRT2;
 
-const RIM_RADIUS = 0.49;
+/** The ring, by Rule No. 1 (court/markings.ts): 18" inside, to the middle of the rod. */
+const RIM_RADIUS = RIM_R;
+/** Court lines are 2" wide: on screen, at the court's scale. */
+const LINE_PX = Math.max(1, LINE_W * TILE_X);
 const BOARD_INSET = COURT.w - BOARD_X;
 const POST_INSET = -0.6;
 /** NBA markings, from engine/court.ts; depths are measured in from the baseline. */
@@ -56,8 +78,6 @@ const THREE_RADIUS = THREE_ARC_M;
 const THREE_CORNER_Y = CORNER_THREE_FROM_SIDELINE;
 const THREE_CORNER_DEPTH = CORNER_THREE_LENGTH;
 const NO_CHARGE_RADIUS = RESTRICTED_M;
-/** Lane space marks: the block at 7 ft from the baseline, then 11, 14 and 17 ft. */
-const LANE_MARKS = [2.13, 3.35, 4.27, 5.18];
 
 /** Stands on the two far sides of the court; the camera looks over the near ones. */
 const STAND_ROWS = 9;
@@ -67,7 +87,7 @@ const ROW_RISE = 0.42;
 const SEAT_GAP = 0.55;
 
 /** The net hangs this far below the rim (screen pixels) and narrows to this share of its width. */
-const NET_DROP = 13;
+const NET_DROP = NET_LEN * LIFT_Y;
 const NET_TAPER = 0.62;
 
 /** How a net is moving: when the ball went through (or clipped the rim), how hard, and which way. */
@@ -399,30 +419,53 @@ export class CourtRenderer {
       this.line(ctx, [[0, y], [COURT.w, y]], 'rgba(0, 30, 20, 0.14)', 0.5);
     }
 
+    // The markings by Rule No. 1 (court/markings.ts): every line 2" wide.
+    const W = LINE_PX;
+    /** A filled mark on the floor, from (x0, y0) to (x1, y1). */
+    const mark = (x0: number, y0: number, x1: number, y1: number) => this.poly(ctx, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], LINE);
     for (const end of [0, 1] as const) {
       const fx = (x: number) => (end === 0 ? x : COURT.w - x);
       const hoopX = end === 0 ? COURT.w - HOOP_X : HOOP_X;
+      const boardX = end === 0 ? BOARD_INSET : COURT.w - BOARD_INSET;
       const courtward = end === 0 ? 0 : Math.PI;
-      this.poly(ctx, [[fx(0), KEY_NEAR], [fx(KEY_DEPTH), KEY_NEAR], [fx(KEY_DEPTH), KEY_FAR], [fx(0), KEY_FAR]], undefined, LINE, 2);
+      // The lane lines are part of the lane: its 16 ft are to their outside edges.
+      const near = KEY_NEAR + LINE_W / 2;
+      const far = KEY_FAR - LINE_W / 2;
+      this.poly(ctx, [[fx(0), near], [fx(KEY_DEPTH), near], [fx(KEY_DEPTH), far], [fx(0), far]], undefined, LINE, W);
       // Free-throw circle: solid towards half court, dashed inside the lane.
-      this.line(ctx, this.arcPts(fx(KEY_DEPTH), MID_Y, CIRCLE_RADIUS, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, 2);
+      this.line(ctx, this.arcPts(fx(KEY_DEPTH), MID_Y, CIRCLE_RADIUS, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, W);
       ctx.setLineDash([5, 5]);
-      this.line(ctx, this.arcPts(fx(KEY_DEPTH), MID_Y, CIRCLE_RADIUS, courtward + Math.PI / 2, courtward + (3 * Math.PI) / 2), LINE, 1.6);
+      this.line(ctx, this.arcPts(fx(KEY_DEPTH), MID_Y, CIRCLE_RADIUS, courtward + Math.PI / 2, courtward + (3 * Math.PI) / 2), LINE, W);
       ctx.setLineDash([]);
-      this.line(ctx, this.arcPts(hoopX, MID_Y, NO_CHARGE_RADIUS, courtward - Math.PI / 2, courtward + Math.PI / 2), LINE, 1.6);
-      // Lane markers.
-      for (const f of LANE_MARKS) {
-        this.line(ctx, [[fx(f), KEY_NEAR], [fx(f), KEY_NEAR - 0.25]], LINE, 2);
-        this.line(ctx, [[fx(f), KEY_FAR], [fx(f), KEY_FAR + 0.25]], LINE, 2);
+      // Restricted area: a half circle 4 ft from the ring's centre, then parallel to the lane lines to the face of the backboard.
+      this.line(ctx, [[boardX, MID_Y - NO_CHARGE_RADIUS], ...this.arcPts(hoopX, MID_Y, NO_CHARGE_RADIUS, courtward - Math.PI / 2, courtward + Math.PI / 2), [boardX, MID_Y + NO_CHARGE_RADIUS]], LINE, W);
+      for (const side of [-1, 1]) {
+        const lane = side < 0 ? KEY_NEAR : KEY_FAR;
+        const out = lane + side * LANE_MARK_OUT;
+        // Lane space marks, outside the lane lines: the 1 ft neutral-zone block, then 2" marks.
+        mark(fx(LANE_BLOCK.from), lane, fx(LANE_BLOCK.from + LANE_BLOCK.len), out);
+        for (const at of LANE_MARKS_AT) mark(fx(at), lane, fx(at + LANE_MARK_W), out);
+        // On the baseline, 3 ft outside the lane, 6" onto the court.
+        const hashY = lane + side * BASELINE_HASH.out;
+        mark(fx(0), hashY - LINE_W / 2, fx(BASELINE_HASH.len), hashY + LINE_W / 2);
+        // By the free-throw circle: 13 ft from the baseline, 3 ft outside the lane, 6" long.
+        const circleY = lane + side * FT_CIRCLE_HASH.out;
+        mark(fx(FT_CIRCLE_HASH.from - LINE_W / 2), circleY, fx(FT_CIRCLE_HASH.from + LINE_W / 2), circleY + side * FT_CIRCLE_HASH.len);
+        // Along both sidelines: 28 ft from the baseline, 3 ft onto the court.
+        const sideline = side < 0 ? 0 : COURT.h;
+        mark(fx(SIDELINE_HASH.from - LINE_W / 2), sideline, fx(SIDELINE_HASH.from + LINE_W / 2), sideline - side * SIDELINE_HASH.len);
       }
-      this.line(ctx, [[fx(0), THREE_CORNER_Y], [fx(THREE_CORNER_DEPTH), THREE_CORNER_Y]], LINE, 2);
-      this.line(ctx, [[fx(0), COURT.h - THREE_CORNER_Y], [fx(THREE_CORNER_DEPTH), COURT.h - THREE_CORNER_Y]], LINE, 2);
+      this.line(ctx, [[fx(0), THREE_CORNER_Y], [fx(THREE_CORNER_DEPTH), THREE_CORNER_Y]], LINE, W);
+      this.line(ctx, [[fx(0), COURT.h - THREE_CORNER_Y], [fx(THREE_CORNER_DEPTH), COURT.h - THREE_CORNER_Y]], LINE, W);
       const a = Math.acos((MID_Y - THREE_CORNER_Y) / THREE_RADIUS);
-      this.line(ctx, this.arcPts(hoopX, MID_Y, THREE_RADIUS, courtward - Math.PI / 2 + a, courtward + Math.PI / 2 - a), LINE, 2);
+      this.line(ctx, this.arcPts(hoopX, MID_Y, THREE_RADIUS, courtward - Math.PI / 2 + a, courtward + Math.PI / 2 - a), LINE, W);
     }
-    this.line(ctx, [[COURT.w / 2, 0], [COURT.w / 2, COURT.h]], LINE, 2);
-    this.line(ctx, this.arcPts(COURT.w / 2, MID_Y, CIRCLE_RADIUS, 0, Math.PI * 2), LINE, 2);
-    this.poly(ctx, [[0, 0], [COURT.w, 0], [COURT.w, COURT.h], [0, COURT.h]], undefined, LINE, 3);
+    this.line(ctx, [[COURT.w / 2, 0], [COURT.w / 2, COURT.h]], LINE, W);
+    this.line(ctx, this.arcPts(COURT.w / 2, MID_Y, CIRCLE_RADIUS, 0, Math.PI * 2), LINE, W);
+    this.line(ctx, this.arcPts(COURT.w / 2, MID_Y, INNER_CIRCLE_R, 0, Math.PI * 2), LINE, W);
+    // The substitution box: a mark 4 ft each side of the midcourt line, off the court in front of the scorer's table.
+    for (const side of [-1, 1]) mark(COURT.w / 2 + side * SUB_BOX.off - LINE_W / 2, -SUB_BOX.len, COURT.w / 2 + side * SUB_BOX.off + LINE_W / 2, 0);
+    this.poly(ctx, [[0, 0], [COURT.w, 0], [COURT.w, COURT.h], [0, COURT.h]], undefined, LINE, W);
   }
 
   private drawPost(ctx: CanvasRenderingContext2D, end: 0 | 1): void {
@@ -449,10 +492,15 @@ export class CourtRenderer {
     const edge = hoopX + (end === 0 ? -RIM_RADIUS : RIM_RADIUS);
     // The near board stands between the camera and its rim, so its glass has to stay see-through.
     const glass = end === 0 ? 'rgba(226, 246, 250, 0.22)' : 'rgba(226, 246, 250, 0.62)';
-    const glassPane: Space[] = [[x, MID_Y - 1.2, 4.08], [x, MID_Y + 1.2, 4.08], [x, MID_Y + 1.2, 2.8], [x, MID_Y - 1.2, 2.8]];
+    // Rule No. 1 (court/markings.ts): 6 x 3.5 ft; a 24 x 18" rectangle centred behind the ring, its base line level with it.
+    const top = BOARD_BOTTOM + BOARD_H;
+    const glassPane: Space[] = [[x, MID_Y - BOARD_W / 2, top], [x, MID_Y + BOARD_W / 2, top], [x, MID_Y + BOARD_W / 2, BOARD_BOTTOM], [x, MID_Y - BOARD_W / 2, BOARD_BOTTOM]];
     this.poly3(ctx, glassPane, glass, OUTLINE, 3.4);
     this.poly3(ctx, glassPane, undefined, '#ffffff', 2);
-    this.poly3(ctx, [[x, MID_Y - 0.36, 3.6], [x, MID_Y + 0.36, 3.6], [x, MID_Y + 0.36, RIM_HEIGHT], [x, MID_Y - 0.36, RIM_HEIGHT]], undefined, '#e4472f', 1.6);
+    const rw = (BOARD_RECT_W - LINE_W) / 2;
+    const r0 = RIM_HEIGHT - LINE_W / 2;
+    const r1 = RIM_HEIGHT - LINE_W + BOARD_RECT_H - LINE_W / 2;
+    this.poly3(ctx, [[x, MID_Y - rw, r1], [x, MID_Y + rw, r1], [x, MID_Y + rw, r0], [x, MID_Y - rw, r0]], undefined, '#ffffff', LINE_PX);
     const a = project(x, MID_Y, RIM_HEIGHT);
     const b = project(edge, MID_Y, RIM_HEIGHT);
     limb(ctx, [[a.x, a.y], [b.x, b.y]], 2.5, '#e4472f');

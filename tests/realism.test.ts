@@ -518,10 +518,15 @@ function watchEffort(seed: number, highlights: boolean): Effort {
       shotBeat = beat;
       const side = a.from.slice(0, 2);
       const s = mo.pos[a.from];
-      const near = Object.keys(mo.pos)
+      const defs = Object.keys(mo.pos)
         .filter((k) => !isRef(k) && !k.startsWith(side))
-        .sort((x, y) => dist(mo.pos[x], s) - dist(mo.pos[y], s))[0];
-      e.shots.push({ open: !!beat.openBreak, d: dist(mo.pos[near], s), up: (f.reach?.[near] ?? 0) > 0.5, who: near, at: `seed ${seed} q${sc.quarter} ${Math.round(m.clock)}s ${a.style} by ${a.from}` });
+        .sort((x, y) => dist(mo.pos[x], s) - dist(mo.pos[y], s));
+      const near = defs[0];
+      // The nearest, or one level with him (a dead heat as the ball leaves: the nearest can change in
+      // that very frame), has a hand up.
+      const level = defs.filter((k) => dist(mo.pos[k], s) <= dist(mo.pos[near], s) + 0.15);
+      const up = level.some((k) => (f.reach?.[k] ?? 0) > 0.5);
+      e.shots.push({ open: !!beat.openBreak, d: dist(mo.pos[near], s), up, who: near, at: `seed ${seed} q${sc.quarter} ${Math.round(m.clock)}s ${a.style} by ${a.from}` });
     }
   }
   expect(m.phase).toBe('final');

@@ -18,15 +18,18 @@ export type AttrKey = Exclude<keyof Attributes, 'injuryProneness' | 'potential'>
 export interface AttributeGroup {
   key: string;
   label: string;
+  /** For narrow tables. */
+  short: string;
   attrs: { key: AttrKey; label: string }[];
 }
 
 /** The five groups the UI shows (spec §3.1). Height/weight are shown as real values. */
 export const ATTRIBUTE_GROUPS: AttributeGroup[] = [
-  { key: 'physical', label: 'Physical', attrs: [{ key: 'speed', label: 'Speed' }, { key: 'stamina', label: 'Stamina' }] },
+  { key: 'physical', label: 'Physical', short: 'Phys', attrs: [{ key: 'speed', label: 'Speed' }, { key: 'stamina', label: 'Stamina' }] },
   {
     key: 'scoring',
     label: 'Scoring',
+    short: 'Score',
     attrs: [
       { key: 'shooting', label: 'Mid-range' },
       { key: 'three', label: '3-Point' },
@@ -35,8 +38,8 @@ export const ATTRIBUTE_GROUPS: AttributeGroup[] = [
       { key: 'dunk', label: 'Dunking' },
     ],
   },
-  { key: 'playmaking', label: 'Playmaking', attrs: [{ key: 'passing', label: 'Passing' }, { key: 'dribbling', label: 'Dribbling' }] },
-  { key: 'defence', label: 'Defence & Boards', attrs: [{ key: 'rebounding', label: 'Rebounding' }, { key: 'tactics', label: 'Tactics (IQ)' }] },
+  { key: 'playmaking', label: 'Playmaking', short: 'Play', attrs: [{ key: 'passing', label: 'Passing' }, { key: 'dribbling', label: 'Dribbling' }] },
+  { key: 'defence', label: 'Defence & Boards', short: 'D & Reb', attrs: [{ key: 'rebounding', label: 'Rebounding' }, { key: 'tactics', label: 'Tactics (IQ)' }] },
 ];
 
 /** Half-width of a range in rating points. */
@@ -45,9 +48,10 @@ function spread(hype: number, accuracy: number): number {
   return Math.max(0, Math.round((1 - accuracy) * 22 * fame));
 }
 
-export function scoutAttr(player: Player, key: AttrKey, hype: number, accuracy: number): Range {
+/** `minHalf`: never narrower than this either side (a league's scouting after meetings, SEASON_SPEC R2.6). */
+export function scoutAttr(player: Player, key: AttrKey, hype: number, accuracy: number, minHalf = 0): Range {
   const value = player.attrs[key];
-  const half = spread(hype, accuracy);
+  const half = Math.max(minHalf, spread(hype, accuracy));
   if (half === 0) return { lo: value, hi: value };
   // Where the true value sits inside the window is stable per player+attribute.
   const offset = Math.round(hashUnit(`scout:${player.id}:${key}`) * half);
@@ -56,8 +60,8 @@ export function scoutAttr(player: Player, key: AttrKey, hype: number, accuracy: 
   return { lo: Math.min(lo, value), hi: Math.max(hi, value) };
 }
 
-export function scoutGroup(player: Player, group: AttributeGroup, hype: number, accuracy: number): Range {
-  const ranges = group.attrs.map((a) => scoutAttr(player, a.key, hype, accuracy));
+export function scoutGroup(player: Player, group: AttributeGroup, hype: number, accuracy: number, minHalf = 0): Range {
+  const ranges = group.attrs.map((a) => scoutAttr(player, a.key, hype, accuracy, minHalf));
   const avg = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) / xs.length);
   return { lo: avg(ranges.map((r) => r.lo)), hi: avg(ranges.map((r) => r.hi)) };
 }

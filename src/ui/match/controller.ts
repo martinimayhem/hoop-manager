@@ -11,11 +11,12 @@ import { playerRating } from '../../engine/stats';
 import { aiCall, asksForCall, isClutch } from '../../game/clutch';
 import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
 import { aiAdjustPlan, aiShouldTimeout } from '../../game/ai';
-import { assistantTips, createTipMemory, type Tip, type TipMemory } from '../../game/assistant';
+import { assistantTips, createTipMemory, currentTips, type Tip, type TipMemory } from '../../game/assistant';
 import type { Controller } from '../../game/draft';
 import { HALF_X } from '../../engine/court';
-import { COURT, beatAt, beatDurations, buildScript, playerKey, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
+import { COURT, beatAt, beatDurations, buildScript, playerKey, type BallAction, type Beat, type Frame, type Pos, type Restart, type Script } from '../court/animation';
 import { GATHER_STEPS_M, Motion, facingScene } from '../court/motion';
+import { fakeAt, planFakes, type FakeCue, type PlannedFake } from '../court/fakes';
 import { clockString } from '../labels';
 import { excitement } from './highlights';
 
@@ -65,15 +66,45 @@ interface PossessionStart {
 
 /**
  * A trip to the line worth showing in highlights mode on top of the best plays: an and-one, or free
- * throws in the last two minutes of a quarter, or in the last five minutes of a close fourth quarter
- * or overtime.
+ * throws in the last two minutes of a close fourth quarter or overtime. (Late in the other quarters
+ * they are no longer shown: they took a lot of time for little.)
  */
-function freeThrowsThatMatter(s: MatchState, events: TimedEvent[]): boolean {
+export function freeThrowsThatMatter(s: MatchState, events: TimedEvent[]): boolean {
   const fts = events.filter((e) => e.type === 'freeThrow' && !e.technical);
   if (fts.length === 0) return false;
   const andOne = events.some((e) => e.type === 'shot' && e.made);
   const margin = Math.abs(s.teams[0].score - s.teams[1].score);
-  return andOne || s.clock <= 120 || (s.quarter >= 4 && s.clock <= 300 && margin <= 6);
+  return andOne || (s.quarter >= 4 && s.clock <= 120 && margin <= 6);
+}
+
+/**
+ * Highlights mode: where a shown possession's free-throw trips jump to. For each trip of two or three
+ * attempts, from the first beat after the whistle (`from`) to the start of the last attempt's
+ * routine (`to`): only the last free throw is shown. The ones skipped still happen, their events
+ * firing as the clock passes them.
+ */
+export function freeThrowJumps(script: Script, events: TimedEvent[]): { from: number; to: number }[] {
+  const fireBeat = (i: number) => script.beats.findIndex((b) => b.fire.includes(i));
+  const trips: number[][] = [];
+  let trip: number[] = [];
+  events.forEach((e, i) => {
+    if (e.type === 'freeThrow' && !e.technical) trip.push(i);
+    else if (e.type === 'shot' || e.type === 'turnover' || e.type === 'rebound') {
+      if (trip.length) trips.push(trip);
+      trip = [];
+    }
+  });
+  if (trip.length) trips.push(trip);
+  const jumps: { from: number; to: number }[] = [];
+  for (const t of trips) {
+    if (t.length < 2) continue;
+    // The beat where the whistle went: the one firing the last event before the first attempt.
+    const whistle = t[0] > 0 ? fireBeat(t[0] - 1) : -1;
+    const lastButOne = fireBeat(t[t.length - 2]);
+    if (whistle < 0 || lastButOne < 0 || lastButOne + 1 <= whistle + 1) continue;
+    jumps.push({ from: whistle + 1, to: lastButOne + 1 });
+  }
+  return jumps;
 }
 
 /** Where the ball is at the end of a beat. */
@@ -92,13 +123,26 @@ function endBall(beat: Beat): Pos {
   }
 }
 
+/** The play starts once the attacking teammates are this close to their spots (m)… */
+const SET_ARRIVED_M = 1.2;
+/** …or after waiting this long for them (real seconds at Normal speed), whichever comes first. */
+const SET_WAIT_S = 3;
+
 /** Over and back: with the ball over half court, a pass waits until the receiver is this far over too. */
 const OVER_HALF_M = 0.8;
 /** The longest a pass waits for that (real seconds); a receiver who cannot get there is not waited on forever. */
 const OVER_HALF_WAIT_S = 3;
 const FAST_FORWARD: Record<Speed, number> = { normal: 2.5, fast: 2 };
-/** In highlights mode, how many plays of each quarter are shown; the rest are played out instantly. */
-export const HIGHLIGHTS_PER_QUARTER = 5;
+/**
+ * In highlights mode, how many plays of each quarter are shown; the rest are played out instantly.
+ * Three in the first three quarters, five in the fourth, three in an overtime (whose close finish is
+ * shown in full anyway).
+ */
+export function highlightsIn(quarter: number): number {
+  return quarter === 4 ? 5 : 3;
+}
+/** A highlight starts this long (real seconds, at Normal speed) before its moment: the shot or the turnover. */
+const CLIP_LEAD_S = 5;
 /** Game seconds per second of play while the ball is brought up, at Normal speed: about real time. */
 const BRING_UP_CLOCK_RATE = 1;
 /** How long a result line stays up before a set-up line may replace it (real seconds). */
@@ -144,6 +188,10 @@ export interface Fx {
   side?: Side;
   /** A free throw: a smaller moment than a basket from the field. */
   small?: boolean;
+  /** A shot at the buzzer. */
+  buzzer?: boolean;
+  /** For a score: the run it makes, points this side has scored unanswered. */
+  run?: number;
 }
 
 /** A clutch possession waiting for the humans' calls. The defence chooses first. */
@@ -184,6 +232,13 @@ export interface TeamView {
   coachTechnicals: number;
 }
 
+/** A fake only draws a bite from a defender this close to the faker (m). */
+const FAKE_BITE_M = 2.6;
+/** A defender sold on a pump fake leaves the floor this much (m). */
+const PUMP_BITE_HOP_M = 0.3;
+/** A pump or pass fake is announced this long before it starts (s): time to catch the last dribble. */
+const FAKE_WARN_S = 0.9;
+
 export class LiveMatch {
   readonly s: MatchState;
   readonly names: Names;
@@ -218,7 +273,8 @@ export class LiveMatch {
   caption: Caption | null = null;
   clutch: ClutchState | null = null;
   /** Halftime team-talk reactions per side, once given. */
-  talks: [{ talk: Talk; reaction: string } | null, { talk: Talk; reaction: string } | null] = [null, null];
+  /** The half-time talks given: what was said, how they took it, and whether it helped (morale > 0). */
+  talks: [{ talk: Talk; reaction: string; morale: number } | null, { talk: Talk; reaction: string; morale: number } | null] = [null, null];
   private fx: Fx[] = [];
   private clutchCalls: PossessionCalls | null = null;
   /**
@@ -257,6 +313,9 @@ export class LiveMatch {
   private scriptEvents: TimedEvent[] = [];
   private durations: number[] = [];
   private beatEnds: number[] = [];
+  /** The possession's fakes (drawing only), planned for these beat timings. */
+  private fakes: PlannedFake[] = [];
+  private fakesFor: number[] | null = null;
   /** How long the pass about to be thrown has waited for its receiver to get over half court. */
   private passWait = 0;
   /** The script in which the offence has had the ball over half court: it may not go back. */
@@ -269,8 +328,15 @@ export class LiveMatch {
   private travelled: object | null = null;
   /** The possession the clock was last run down for. */
   private clockOf: Script | null = null;
+  /** The shot clock, for the views (never read by the engine): what it read when this possession's
+   *  script started, the game clock then, and whose possession it was. */
+  private shot = { base: 24, from: 720, side: -1 as number, of: null as Script | null };
   private t = 0;
   private firedBeats = 0;
+  /** How long the end of this possession's set-up has waited for teammates to reach their spots. */
+  private setWait = 0;
+  /** Highlights: jumps over free throws not shown (beat indices), in order. */
+  private jumps: { from: number; to: number }[] = [];
   private lastFrame: Frame | null = null;
   /**
    * Where everyone stood when the last skipped possession ended (highlights mode): the next clip
@@ -375,8 +441,9 @@ export class LiveMatch {
   teamTalk(side: Side, talk: Talk): void {
     if (this.talks[side]) return;
     const out = giveTalk(this.s, side, talk);
-    this.talks[side] = { talk, reaction: out.reaction };
+    this.talks[side] = { talk, reaction: out.reaction, morale: out.morale };
     this.feedPush({ text: `${this.s.teams[side].team.name} team talk: ${out.reaction}`, side, kind: 'coach' });
+    this.bump();
   }
 
   /**
@@ -410,6 +477,11 @@ export class LiveMatch {
     this.speed = speed;
     if (this.script) this.retime();
     this.bump();
+  }
+
+  /** The assistant's tips for a side that still hold now, in today's words, newest first. */
+  liveTips(side: Side): Tip[] {
+    return currentTips(this.s, this.tipMemory, this.tips, side);
   }
 
   toggleHighlights(): void {
@@ -496,12 +568,26 @@ export class LiveMatch {
     }
     this.t += dt;
     const sc = this.script;
+    // Highlights: from the whistle straight to the last free throw of the trip.
+    const jump = this.jumps[0];
+    if (jump && this.t >= (jump.from > 0 ? this.beatEnds[jump.from - 1] : 0)) {
+      this.jumps.shift();
+      this.t = Math.max(this.t, this.beatEnds[jump.to - 1]);
+      this.motion.place(sc.beats[jump.to - 1].players);
+    }
+    this.waitForTheSet(sc, dt);
     const waiting = this.overAndBack(sc, dt);
     // The clock only ever runs down, whatever the speed is changed to on the way.
     const clock = sc.clockStart - (sc.clockStart - sc.clockEnd) * this.running();
     const shown = Math.ceil(this.clock);
     this.clock = sc === this.clockOf ? Math.min(this.clock, clock) : clock;
     this.clockOf = sc;
+    if (this.shot.of !== sc) {
+      // A new possession: 24 when the ball changes hands; the same team keeping it (an offensive
+      // rebound, a side-out) gets at least 14, as in the engine.
+      const left = this.shotClock() ?? 24;
+      this.shot = { base: sc.offence === this.shot.side ? Math.max(14, left) : 24, from: sc.clockStart, side: sc.offence, of: sc };
+    }
     // The scoreboard redraws on a change: let it see every second go.
     if (Math.ceil(this.clock) !== shown) this.bump();
     // A set-up line held back while a result was being read comes up as soon as it has been.
@@ -575,10 +661,13 @@ export class LiveMatch {
       look: { ...this.motion.look },
       stance: { ...this.motion.stance },
       reach: { ...this.motion.reach },
-      lift: this.motion.jumps(beat, u),
+      reachAim: { ...this.motion.reachAim },
+      // Gravity in match time: the beat's length times how fast the match is being played.
+      lift: this.motion.jumps(beat, u, this.durations[index] * rate * speedScale),
       timeScale: rate * speedScale,
       shooter: beat.ball.kind === 'fromPlayer' && beat.ball.style !== 'throw' && u < 0.85 ? beat.ball.from : null,
     };
+    this.showFake(sc, beat, speedScale);
     if (this.firedBeats >= sc.beats.length) this.endPossession();
   }
 
@@ -586,9 +675,104 @@ export class LiveMatch {
     return this.lastFrame;
   }
 
+  /**
+   * A fake, if one is under way (drawing only: see fakes.ts). The frame says who is faking what and
+   * how far through; the ball goes with it (up on a pump fake, out on a pass fake); and the man
+   * guarding him bites, trying to stop what he is shown: hands up and a hop at a pump fake, a hand out
+   * at a pass fake, standing up out of his stance at a hesitation.
+   */
+  private showFake(sc: Script, beat: Beat, speedScale: number): void {
+    const f = this.lastFrame;
+    if (!f) return;
+    if (this.fakesFor !== this.beatEnds) {
+      this.fakesFor = this.beatEnds;
+      this.fakes = planFakes(sc.beats, this.beatEnds, speedScale * (this.slowMo ? 1 / 1.8 : 1), `${this.possessionCount}|${sc.quarter}|${sc.clockStart.toFixed(2)}`);
+    }
+    // Under way, or (a pump or pass fake) coming: announced a moment ahead (k below 0), so the drawing
+    // can end the dribble and have the ball in his hands when it starts.
+    const plan = fakeAt(this.fakes, this.t) ?? this.fakes.find((x) => (x.kind === 'pump' || x.kind === 'pass') && this.t >= x.start - FAKE_WARN_S && this.t < x.start) ?? null;
+    if (!plan || this.holder !== plan.key || beat.dead) {
+      f.fake = null;
+      return;
+    }
+    const k = (this.t - plan.start) / (plan.end - plan.start);
+    const me = f.players[plan.key];
+    if (!me) return;
+    const cue: FakeCue = { kind: plan.kind, key: plan.key, k };
+    if (k < 0) {
+      f.fake = cue;
+      return;
+    }
+    const bell = Math.sin(Math.PI * k);
+    if (plan.kind === 'pump') f.ball = { ...f.ball, z: f.ball.z + 0.75 * bell };
+    if (plan.kind === 'pass' && plan.to && f.players[plan.to]) {
+      // Shown the other way: the real pass's line turned well round, to the side it is not going.
+      const r = f.players[plan.to];
+      const a = Math.atan2(r.y - me.y, r.x - me.x) + (this.possessionCount % 2 ? 1 : -1) * 1.4;
+      cue.toward = { x: me.x + Math.cos(a) * 4, y: me.y + Math.sin(a) * 4 };
+      f.ball = { ...f.ball, x: f.ball.x + Math.cos(a) * 0.3 * bell, y: f.ball.y + Math.sin(a) * 0.3 * bell };
+    }
+    f.fake = cue;
+    // His man: the one guarding him, or else the nearest opponent; only if he is close enough to bite.
+    const team = plan.key.slice(0, plan.key.indexOf(':') + 1);
+    const guard =
+      Object.keys(beat.marking ?? {}).find((d) => beat.marking![d] === plan.key) ??
+      Object.keys(f.players)
+        .filter((k2) => !k2.startsWith(team) && !k2.startsWith('ref'))
+        .sort((x, y) => Math.hypot(f.players[x].x - me.x, f.players[x].y - me.y) - Math.hypot(f.players[y].x - me.x, f.players[y].y - me.y))[0];
+    const g = guard ? f.players[guard] : null;
+    if (!guard || !g || Math.hypot(g.x - me.x, g.y - me.y) > FAKE_BITE_M) return;
+    // He reacts a moment after the fake starts, and is fully sold at its height.
+    const sold = Math.max(0, Math.sin(Math.PI * Math.max(0, Math.min(1, (k - 0.12) / 0.8))));
+    if (plan.kind === 'pump') {
+      f.reach = { ...f.reach, [guard]: Math.max(f.reach?.[guard] ?? 0, sold) };
+      f.lift = { ...f.lift, [guard]: Math.max(f.lift?.[guard] ?? 0, PUMP_BITE_HOP_M * sold) };
+    } else if (plan.kind === 'pass') {
+      f.reach = { ...f.reach, [guard]: Math.max(f.reach?.[guard] ?? 0, 0.7 * sold) };
+    } else if (plan.kind === 'hesi' && f.stance?.[guard]) {
+      f.stance = { ...f.stance, [guard]: f.stance[guard] * (1 - 0.6 * sold) };
+    }
+  }
+
   /** Player key of whoever has the ball right now (null while it's in the air). */
   holderKey(): string | null {
     return this.holder;
+  }
+
+  /** Seconds on the shot clock, for display; null when it is off (fewer seconds left in the quarter). */
+  shotClock(): number | null {
+    const v = Math.max(0, this.shot.base - (this.shot.from - this.clock));
+    return this.clock < v ? null : v;
+  }
+
+  /** What the ball is doing in the beat being shown: dribbled, passed, shot (and how). For views that draw more than the frame says. */
+  currentAction(): BallAction | null {
+    const sc = this.script;
+    return sc ? sc.beats[beatAt(sc, this.durations, this.t).index].ball : null;
+  }
+
+  /** What the ball does next, and how soon (real seconds): a view can show a shooter gathering for it. */
+  upcomingAction(): { action: BallAction; in: number; shot?: { action: BallAction; in: number } } | null {
+    const sc = this.script;
+    if (!sc) return null;
+    const { index } = beatAt(sc, this.durations, this.t);
+    if (index + 1 >= sc.beats.length) return null;
+    // The holder's own shot, if he keeps the ball until it (a few short beats on): the drawing gathers
+    // for it before it is the very next beat.
+    let shot: { action: BallAction; in: number } | undefined;
+    const holder = (() => {
+      const b = sc.beats[index].ball;
+      return b.kind === 'held' ? b.holder : null;
+    })();
+    for (let j = index + 1; holder && j < Math.min(sc.beats.length, index + 4); j++) {
+      const b = sc.beats[j].ball;
+      if (b.kind === 'fromPlayer' && b.from === holder) {
+        shot = { action: b, in: Math.max(0, this.beatEnds[j - 1] - this.t) };
+        break;
+      }
+      if (!(b.kind === 'held' && b.holder === holder)) break;
+    }
+    return { action: sc.beats[index + 1].ball, in: Math.max(0, this.beatEnds[index] - this.t), shot };
   }
 
   // ---- Internals ------------------------------------------------------------
@@ -671,8 +855,11 @@ export class LiveMatch {
       return;
     }
 
+    // A highlight (not a close finish): cut in near the moment, and only the last free throw of a trip.
+    let trim = false;
     if (this.highlights && !this.clutchCalls) {
       if (this.shown.quarter !== s.quarter) this.shown = { quarter: s.quarter, count: 0 };
+      trim = !isClutch(s);
       const shown = this.isHighlight(s);
       if (!shown) {
         this.skipPossession();
@@ -727,18 +914,36 @@ export class LiveMatch {
     }
     this.retime();
     this.t = 0;
+    this.setWait = 0;
     this.firedBeats = 0;
     this.startedBeat = -1;
     this.publishedThrough = s.events.length;
-    if (this.cut) {
-      // Like a highlight on television, it starts at the set-up: the bring-up is not news. Anything
-      // that happened on the way (a substitution, say) still fires as the clock passes it. The
-      // picture cuts straight to where everyone is at that moment; nobody runs there from the last
-      // clip shown.
+    this.jumps = trim ? freeThrowJumps(this.script, this.scriptEvents) : [];
+    if (this.cut || trim) {
+      // Like a highlight on television, it starts at the set-up: the bring-up is not news. A
+      // highlight starts closer still, a few seconds before its moment (the shot, the turnover).
+      // Anything that happened on the way (a substitution, say) still fires as the clock passes it.
+      // The picture cuts straight to where everyone is at that moment; nobody runs there from the
+      // last clip shown.
       this.cut = false;
-      const setUp = this.script.beats.findIndex((b) => b.phase === 'setUp');
-      if (setUp > 0) this.t = this.beatEnds[setUp - 1];
-      const at = setUp > 0 ? this.script.beats[setUp - 1].players : prev?.players;
+      const beats = this.script.beats;
+      const setUp = beats.findIndex((b) => b.phase === 'setUp');
+      let start = Math.max(0, setUp);
+      if (trim) {
+        const moment = (types: string[]) => beats.findIndex((b) => b.fire.some((i) => types.includes(this.scriptEvents[i].type)));
+        const key = [moment(['shot', 'turnover']), moment(['freeThrow'])].find((k) => k >= 0) ?? -1;
+        if (key >= 0) {
+          const lead = CLIP_LEAD_S / (this.speed === 'fast' ? 2.1 : 1);
+          // The latest beat to start from that still leaves the lead before the moment.
+          let k = key;
+          while (k > start && this.beatEnds[key] - (k > 0 ? this.beatEnds[k - 1] : 0) < lead) k--;
+          // Never into the middle of the set-up: players dropped there mid-run would still be on their
+          // way when the play starts. Then the whole set-up (fast-forwarded when routine) is shown.
+          if (beats[k].phase !== 'setUp') start = Math.max(start, k);
+        }
+      }
+      if (start > 0) this.t = this.beatEnds[start - 1];
+      const at = start > 0 ? beats[start - 1].players : prev?.players;
       if (at) this.motion.place(at);
     }
     this.carry = null;
@@ -765,7 +970,7 @@ export class LiveMatch {
    */
   private isHighlight(s: MatchState): 'play' | 'extra' | false {
     if (isClutch(s)) return 'play';
-    const left = HIGHLIGHTS_PER_QUARTER - this.shown.count;
+    const left = highlightsIn(s.quarter) - this.shown.count;
     const copy = structuredClone(s);
     const quarter = copy.quarter;
     const scores: number[] = [];
@@ -909,6 +1114,34 @@ export class LiveMatch {
   }
 
   /**
+   * The play starts when the attacking players are at their spots, not before: the script plans the
+   * set-up's length from where it meant them to be, but players react, speed up and go round each
+   * other, and can still be several metres short. So at the end of the set-up, while a teammate is
+   * still on his way, the set-up goes on a little (the handler keeps dribbling at his spot), up to
+   * SET_WAIT_S. Only the picture waits: the engine's result is already decided.
+   */
+  private waitForTheSet(sc: Script, dt: number): void {
+    const { index } = beatAt(sc, this.durations, this.t);
+    const beat = sc.beats[index];
+    if (beat.phase !== 'setUp' || sc.beats[index + 1]?.phase !== 'play' || beat.dead) return;
+    // Only in the last moment of the set-up.
+    if (this.t < this.beatEnds[index] - dt * 2) return;
+    const limit = SET_WAIT_S / (this.speed === 'fast' ? 2.1 : 1);
+    if (this.setWait >= limit) return;
+    const handler = beat.ball.kind === 'held' ? beat.ball.holder : null;
+    const own = `${sc.offence}:`;
+    const away = Object.entries(beat.players).some(
+      ([k, p]) => k.startsWith(own) && k !== handler && !beat.marking?.[k] && this.motion.pos[k] && Math.hypot(this.motion.pos[k].x - p.x, this.motion.pos[k].y - p.y) > SET_ARRIVED_M,
+    );
+    if (!away) return;
+    // The set-up beat lasts a moment longer, everything after it a moment later.
+    this.setWait += dt;
+    this.durations[index] += dt * 2;
+    let acc = 0;
+    this.beatEnds = this.durations.map((d) => (acc += d));
+  }
+
+  /**
    * OVER AND BACK: once the offence has the ball over half court it may not go back. A pass about to
    * be thrown from the frontcourt to a teammate still coming up from the backcourt waits, with the
    * passer dribbling and the script held at the start of the pass, until he is over. Where everyone
@@ -1031,15 +1264,27 @@ export class LiveMatch {
     this.bump();
   }
 
+  /** Points scored unanswered, for the crowd: whose run it is and how many. */
+  private run = { side: -1 as number, points: 0 };
+  private runAfter(side: Side, points: number): number {
+    this.run = this.run.side === side ? { side, points: this.run.points + points } : { side, points };
+    return this.run.points;
+  }
+
+  /** Who has the ball in the possession being shown (null between possessions). */
+  offence(): Side | null {
+    return this.script?.offence ?? null;
+  }
+
   /** Sound cues for an event as it appears on screen. */
   private cue(ev: TimedEvent): void {
     const fx = this.fx;
     switch (ev.type) {
       case 'shot':
-        fx.push({ kind: ev.made ? (ev.dunk ? 'dunk' : ev.shotType === 'three' ? 'three' : 'swish') : ev.blockerId ? 'block' : 'clank', side: ev.side });
+        fx.push({ kind: ev.made ? (ev.dunk ? 'dunk' : ev.shotType === 'three' ? 'three' : 'swish') : ev.blockerId ? 'block' : 'clank', side: ev.side, buzzer: ev.made && !!ev.buzzer, run: ev.made ? this.runAfter(ev.side, ev.shotType === 'three' ? 3 : 2) : undefined });
         break;
       case 'freeThrow':
-        fx.push({ kind: ev.made ? 'swish' : 'clank', side: ev.side, small: true });
+        fx.push({ kind: ev.made ? 'swish' : 'clank', side: ev.side, small: true, run: ev.made ? this.runAfter(ev.side, 1) : undefined });
         break;
       case 'foul':
       case 'technical':

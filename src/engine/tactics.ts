@@ -165,6 +165,25 @@ export function defenceProfile(scheme: DefenceScheme, call: string | undefined, 
 /** Against a zone, per shooter above the pivot: the open threes get more open. */
 export const ZONE_STRETCH = 0.006;
 
+/**
+ * The counter loop: what each attack does to each defence, on every half-court shot (scaled by the
+ * offence's execution). Every defence has an attack that beats it and one it beats:
+ * - man to man closes out on shooters (beats threes), but the pick-and-roll forces switches and
+ *   the post gets single coverage (beaten by pick-and-roll and inside);
+ * - a zone packs the paint (beats inside and the roll man), but ball movement and shooters pick it
+ *   apart (beaten by three and balanced);
+ * - a press, once beaten, leaves the half court scrambled for slow-starting half-court sets (beats
+ *   inside and pick-and-roll a little), but a running team is through it before it is set (beaten
+ *   by fast break and balanced).
+ */
+export const SCHEME_COUNTER: Record<OffensiveFocus, Record<DefenceScheme, number>> = {
+  inside: { man: 0.025, zone: -0.015, press: -0.02 },
+  balanced: { man: 0, zone: 0.005, press: 0.004 },
+  three: { man: -0.01, zone: 0.012, press: -0.006 },
+  pickAndRoll: { man: 0.03, zone: -0.012, press: -0.016 },
+  fastBreak: { man: -0.006, zone: -0.004, press: 0.008 },
+};
+
 /** A balanced attack is harder to key on: a small half-court bonus for not being predictable. */
 export function focusShotMod(focus: OffensiveFocus): number {
   return focus === 'balanced' ? 0.004 : 0;
@@ -181,7 +200,7 @@ export const PNR_ZONE_DAMPING = 0.4;
 /** Fast tempo rushes shots unless the team is quick and fit; slow tempo rewards high-IQ half-court teams. */
 export function tempoShotMod(tempo: Tempo, athleticism: number, iq: number): number {
   if (tempo === 'fast') return -0.004 + (athleticism - 65) * 0.0015;
-  if (tempo === 'slow') return (iq - 65) * 0.0008;
+  if (tempo === 'slow') return 0.012 + (iq - 65) * 0.001;
   return 0;
 }
 
@@ -222,7 +241,7 @@ export function fastBreakChance(
   if (off.offence === 'fastBreak') p += trigger === 'steal' ? 0.07 : 0.05;
   if (off.tempo === 'fast') p += 0.02;
   if (off.tempo === 'slow') p -= 0.05;
-  if (def.tempo === 'slow') p -= 0.02; // slow teams get back in shape
+  if (def.tempo === 'slow') p -= 0.05; // slow teams get back in shape
   if (def.offence === 'inside') p += 0.02; // bigs crash the glass and get caught
   p += speedEdge * 0.004;
   return Math.max(0, Math.min(0.8, p));
@@ -402,6 +421,19 @@ export const DOUBLE_TEAM = {
 };
 
 /** Shooting-foul base rate per shot type. */
+/**
+ * Defensive intensity (GamePlan.aggression): what it changes. 'normal' changes nothing (multiplies by
+ * 1, adds 0), so a plan without it plays exactly as before. Aggressive buys pressure (tighter contests,
+ * more turnovers, more blocks) with fouls; careful the other way round.
+ */
+export const AGGRESSION: Record<'careful' | 'normal' | 'aggressive', { contest: number; turnover: number; vsHandling: number; block: number; shootingFoul: number; reachFoul: number }> = {
+  careful: { contest: -2.5, turnover: -0.008, vsHandling: 0, block: 0.9, shootingFoul: 0.65, reachFoul: 0.6 },
+  normal: { contest: 0, turnover: 0, vsHandling: 0, block: 1, shootingFoul: 1, reachFoul: 1 },
+  // Pressure pays most against a poor ball handler (vsHandling: extra turnover chance per point of
+  // ball security under 70, a little less over it), and costs fouls (free throws) against anyone.
+  aggressive: { contest: 2, turnover: 0.006, vsHandling: 0.003, block: 1.15, shootingFoul: 1.3, reachFoul: 1.4 },
+};
+
 export const SHOOTING_FOUL_RATE: Record<ShotType, number> = {
   post: 0.13,
   drive: 0.14,

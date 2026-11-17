@@ -4,6 +4,7 @@
 import raw from '../data/players.json';
 import { createRng, int, next, pick, range } from '../engine/rng';
 import type { Attributes, Player, Position } from '../engine/types';
+import { nameSource } from './names';
 import { priceOf } from './pricing';
 
 export interface PoolPlayer {
@@ -64,20 +65,33 @@ const TEMPLATES: Record<Position, { t: Template; cm: [number, number]; arch: str
   C: { t: [-12, 4, -10, -35, -6, 10, 12, -14, -22, 18, 2], cm: [206, 218], arch: ['Rim Protector', 'Paint Beast', 'Project Big', 'Rim Runner'] },
 };
 
-function journeymen(count: number, seed: number, usedNames: Set<string>): PoolPlayer[] {
+export interface JourneymanOptions {
+  /** The positions to make, in turn (default: PG, SG, SF, PF, C round and round). */
+  positions?: readonly Position[];
+  /** How good they are: the base rating band before position offsets (default today's 50–66). */
+  quality?: [number, number];
+  /** Ids already used (so none is repeated); default: the ids of `usedNames`. */
+  usedIds?: Set<string>;
+}
+
+/**
+ * Generated role players, `count` of them, deterministic for a seed. Names never repeat and the
+ * generation always finishes (see names.ts).
+ */
+export function journeymen(count: number, seed: number, usedNames: Set<string>, opts: JourneymanOptions = {}): PoolPlayer[] {
   const rng = createRng(seed);
-  const positions: Position[] = ['PG', 'SG', 'SF', 'PF', 'C'];
+  const positions: readonly Position[] = opts.positions ?? ['PG', 'SG', 'SF', 'PF', 'C'];
+  const [qLo, qHi] = opts.quality ?? [50, 66];
+  const usedIds = opts.usedIds ?? new Set([...usedNames].map(slug));
+  const newName = nameSource(FIRST, LAST, seed ^ 0x5eed, usedNames, usedIds, slug);
   const out: PoolPlayer[] = [];
   for (let i = 0; i < count; i++) {
     const pos = positions[i % positions.length];
     const tpl = TEMPLATES[pos];
-    let name = '';
-    do name = `${pick(rng, FIRST)} ${pick(rng, LAST)}`;
-    while (usedNames.has(name));
-    usedNames.add(name);
+    const name = newName();
     // Mostly role players; one in eight is an underrated gem the market hasn't noticed.
     const gem = next(rng) < 0.125;
-    const q = range(rng, 50, 66) + (gem ? 9 : 0);
+    const q = range(rng, qLo, qHi) + (gem ? 9 : 0);
     const a = tpl.t.map((offset) => q + offset + range(rng, -6, 6));
     const injury = int(rng, 20, 60);
     const potential = int(rng, 20, 85);
@@ -108,6 +122,11 @@ export function playerPool(): PoolPlayer[] {
   const used = new Set(curated.map((p) => p.player.name));
   cached = [...curated, ...journeymen(60, 20261101, used)];
   return cached;
+}
+
+/** Just the hand-made players (the first part of the market). */
+export function curatedPlayers(): PoolPlayer[] {
+  return playerPool().slice(0, (raw.players as RawPlayer[]).length);
 }
 
 export function poolById(): Map<string, PoolPlayer> {

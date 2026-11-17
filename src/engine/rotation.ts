@@ -16,10 +16,14 @@ function isClosing(s: MatchState): boolean {
   return s.quarter >= 4 && s.clock <= CLOSING_SECONDS;
 }
 
-/** Q1: 2 fouls, Q2: 3, Q3: 4, Q4: 5 (until closing time), overtime: never. */
+/**
+ * Q1: 2 fouls, Q2: 3, Q3: 4, Q4: 5 (until closing time), overtime: never; one fewer from Q2 on with
+ * a 5-foul limit (FIBA), never under 2.
+ */
 export function inFoulTrouble(s: MatchState, side: Side, id: string): boolean {
   if (s.quarter >= 5 || (s.quarter === 4 && isClosing(s))) return false;
-  return s.teams[side].players[id].fouls >= s.quarter + 1;
+  const limit = s.rules?.foulLimit ?? 6;
+  return s.teams[side].players[id].fouls >= Math.max(2, s.quarter + 1 + limit - 6);
 }
 
 export function sortLineup(s: MatchState, side: Side): void {

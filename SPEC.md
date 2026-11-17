@@ -2,8 +2,7 @@
 
 > Working title. A browser-based basketball management game in the spirit of Football Manager:
 > build a squad under a budget, scout opponents, set tactics, and out-coach the other side in fast,
-> watchable matches. Play head-to-head against a friend on the same device, or vs AI, across a full
-> season.
+> watchable matches. One player against the computer, across a full season.
 
 ---
 
@@ -13,7 +12,7 @@
   anyone who likes management games. Clear enough for a teenager, deep enough for adults.
 - **Fair play:** no manipulative mechanics: no paid random packs, no energy timers or forced waiting,
   no guilt-driven streaks or notifications, no pay-to-win.
-- **Modes:** Player vs AI, and Player vs Player on the same device (hot-seat).
+- **Mode:** one player against the computer. (A two-player hot-seat mode was built and then removed: it will not be used.)
 - **Feel:** Quick to play (a match takes about 5–8 minutes including timeouts), fun to watch, and
   **skill-based**: the better manager should win more often, not the one who spent the most on
   ratings.
@@ -23,7 +22,7 @@
 - Online multiplayer (two devices over the internet)
 - Mobile or touch layout
 - Real player names, photos, team logos or league branding (see §8)
-- Trading between human players, contracts, salaries over multiple years
+- Trading between the two human players (trades with AI clubs are in, Career mode)
 
 ---
 
@@ -34,7 +33,8 @@ Pick league → Draft squad (12 players + 3 coaches) under budget
    → Season: for each matchday
         Scout opponent (fuzzy info) → Set game plan → Play match (4 quarters, live)
         → Post-match: results, injuries, player development, morale
-   → Playoffs → Season summary → (next season: v2)
+   → Playoffs → Season summary
+   → Career: offseason (retirements, draft, contracts, free agency, ageing) → next season
 ```
 
 The two moments that must be fun first: **the draft** and **the live match**. Everything else
@@ -92,11 +92,10 @@ To keep skill in the game, attributes interact rather than simply add up:
   reputation/hype, so some players are overpriced stars and some are bargains *for the right system*.
   Finding bargains is a core skill (the Moneyball idea).
 - Constraint: at least 2 players per position group (guards / wings / bigs) to stop silly squads.
-- **Draft modes:**
-  - *Free draft* (vs AI): buy freely from the market until budget or roster is full.
-  - *Snake draft* (head-to-head): players alternate picks from a shared pool, so you can't both have the
-    best player. Both still bound by budget.
-- The AI teams build sensible squads using the same rules.
+- **No drafting by the player** (changed 2026-11-17): a new game starts by choosing the league, then
+  taking over one of its clubs with the squad it has. The computer puts every club's squad together
+  with these rules (a snake draft between the clubs, behind the scenes). The single-match free and
+  snake drafts were removed; a friendly uses two ready-made squads.
 
 ---
 
@@ -137,7 +136,10 @@ better at the game *and* gives you more information.
 2. **Offensive focus:** Inside / Balanced / 3-Point heavy / Pick-and-roll / Fast break
 3. **Defence:** Man-to-man / 2-3 zone / Full-court press
 4. **Tempo:** Slow / Normal / Fast
-5. **Key matchup:** who guards their best player (or "double-team their star")
+5. **Defensive intensity:** Careful / Normal / Aggressive. Aggressive forces turnovers (most from poor
+   ball handlers), contests harder and blocks more, but fouls more: more free throws for them and foul
+   trouble for you. Careful is the reverse. Normal changes nothing. (`npm run tactics` measures it.)
+6. **Key matchup:** who guards their best player (or "double-team their star")
 
 These form a **counter system** (rock-paper-scissors with nuance), e.g.:
 - Zone defence weakens inside scoring but is vulnerable to good 3-point shooting.
@@ -152,8 +154,6 @@ These form a **counter system** (rock-paper-scissors with nuance), e.g.:
   players, following your rotation).
 - **Live feedback** to read what's working: momentum bar, a mini box score, player fatigue bars, and
   assistant-coach tips. Better staff = clearer tips.
-- **Hot-seat (head-to-head):** each player has a timeout key (e.g. Player 1 = `Q`, Player 2 = `P`). The
-  team calling the timeout makes its changes; the other team may also adjust during the same pause.
 
 ### 7.4 Match engine (FM-inspired, loosely)
 For each possession:
@@ -185,6 +185,10 @@ generator. That means:
 ---
 
 ## 8. Leagues and season
+
+> **Phase 5 is specified in detail in [SEASON_SPEC.md](SEASON_SPEC.md)**: Quick League (one 8-team
+> season) and Career (a 48-club world: America and Europe, three tiers, promotion and relegation, a
+> world draft, contracts, ageing, seasons that follow on). Where the two differ, SEASON_SPEC.md wins.
 
 - **3 leagues** with different budgets and player quality, e.g. *Street League* (low budget),
   *Pro League*, *Legends League* (high budget).
@@ -224,8 +228,8 @@ Each phase must be playable and fun before starting the next.
 | **2. Playable match** ✅ | 2D court, commentary, timeouts, subs, speed setting. Fixed squads. | Two players enjoy a full 4-quarter match head-to-head. |
 | **3. Draft + budget + scouting** ✅ | Player pool, pricing, free and snake draft, fuzzy scouting. | Two different drafting strategies can both win. |
 | **4. Coaches** | 3 coach roles with real effects. | Spending on staff is a real trade-off vs players. |
-| **5. Season** | Leagues, schedule, AI teams, table, playoffs, injuries, development, saves. | A full season can be played and saved. |
-| **6. Polish** | Sounds, better animations, awards, season 2 carry-over. | — |
+| **5. Season and Career** (SEASON_SPEC.md) | 5a Quick League → 5b world, promotion/relegation → 5c playoffs, awards → 5d offseason, contracts, draft → 5e injuries, development, morale, news → 5f trade deadline. Career logic first, checked by `npm run world`, then its screens. | A Quick League season can be played and saved; a Career runs for 10 seasons with every lab target passing, then is playable. |
+| **6. Polish** | Sounds, better animations, more presentation. | — |
 
 ### Roadmap after phase 3
 
@@ -258,4 +262,3 @@ Phases 1–3 are done. Next, in this order:
 - Exact budget numbers and price curve (tune in Phase 3).
 - How many possessions to show in full vs fast-forward (tune in Phase 2).
 - Should the AI difficulty be adjustable (easy for learning, hard for a challenge)?
-- How much hidden information the opponent sees about *your* tactics in hot-seat mode.
