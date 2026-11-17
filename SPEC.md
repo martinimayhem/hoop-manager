@@ -23,7 +23,8 @@
 - Online multiplayer (two devices over the internet)
 - Mobile or touch layout
 - Real player names, photos, team logos or league branding (see §8)
-- Trading between human players, contracts, salaries over multiple years
+- Trading between two human players, and a salary cap (contracts, trades and multi-season careers
+  are now designed in [WORLD_SPEC.md](WORLD_SPEC.md))
 
 ---
 
@@ -186,6 +187,10 @@ generator. That means:
 
 ## 8. Leagues and season
 
+> **Superseded for career mode** by [WORLD_SPEC.md](WORLD_SPEC.md): a world of 126 clubs in the US
+> and Europe with promotion and relegation. The three small leagues below remain a possible quick
+> season for Exhibition.
+
 - **3 leagues** with different budgets and player quality, e.g. *Street League* (low budget),
   *Pro League*, *Legends League* (high budget).
 - Each league: **8 teams**, double round-robin (14 matchdays), then top-4 playoffs (semi-final, final).
@@ -231,10 +236,9 @@ Each phase must be playable and fun before starting the next.
 
 Phases 1–3 are done. Next, in this order:
 
-1. **Franchise layer (phases 4–5):** league, schedule, standings, playoffs and saves; player
-   development and aging; coaches; a simple budget for coaching, facilities and scouting. Designed
-   first in `SEASON_SPEC.md`, then built. **Depth ceiling:** about Hoop Land's level. No salary-cap
-   sheets, luxury tax or debt.
+1. **Career mode** as designed in [WORLD_SPEC.md](WORLD_SPEC.md), built in slices W1–W9
+   (foundation, one season, years go by, talent pipeline, free agency, trades, the club, scouting,
+   living world). Phases 4 (coaches) and 5 (season) are part of it.
 2. **Daily Clutch:** the same late-game scenario for everyone each day (seeded), using the clutch
    play-calls.
 3. **Match feel:** arcade banners for big plays ("ALLEY-OOP!"), a play-of-the-game replay, a
