@@ -2,7 +2,10 @@
 // (then, on the next screen, the club). Saved games and a friendly match are a click away; the court
 // view and match speed below hold for every match.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { listWorlds, type WorldSlot } from '../../game/world/saves';
+import type { World } from '../../game/world/types';
+import { careerStore } from './career/store';
 import type { Speed } from '../match/controller';
 import type { Setup } from '../App';
 import { LEAGUES, type LeagueId } from '../../game/league/leagues';
@@ -51,6 +54,8 @@ export function MainMenu({
   onLeague,
   onLoad,
   onContinue,
+  onCareerNew,
+  onCareerOpen,
 }: {
   /** A friendly: the ready-made squads, no league. */
   onFriendly: (setup: Setup) => void;
@@ -58,6 +63,9 @@ export function MainMenu({
   onLeague: (league: LeagueId) => void;
   onLoad: () => void;
   onContinue: (league: QuickLeague, slot: number) => void;
+  /** A new career: create the world, choose the club. */
+  onCareerNew: () => void;
+  onCareerOpen: (world: World, slot: number) => void;
 }) {
   const [speed, setSpeedState] = useState<Speed>(lastSpeed);
   const [view, setViewState] = useState<Setup['view']>(startView);
@@ -74,6 +82,16 @@ export function MainMenu({
   const saves = slots.flatMap((s) => (s.status === 'ok' ? [s] : []));
   // The most recently saved game, to carry on with.
   const latest = [...saves].sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))[0];
+  // Careers are saved in IndexedDB (they are big): read once the menu is up.
+  const [careers, setCareers] = useState<WorldSlot[]>([]);
+  useEffect(() => {
+    let live = true;
+    listWorlds(careerStore).then((s) => live && setCareers(s));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const used = careers.filter((s) => s.status !== 'empty');
 
   return (
     <div className="menu mm">
@@ -103,6 +121,44 @@ export function MainMenu({
             </section>
           );
         })()}
+
+      <section className="panel mm-career">
+        <div className="mm-career-head">
+          <div>
+            <div className="mm-kicker">Career · new</div>
+            <b className="mm-club">Manage a club, season after season</b>
+            <div className="muted">318 clubs in America and 11 European countries. Pick any club and look around: squads, players, competitions, money. Playing the season comes next.</div>
+          </div>
+          <button className="primary big" onClick={onCareerNew}>
+            New career ▶
+          </button>
+        </div>
+        {used.length > 0 && (
+          <div className="mm-career-slots">
+            {used.map((s) =>
+              s.status === 'ok' ? (
+                <button key={s.slot} className="mm-career-slot" onClick={() => onCareerOpen(s.data, s.slot)}>
+                  <span>
+                    <b>{s.summary.club}</b>
+                    <small className="muted">
+                      Slot {s.slot + 1} · {s.summary.league}
+                      {s.summary.manager ? ` · ${s.summary.manager}` : ''} · season {s.summary.season}–{String(s.summary.season + 1).slice(2)}
+                    </small>
+                  </span>
+                  <span className="mm-go">Continue ▶</span>
+                </button>
+              ) : s.status === 'newer' || s.status === 'broken' ? (
+                <div key={s.slot} className="mm-career-slot bad-save" role="note">
+                  <span>
+                    <b>Career slot {s.slot + 1} can't be opened</b>
+                    <small className="muted">{s.message}</small>
+                  </span>
+                </div>
+              ) : null,
+            )}
+          </div>
+        )}
+      </section>
 
       <section className="panel mm-new">
         <h3>New game · choose where to start</h3>

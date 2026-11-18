@@ -3621,3 +3621,45 @@ button.danger {
   color: #fff;
   font-weight: 700;
 }
+
+/* ---- Main menu: the career panel ---- */
+.mm-career {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px;
+}
+.mm-career-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.mm-career-head > div {
+  flex: 1 1 360px;
+}
+.mm-career-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mm-career-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 14px;
+  text-align: left;
+  border-radius: 8px;
+}
+.mm-career-slot > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mm-career-slot.bad-save {
+  border: 1px solid var(--line);
+  background: #2a1414;
+}

@@ -29,7 +29,7 @@ export function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-function attrsFrom(a: number[]): Attributes {
+export function attrsFrom(a: number[]): Attributes {
   const [speed, stamina, shooting, three, freeThrow, layup, dunk, passing, dribbling, rebounding, tactics, injuryProneness, potential] =
     a.map((v) => Math.max(1, Math.min(99, Math.round(v))));
   return { speed, stamina, shooting, three, freeThrow, layup, dunk, passing, dribbling, rebounding, tactics, injuryProneness, potential };
@@ -57,7 +57,7 @@ const LAST = ['Backboard', 'Bounceman', 'Chalkley', 'Dribbleton', 'Fastbreak', '
 
 type Template = [number, number, number, number, number, number, number, number, number, number, number];
 //                       spd  sta  mid  3pt  ft   lay  dnk  pas  dri  reb  iq
-const TEMPLATES: Record<Position, { t: Template; cm: [number, number]; arch: string[] }> = {
+export const TEMPLATES: Record<Position, { t: Template; cm: [number, number]; arch: string[] }> = {
   PG: { t: [12, 10, 2, 4, 10, 4, -25, 10, 10, -22, 2], cm: [180, 191], arch: ['Backup Guard', 'Game Manager', 'Pest Defender', 'Speedster'] },
   SG: { t: [8, 8, 4, 6, 10, 4, -12, 0, 4, -15, 0], cm: [190, 199], arch: ['Shooter', '3-and-D Guard', 'Microwave Scorer', 'Glue Guy'] },
   SF: { t: [6, 8, 2, 2, 6, 6, 2, -4, 0, -4, 0], cm: [196, 205], arch: ['Two-Way Wing', 'Slasher', 'Utility Wing', 'Athlete'] },
