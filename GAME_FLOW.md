@@ -280,6 +280,23 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 - **Minimum sizes:** body text 14 px, labels 12 px, tap targets 44 px.
 - The look follows the approved mockups (§6.3).
 
+**Details settled after the first sweep (18 Nov 2026):**
+- **Text sizes:** 14 px is the minimum for anything you read as content, **table cells included**
+  (names, numbers, stars' labels). 12–13 px only for column headers, labels and captions. The sweep
+  checks both.
+- **Row heights:** table rows 28 px with a mouse, 44 px on touch screens (where a long table then
+  pages sooner).
+- **Nothing is cut off.** If something can't be shown whole at a size (for example the "Player of
+  the game" card on a small court), it is hidden at that size or moved, never clipped.
+- **Sorting on touch:** column headers stay compact; touch screens get a 44 px **Sort** button above
+  each sortable table that opens the sort choices. Headers still sort with a mouse.
+- **Dropdowns:** a native browser dropdown is allowed only when all its options fit without
+  scrolling (about 12 or fewer). Longer choices use the game's own picker, filtered and paged.
+- **Pop-ups during a match** (clutch call, arguing a call, team talk) are part of the sweep.
+- Moved to make screens fit, and agreed: the squad's stat cards are on the Club screen; the game plan
+  explains only the last choice you made; the key matchup is its own game-plan tab; game plan, breaks,
+  the match team panel and the result screen use tabs.
+
 ### 6.2 Screen map
 
 | Sidebar | Screens |
