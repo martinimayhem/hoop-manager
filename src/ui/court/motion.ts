@@ -838,8 +838,9 @@ export class Motion {
       // How hard he pushes off: as the pace asks; small adjustments are gentle, as in the real tracking
       // data. All out: a man out of position in live play (a defender above all, more than a step
       // off: DEFENDERS ALWAYS TRY), the man with the ball (a drive, getting away from pressure), and
-      // everyone while a shot or a loose ball is in the air (crashing, boxing out, chasing it).
-      const loose = !!live?.action && (live.action.kind === 'fixed' || live.action.kind === 'toPlayer' || (live.action.kind === 'fromPlayer' && live.action.style !== 'throw'));
+      // everyone while a shot or a loose ball is in the air (crashing, boxing out, chasing it); not a
+      // made basket bouncing away to the man who takes it out (nobody fights for that one).
+      const loose = !!live?.action && ((live.action.kind === 'fixed' && !live.action.settled) || live.action.kind === 'toPlayer' || (live.action.kind === 'fromPlayer' && live.action.style !== 'throw'));
       const outOfPlace = !!live && !live.dead && d > (key.startsWith(defending) ? OUT_OF_PLACE_DEF_M : OUT_OF_PLACE_M);
       const allOut = !!live && !live.dead && (outOfPlace || key === ballHolder || loose);
       // The man in front of the ball handler mirrors every move he makes: his slides are explosive.

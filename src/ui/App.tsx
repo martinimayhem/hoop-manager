@@ -1,5 +1,6 @@
 // Screen flow: menu → choose the league → choose the club → the season (hub, game plan, live match,
-// result); or a friendly: menu → game plan → live match → result (→ rematch).
+// result); or a friendly: menu → game plan → live match → result (→ rematch); or a career: menu → new
+// career (the world is built, choose the club) → the career hub.
 
 import { useState } from 'react';
 import { HARBOR_HAMMERS, SKYLINE_SPARKS } from '../data/teams';
@@ -13,8 +14,11 @@ import { LeagueFlow } from './screens/league/LeagueFlow';
 import { LeagueMenu } from './screens/league/LeagueMenu';
 import { ClubPicker } from './screens/league/ClubPicker';
 import type { QuickLeague } from '../game/league/quickLeague';
-import type { LeagueId } from '../game/league/leagues';
+import type { LeagueId, Region } from '../game/league/leagues';
 import { abbrOf } from './labels';
+import { CareerNew } from './screens/career/CareerNew';
+import { CareerHub } from './screens/career/CareerHub';
+import type { World } from '../game/world/types';
 
 export interface Setup {
   names: [string, string];
@@ -26,8 +30,10 @@ export interface Setup {
 type Screen =
   | { kind: 'menu' }
   | { kind: 'league-menu' }
-  | { kind: 'club'; league: LeagueId }
+  | { kind: 'club'; league: LeagueId; region: Region }
   | { kind: 'league'; league: QuickLeague; slot: number; key: number }
+  | { kind: 'career-new' }
+  | { kind: 'career'; world: World; slot: number; key: number }
   | { kind: 'prep'; setup: Setup; teams: [Team, Team] }
   | { kind: 'match'; setup: Setup; teams: [Team, Team]; plans: [GamePlan, GamePlan]; seed: number }
   | { kind: 'result'; setup: Setup; teams: [Team, Team]; match: LiveMatch };
@@ -50,16 +56,30 @@ export function App() {
         <div className="app">
           <MainMenu
             onFriendly={(setup) => setScreen({ kind: 'prep', setup, teams: quickTeams(setup) })}
-            onLeague={(league) => setScreen({ kind: 'club', league })}
+            onLeague={(league, region) => setScreen({ kind: 'club', league, region })}
             onLoad={() => setScreen({ kind: 'league-menu' })}
             onContinue={(league, slot) => setScreen({ kind: 'league', league, slot, key: Date.now() })}
+            onCareerNew={() => setScreen({ kind: 'career-new' })}
+            onCareerOpen={(world, slot) => setScreen({ kind: 'career', world, slot, key: Date.now() })}
           />
         </div>
       );
     case 'club':
       return (
         <div className="app">
-          <ClubPicker league={screen.league} onBack={menu} onStart={(league, slot) => setScreen({ kind: 'league', league, slot, key: Date.now() })} />
+          <ClubPicker league={screen.league} region={screen.region} onBack={menu} onStart={(league, slot) => setScreen({ kind: 'league', league, slot, key: Date.now() })} />
+        </div>
+      );
+    case 'career-new':
+      return (
+        <div className="app">
+          <CareerNew onBack={menu} onStart={(world, slot) => setScreen({ kind: 'career', world, slot, key: Date.now() })} />
+        </div>
+      );
+    case 'career':
+      return (
+        <div className="app">
+          <CareerHub key={screen.key} world={screen.world} slot={screen.slot} onMenu={menu} />
         </div>
       );
     case 'league-menu':

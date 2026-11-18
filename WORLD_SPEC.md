@@ -1,13 +1,13 @@
 # Hoop Manager: World and Career Spec
 
-> The career mode: a living basketball world of about 126 clubs in the US and Europe, with
+> The career mode: a living basketball world of 128 clubs in the US and Europe, with
 > promotion and relegation, scouting, a draft, free agents, trades, youth development, staff,
 > facilities and money. You manage one club for as many seasons as you like, Football Manager
 > style. For career mode this document replaces SEASON_SPEC.md Parts 3–12 (the 48-club Career)
 > and SPEC.md §8. The **Quick League** (SEASON_SPEC.md Part 2, built) and the friendly match stay as
 > they are. One player against the computer (SPEC.md §1).
 
-Status: design for approval. Nothing here is built yet.
+Status: approved design, being built slice by slice (§15). W1 is built.
 
 ---
 
@@ -35,22 +35,34 @@ Status: design for approval. Nothing here is built yet.
 
 | Tier | US | Europe | Teams | Season |
 |---|---|---|---|---|
-| 1 | **Big League** (18 US clubs) | **Big League** (12 European clubs) | 30 | 40 games (default) + playoffs |
+| 1 | **Big League**, America Conference (16) | **Big League**, Europe Conference (16) | 16 + 16 | 40 games (default) + playoffs |
 | 2 | US Division 2 | Euro Division 2 | 16 + 16 | 30 games + promotion playoffs |
 | 3 | US Division 3 | Euro Division 3 | 16 + 16 | 30 games + promotion playoffs |
 | 4 | US Division 4 | Euro Division 4 | 16 + 16 | 30 games + promotion playoffs |
-| | | **Total** | **126 clubs** | |
+| | | **Total** | **128 clubs** | |
 
-- **Big League** is one competition with two conferences: **America** (18) and **Europe** (12).
-  Europe is part of the top league, not a tier below it.
-- **Big League schedule (40 games):** every team plays every other team once (29 games), plus 11
-  extra games against teams in its own conference. Settings allow **Short (30)**, **Standard (40)**
-  or **Full (82)**.
-- **Big League playoffs:** 16 clubs: the top 16 by record, with at least 4 from each conference.
-  Round 1 best-of-3, quarter-finals and semi-finals best-of-5, final best-of-7. (Kept short so a
-  season fits in a few evenings.)
-- **Divisions 2–4:** double round-robin (30 games); the champion is promoted, places 2–5 play a
-  single-game knockout for the second promotion spot.
+- **The world is US against Europe** (decided 2026-11-18). Each region has the same pyramid: a
+  16-club conference of the Big League and three divisions of 16 below it, 64 clubs a region; every
+  league in the world has 16 clubs. The
+  Big League is one competition with two equal conferences, **America** and **Europe**, and its
+  Finals are always **America v Europe**.
+- **Every club plays the same number of games, US or Europe** (decided 2026-11-18):
+
+  | Setting | Conference games | Against the other conference | Total |
+  |---|---|---|---|
+  | Short | 30 (each conference rival twice) | 0 | 30 |
+  | **Standard (default)** | 30 (each rival twice) | 10 (10 of the 16 once, a different 6 left out each season) | **40** |
+  | Full | 60 (each rival 4 times) | 22 (6 of the 16 twice, 10 once) | 82 |
+
+  Divisions 2–4: double round-robin, 30 games, in both regions.
+- **Big League playoffs: each conference its own, then the Finals.** The top 8 of each conference:
+  quarter-finals best-of-3, semi-finals best-of-5, conference final best-of-5. The two conference
+  champions meet in the **Finals, America v Europe, best-of-7**; home court to the better
+  regular-season record. (Kept short so a season fits in a few evenings.)
+- **Rules follow the place:** a game in Europe uses FIBA rules, a game in America NBA rules (§14);
+  the Finals use NBA rules.
+- **Divisions 2–4:** the champion is promoted, places 2–5 play a single-game knockout for the
+  second promotion spot.
 
 ### 1.2 Promotion and relegation
 
@@ -68,7 +80,7 @@ and 25% the second, so relegation hurts but doesn't destroy a club.
 
 ### 1.3 Places, clubs and colleges
 
-- **Cities:** 126 real cities: big US metros plus European basketball cities (for example Madrid,
+- **Cities:** 128 real cities: big US metros plus European basketball cities (for example Madrid,
   Barcelona, Istanbul, Athens, Belgrade, Kaunas, Vilnius, Milan, Bologna, Paris, Berlin, Munich,
   London, Amsterdam, Lisbon). Bigger cities start in higher tiers, with exceptions so famous
   basketball cities can start lower and climb.
@@ -84,16 +96,18 @@ and 25% the second, so relegation hurts but doesn't destroy a club.
 
 | Group | Count at start | Notes |
 |---|---|---|
-| Club rosters (13 each) | 1,638 | 126 × 13 |
+| Club rosters (13 each) | 1,664 | 128 × 13 |
 | Free agents | about 200 | Old, cheap, or between clubs |
 | College players | about 600 | 40 colleges × 15; seniors enter the draft |
-| European academy players | about 360 | 60 European clubs × 6, aged 15–18 |
-| **Total** | **about 2,800** | |
+| European academy players | about 385 | 64 European clubs × 6, aged 15–18 |
+| **Total** | **about 2,850** | |
 
-New people each season: about 150 college freshmen and about 180 academy intake (draft entrants
-are existing college players). That is about 330 new names a season, so **about 6,000 unique
-names over 10 seasons**. About 180 players a season move up into club basketball (draft picks,
-undrafted signings, academy graduates), matching about 180 retirements.
+New people each season: about 150 college freshmen, about 180 academy intake and about 80
+international prospects. That is about 410 new names a season, so **about 7,000 unique names over
+10 seasons**. Every club drafts (§5.3), so about 250 players a season are drafted (two regional drafts), plus the academy
+graduates clubs keep, against about 180 retirements: clubs cut to 13, and a released player who
+stays unsigned for a whole season leaves the world (he retires or goes to play elsewhere, in the
+news). The world lab's population check keeps this within ±5% (§13); class sizes are tuned in W4.
 
 - **The 102 parody stars** (players.json) are the Big League's established stars at the start.
 - **Everyone else is generated** with a **nationality**: names from per-country first-name and
@@ -180,18 +194,30 @@ Offseason, in this order:                                                 ▼
 ### 5.2 European academies (club pipeline)
 - Every European club has an academy of about 6 players aged 15–18.
 - **Yearly intake:** 2–4 new 15-year-olds per club, better with a better academy facility.
-- At 18 a player graduates to the first team or is released; an under-18 can be called up early if
-  he's ready.
-- US clubs have no academy; they rely on the draft and free agency. That's the real-world
-  difference between the regions, and it gives both a distinct way to build.
+- At 18 a player graduates to the first team, or his club lets him go and he enters the draft; an
+  under-18 can be called up early if he's ready.
+- US clubs have no academy; they build through the draft and free agency. European clubs draft too,
+  and also have their own academy. That's the real-world difference between the regions, and it
+  gives both a distinct way to build.
 
 ### 5.3 The draft
-- **Two rounds, 30 picks each,** Big League clubs only. Clubs in Divisions 2–4 sign undrafted
-  players as free agents.
-- **Lottery:** the 14 non-playoff Big League clubs, weighted towards the worst records (the top 4
-  picks are drawn, then the rest go in reverse order of record).
+*(Decided 2026-11-18: US draft rules, and every club in every division of both regions drafts.)*
+- **One draft per region, two rounds, all 64 clubs of that region** (128 picks each). The US
+  class: college seniors and early entrants. The European class: academy graduates whose club let
+  them go, and international prospects. About 145 a class, so the last pick still has a choice.
+  Undrafted prospects become free agents.
+- **Order, US style: the weakest pick first.** Tiers go from the bottom up: Division 4 first, then
+  3, then 2, then the region's Big League conference, worst record first. Round 2
+  repeats the order. A club picks by the tier it **played in** this season, so a relegated club picks
+  among the Big League clubs and a promoted one among its old division.
+- **A lottery in each tier** (US style), for its top 4 picks: among that tier's clubs that missed
+  its playoffs (promoted clubs never), the worst three with equal odds, nobody dropping more than 4
+  places. It takes the reward out of losing on purpose, which matters most in Division 4, where
+  nobody can be relegated. Every draw is shown, with each club's chances.
 - **Picks can be traded** (up to 3 seasons ahead).
-- **Rookie contracts:** fixed wage by pick number, 3 years (first round) or 2 years (second round).
+- **Rookie contracts:** fixed wage by pick number, in the club's currency (§10). First round: 3
+  years. Second round: 2 years, not guaranteed until the season starts (the club can release him
+  before then at no cost).
 - **Draft classes vary:** some years are deep, some weak; generational talents are rare.
 
 ---
@@ -271,8 +297,12 @@ more, which competes with player wages for the same budget.
 ## 10. Money and facilities
 
 ### 10.1 Budget and wages
-Money is in fictional **dollars**. Each season the board sets a **wage budget** and a **transfer
-budget** from the club's income.
+*(Decided 2026-11-18.)* **US clubs count in dollars ($), European clubs in euros (€).** One fixed
+exchange rate in the game data, **€1 = $1.10**, never changes during a career. Every amount is shown in
+your club's own currency; where the two regions meet (a transfer between them, a free agent choosing
+between continents, Finals prize money) both amounts are shown. The Quick League keeps its credits.
+
+Each season the board sets a **wage budget** and a **transfer budget** from the club's income.
 
 | Income | Depends on |
 |---|---|
@@ -288,8 +318,15 @@ budget** from the club's income.
 | Facilities | Upkeep and upgrades |
 | Transfers | Fees paid |
 
-**Rough scale per tier** (to be tuned by the world lab): Big League wage budgets $60–140M,
-Division 2 $12–30M, Division 3 $3–10M, Division 4 $0.8–3M. Promotion raises income a lot, so the
+**Rough scale per tier** (to be tuned by the world lab), the same in value in both regions:
+
+| Tier | US wage budget | Europe wage budget |
+|---|---|---|
+| Big League | $60–140M | €55–127M |
+| Division 2 | $12–30M | €11–27M |
+| Division 3 | $3–10M | €2.7–9M |
+| Division 4 | $0.8–3M | €0.7–2.7M |
+ Promotion raises income a lot, so the
 first season up is a real challenge, as in real life.
 
 ### 10.2 Facilities
@@ -309,11 +346,12 @@ three seasons**, so a club can't buy excellence overnight. (Idea from ZenGM's bu
 ## 11. The board and your career
 
 - Each season the board sets an **objective**: win the title, make the playoffs, avoid relegation,
-  get promoted, or develop young players, based on the club's size and squad.
-- **Job security** rises and falls with results against that objective.
-- **If you're sacked**, you get offers from other clubs (often a tier lower) and your career goes on.
-  A setting **"Can't be sacked"** turns this off for relaxed play.
-- **Manager reputation** grows with success and decides which clubs want you.
+  get promoted, or develop young players, based on the club's size and squad. At the end of the
+  season it says in plain words how it went.
+- **You can't be sacked** (decided 2026-11-18): no job-security meter, no dismissal, in any setting.
+  A bad season is a disappointed board, never the end of your career at the club.
+- **Manager reputation** grows with success. Other clubs may offer you their job; you choose,
+  and can always say no.
 - **Starting a career:** pick any club. A "climb from Division 4" start is the classic challenge.
 
 ---
@@ -336,6 +374,8 @@ three seasons**, so a club can't buy excellence overnight. (Idea from ZenGM's bu
 | Check | Target |
 |---|---|
 | Different Big League champions in 20 seasons | At least 6; no club wins more than 5 |
+| America v Europe | Each region wins between 7 and 13 of 20 Finals (averaged over worlds) |
+| Draft in every tier | A Division 4 club's first-round picks become regulars there as often in the US as in Europe |
 | Rating inflation | League-average overall within ±2 points of season 1 after 20 seasons |
 | Population | Active players within ±5% of the start; retirements ≈ new players |
 | Average age per tier | 25–28 |
@@ -377,13 +417,13 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 
 | Slice | What | Playable when done |
 |---|---|---|
-| **W1 Foundation** | World generator (cities, clubs, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (tiers, clubs, players) | You can create a world, save it, load it and look around |
+| **W1 Foundation** ✅ (2026-11-18, branch `world-w1`) | World generator (cities, clubs, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (tiers, clubs, players) | You can create a world, save it, load it and look around |
 | **W2 One season** | Calendar, schedules for all tiers, standings, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, season summary | You can play a full season in any tier |
 | **W3 Years go by** | Aging, development, retirement, contract expiry and AI re-signing, rollover to the next season; world lab over 20 seasons | You can play season after season |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
 | **W5 Free agency** | Contracts, wage demands, extensions, free agency days | You can build through free agency |
 | **W6 Trades** | AI club plans, valuation, trade screen, "what would you want?", trade deadline, AI-to-AI deals | You can trade, and the AI is hard to exploit |
-| **W7 The club** | Staff (phase 4), facilities, money, board objectives, sacking and job offers | Money and staff are real decisions |
+| **W7 The club** | Staff (phase 4), facilities, money ($ and €), board objectives, job offers | Money and staff are real decisions |
 | **W8 Scouting 2.0** | Scouts by region, narrowing ranges, shortlist | Finding hidden talent is a skill |
 | **W9 Living world** | News, awards, records, history, Hall of Fame, career pages | The world tells stories |
 
@@ -408,24 +448,15 @@ achievements) can be slotted in between slices.
 1. **Season length default:** 40 games keeps a season to a few evenings if you play every game.
    Is that right, or should Full (82) be the default?
 2. **Tier sizes:** 16-team lower divisions give 30-game seasons. Enough?
-3. **Draft for lower divisions:** Big League only (as above), or a combined draft where lower tiers
-   pick after the Big League?
-4. **Women's basketball:** a separate world later?
+3. **Women's basketball:** a separate world later?
 
-Where this design differs from the approved SEASON_SPEC.md (to decide before W1):
+Decided 2026-11-18 (where this design differed from SEASON_SPEC.md):
 
-5. **The board and sacking (§11).** SEASON_SPEC.md left out the owner, attendance, fan mood and
-   firing the manager on purpose: "nothing that can feel like pressure on a young player" (13+).
-   Keep §11 with "Can't be sacked" as the default, keep it with sacking on by default, or drop it?
-6. **The Big League Finals.** SEASON_SPEC.md had America v Europe Finals between the two conference
-   champions; §1.1 here has one top-16 playoff. Which?
-7. **Relegated clubs and the draft (§5.3).** Relegation is fixed before the draft, so the worst Big
-   League clubs go down. Do they keep their lottery picks? And with the draft for the Big League
-   only, US lower-division clubs (no academies) get young players only as undrafted free agents.
-8. **Full (82) for Europe.** With 12 clubs, 53 extra conference games do not split evenly over 11
-   opponents: say how the Full schedule is built.
-9. **Money.** Wages here are in millions of dollars; prices today are 1–40 credits. One conversion
-   rule (or drop credits for career mode).
+- **The board:** you can't be sacked (§11).
+- **US v Europe:** two equal 16-club conferences (16 clubs in every league), America v Europe Finals (§1.1).
+- **The draft:** US rules (worst first, lotteries), every club in every division drafts, one draft per region (§5.3).
+- **Games:** every club plays the same number, US or Europe (§1.1).
+- **Money:** dollars for US clubs, euros for European clubs, at a fixed rate (§10.1).
 
 ---
 

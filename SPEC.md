@@ -187,7 +187,7 @@ generator. That means:
 
 ## 8. Leagues and season
 
-> **Career mode is designed in [WORLD_SPEC.md](WORLD_SPEC.md)**: a world of 126 clubs in the US and
+> **Career mode is designed in [WORLD_SPEC.md](WORLD_SPEC.md)**: a world of 128 clubs in the US and
 > Europe with promotion and relegation. It replaces the 48-club Career of SEASON_SPEC.md (Parts 3–12).
 > The **Quick League** (one 8-team season, SEASON_SPEC.md Part 2) is built and stays as it is; the
 > three leagues below are its Street, Pro and Legends.

@@ -274,7 +274,7 @@ describe('saves (R11.2)', () => {
 describe('a new game: choose the league, then the club', () => {
   it('WHEN a new league is made THEN all eight clubs have full, legal squads and the season is ready; the player takes over the club he chooses', () => {
     for (const id of ['street', 'pro', 'legends'] as LeagueId[]) {
-      const q = createLeague(id, 11);
+      const q = createLeague(id, 'europe', 11);
       expect(q.phase).toBe('season');
       expect(q.teams).toHaveLength(8);
       expect(q.teams.every((t) => t.human === null)).toBe(true);

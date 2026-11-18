@@ -14,7 +14,7 @@ import { canPick, createDraft, currentTurn, GROUPS, groupCounts, isComplete, MIN
 import { journeymen, playerPool, type PoolPlayer } from '../pool';
 import { MIN_PRICE } from '../pricing';
 import { DEFAULT_SCOUT_ACCURACY } from '../scouting';
-import { LEAGUES, leaguePool, type LeagueId } from './leagues';
+import { LEAGUES, leaguePool, type LeagueId, type Region } from './leagues';
 import { doubleRoundRobin, type Fixture, type Schedule } from './schedule';
 import { standings, type GameRecord, type PlayerLineRecord, type TableRow } from './standings';
 
@@ -46,6 +46,8 @@ export interface QuickLeague {
   kind: 'quick';
   seed: number;
   league: LeagueId;
+  /** America or Europe: where its clubs are from (older saves have none; their clubs are stored in `teams`). */
+  region?: Region;
   teams: LeagueTeam[];
   /** The player's own name, as manager of his club (older saves have none). */
   manager?: string;
@@ -72,11 +74,11 @@ function abbrFor(name: string): string {
 
 /** A new league: the player's team, the league's AI teams, and a seeded first-round draft order. */
 /** `humanNames`: the player's club name. `manager`: his own name. */
-export function createQuickLeague(league: LeagueId, humanNames: string[], seed: number, manager?: string): QuickLeague {
+export function createQuickLeague(league: LeagueId, humanNames: string[], seed: number, manager?: string, region: Region = 'america'): QuickLeague {
   if (humanNames.length !== 1) throw new Error('createQuickLeague: one player');
   const def = LEAGUES[league];
   const humans: LeagueTeam[] = humanNames.map((name, i) => ({ id: `you-${i + 1}`, name, abbr: abbrFor(name), human: 0 as const }));
-  const ai: LeagueTeam[] = def.teams.slice(0, TEAMS - humans.length).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
+  const ai: LeagueTeam[] = def.teams[region].slice(0, TEAMS - humans.length).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
   const teams = [...humans, ...ai];
   const rng = createRng(mix(seed, 1));
   const order = teams.map((_, i) => i);
@@ -85,7 +87,7 @@ export function createQuickLeague(league: LeagueId, humanNames: string[], seed: 
     [order[i], order[j]] = [order[j], order[i]];
   }
   const d = createDraft('snake', leaguePool(league), teams.map((t) => ({ name: t.name, abbr: t.abbr, controller: t.human === null ? 'ai' : 'human' })), def.budget, order);
-  return { kind: 'quick', seed, league, teams, ...(manager ? { manager } : {}), draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] };
+  return { kind: 'quick', seed, league, region, teams, ...(manager ? { manager } : {}), draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] };
 }
 
 function saveDraft(d: DraftState, prev?: SavedDraft): SavedDraft {
@@ -170,9 +172,9 @@ function aiTurn(q: QuickLeague): QuickLeague {
  * A new league: all eight clubs, their squads put together by the computer (the same draft rules,
  * every pick the AI's), the season ready to start. The player then takes over one of them.
  */
-export function createLeague(league: LeagueId, seed: number): QuickLeague {
+export function createLeague(league: LeagueId, region: Region, seed: number): QuickLeague {
   const def = LEAGUES[league];
-  const teams: LeagueTeam[] = def.teams.slice(0, TEAMS).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
+  const teams: LeagueTeam[] = def.teams[region].slice(0, TEAMS).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
   const rng = createRng(mix(seed, 1));
   const order = teams.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) {
@@ -180,7 +182,7 @@ export function createLeague(league: LeagueId, seed: number): QuickLeague {
     [order[i], order[j]] = [order[j], order[i]];
   }
   const d = createDraft('snake', leaguePool(league), teams.map((t) => ({ name: t.name, abbr: t.abbr, controller: 'ai' as const })), def.budget, order);
-  return finishDraft({ kind: 'quick', seed, league, teams, draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] });
+  return finishDraft({ kind: 'quick', seed, league, region, teams, draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] });
 }
 
 /** The player takes over a club (its squad as it is), with his own name as manager. */

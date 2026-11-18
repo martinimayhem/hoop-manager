@@ -5,7 +5,7 @@
 
 import { useMemo } from 'react';
 import { MATCHDAYS, fixtures, humanGames, poolOf, table, type QuickLeague } from '../../../game/league/quickLeague';
-import { LEAGUES } from '../../../game/league/leagues';
+import { leagueName } from '../../../game/league/leagues';
 import type { TableRow } from '../../../game/league/standings';
 import type { Speed } from '../../match/controller';
 import { useSort } from '../../components/sortable';
@@ -117,7 +117,7 @@ export function LeagueHub({
       <header className="hub-bar">
         <button onClick={onMenu}>☰ Menu</button>
         <div className="hub-title">
-          <h1>{LEAGUES[league.league].name}</h1>
+          <h1>{leagueName(league.league, league.region)}</h1>
           <span className="muted small">
             {over ? 'Season over' : `Matchday ${league.matchday + 1} of ${MATCHDAYS}`} · <span className="home">{name(me)}</span>
             {league.manager ? `, manager ${league.manager}` : ''}

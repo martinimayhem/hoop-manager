@@ -1127,7 +1127,7 @@ button.chip.active {
 }
 .dr {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: minmax(0, 1fr) 500px;
   gap: 10px;
   height: calc(100vh - 32px);
 }
@@ -3335,6 +3335,22 @@ table.scout-table.eq .stars {
 .mm-new .mm-league b {
   font-size: 22px;
 }
+.mm-new-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mm-new-head h3 {
+  margin: 0;
+}
+/* The league's cities, so it is plain which region it is. */
+.mm-cities {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.8;
+}
 .mm-go {
   align-self: end;
   margin-top: 6px;
@@ -3620,4 +3636,284 @@ button.danger {
   border-color: var(--bad);
   color: #fff;
   font-weight: 700;
+}
+
+/* ---- Career (WORLD_SPEC W1): new career and the hub. One screen, no scrolling: lists are paged. ---- */
+.app:has(> .cw),
+.app:has(> .cw-wait) {
+  max-width: 1500px;
+}
+.cw {
+  height: calc(100vh - 32px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+}
+.cw-wait {
+  height: calc(100vh - 32px);
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 6px;
+}
+.cw-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cw-title {
+  display: grid;
+  gap: 2px;
+  margin-right: auto;
+}
+.cw-title h1 {
+  margin: 0;
+  line-height: 1;
+}
+.cw-tabs button {
+  min-width: 96px;
+}
+.cw-note {
+  font-size: 13px;
+  color: var(--muted);
+  border-left: 3px solid var(--home);
+  padding: 2px 10px;
+}
+.cw-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 500px;
+  gap: 12px;
+  min-height: 0;
+}
+.cw-left,
+.cw-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+.cw-left h3,
+.cw-side h3 {
+  margin: 0;
+}
+.cw-left-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cw-switch {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.cw-table td {
+  height: 27px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cw-row {
+  cursor: pointer;
+}
+.cw-row:hover td {
+  background: #ffffff0d;
+}
+.cw-row.on td {
+  background: color-mix(in srgb, var(--home) 18%, transparent);
+}
+.cw-row.mine td:nth-child(2) b {
+  color: var(--home);
+}
+.cw-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.cw-dot.big {
+  width: 18px;
+  height: 18px;
+  border-width: 3px;
+  margin-right: 0;
+  flex: none;
+}
+.cw-side-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cw-pick .cw-table td {
+  height: 24px;
+}
+.cw-pick .big {
+  font-size: 17px;
+  padding: 10px;
+  margin-top: auto;
+}
+.cw-clubfacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #ffffff08;
+}
+.cw-clubfacts.compact {
+  grid-template-columns: 1fr 1fr;
+}
+.cw-clubfacts > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.cw-clubfacts span:first-child {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.cw-clubfacts b {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cw-empty {
+  margin: auto;
+}
+.cw-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.cw-card-head {
+  display: grid;
+  gap: 2px;
+}
+.cw-card-head h3 {
+  font-size: 22px;
+}
+.cw-where {
+  color: var(--home);
+  font-weight: 700;
+  font-size: 13px;
+}
+.cw-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+.cw-facts dt {
+  color: var(--muted);
+}
+.cw-facts dd {
+  margin: 0;
+}
+.cw-ratings {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #ffffff08;
+}
+.cw-rating-top {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.cw-rating {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+.cw-scout-note {
+  margin-top: 4px;
+}
+.cw-personality {
+  display: grid;
+  gap: 4px;
+}
+.cw-trait {
+  display: grid;
+  grid-template-columns: 96px 1fr 24px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.cw-trait .bar {
+  width: 100%;
+}
+.cw-trait b {
+  text-align: right;
+}
+.cw-colleges {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+.cw-college {
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  text-align: left;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  text-transform: none;
+  min-height: 0;
+  overflow: hidden;
+}
+.cw-college b {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cw-college .stars {
+  font-size: 11px;
+}
+.cw-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Main menu: the career. */
+.mm-career {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.mm-career > div:first-child {
+  display: grid;
+  gap: 4px;
+  max-width: 720px;
+}
+.mm-career-title {
+  font-size: 22px;
+}
+.mm-career-actions {
+  display: flex;
+  gap: 10px;
+  flex: none;
 }

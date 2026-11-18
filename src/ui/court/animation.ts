@@ -68,7 +68,8 @@ export type BallAction =
   | { kind: 'pass'; from: string; to: string; arc: number; style?: PassStyle }
   | { kind: 'toPlayer'; from: Ball; to: string; arc: number; high?: boolean }
   | { kind: 'fromPlayer'; from: string; to: Ball; arc: number; style: ShotStyle }
-  | { kind: 'fixed'; from: Ball; to: Ball; arc: number };
+  /** settled: nobody contests it (a made basket bouncing away to the inbounder, a dead ball): no scramble for it. */
+  | { kind: 'fixed'; from: Ball; to: Ball; arc: number; settled?: boolean };
 
 /** How hard a player is moving. Real players mostly walk and jog, and sprint only in bursts. */
 export type Pace = 'walk' | 'jog' | 'run' | 'sprint';
@@ -181,7 +182,9 @@ export const isRef = (key: string) => key.startsWith('ref:');
 
 export const RIM_HEIGHT = 3.05;
 const RIM: Ball = { x: HOOP_X, y: MID_Y, z: RIM_HEIGHT + 0.03 };
-const NET: Ball = { x: HOOP_X, y: MID_Y + 0.06, z: 0.15 };
+/** Where a made shot leaves the bottom of the net (the net slows it: it drops out at NET_EXIT_M_S). */
+const NET: Ball = { x: HOOP_X, y: MID_Y + 0.06, z: 2.55 };
+const NET_EXIT_M_S = 2.5;
 const RIM_CONTACT_M = 0.4;
 /** A rebound is taken overhead at about this height, at the top of the jump. */
 const REBOUND_CATCH_Z = 3.2;
@@ -192,6 +195,13 @@ const CAROM_MIN_S = 0.55;
 const REBOUND_READ_S = 0.35;
 /** And gets going at about this (m/s²): a real first step, not an instant top speed. */
 const REBOUND_ACCEL = 8;
+/** On a miss, players this close to the rim read the shot and go for the rebound (m). */
+const READ_ZONE_M = 6.5;
+/** Attackers this close to the rim crash the boards on a miss (m), at most CRASHERS of them; the rest get back. */
+const CRASH_ZONE_M = 4.5;
+const CRASHERS = 2;
+/** A box-out: the defender a body in front of his man, between him and the rim (m). */
+const BOX_OUT_M = 0.75;
 /** Off the floor, a loose rebound bounces on at most this far, at this speed. */
 const LOOSE_ON_M = 7;
 const LOOSE_M_S = 4.5;
@@ -276,6 +286,76 @@ const FT_LEAD: Pos = { x: END_LINE_X, y: MID_Y + 3.2 };
 
 const pos = ([x, y]: Spot): Pos => ({ x, y });
 /** A spot `back` metres out from the hoop and `across` from the middle, as a [x, y] pair. */
+/** Gravity (m/s²), and the floor's restitution: a ball keeps 0.8 of its speed at each bounce. */
+const G = 9.81;
+const RESTITUTION = 0.8;
+/** The ball's centre when it touches the floor: its radius (m). */
+const FLOOR_Z = 0.12;
+/** Along the floor it keeps this share of its speed at each bounce (scuffing, spin). */
+const SKID = 0.88;
+/** Bouncing up slower than this (m/s: hops of a few centimetres) it rolls. */
+const ROLL_BELOW_M_S = 1.1;
+
+interface Leg {
+  from: Ball;
+  to: Ball;
+  arc: number;
+  seconds: number;
+}
+
+/**
+ * A ball on its own, by physics: it falls from `from` (going down at `down` m/s), bounces on the floor
+ * losing a fifth of its speed each time, travelling along `dir` at `speed` m/s, and rolls once the
+ * bounces have died out. Each leg is an exact parabola under gravity: motion.ts draws a free ball as a
+ * straight line plus arc·4u(1−u), and an arc of g·T²/8 over T seconds makes that gravity's. It ends
+ * where someone takes it: rising through `catchZ` on the first bounce from `ready` seconds on (caught
+ * there), or, if the bounces have died out by then (or `catchZ` is 0: nobody catches it in the air),
+ * rolling to a stop where he picks it up.
+ */
+function looseBall(from: Ball, down: number, dir: Pos, speed: number, ready: number, catchZ = 0.95): { legs: Leg[]; end: Ball; seconds: number } {
+  const len = Math.hypot(dir.x, dir.y) || 1;
+  const ux = dir.x / len;
+  const uy = dir.y / len;
+  const legs: Leg[] = [];
+  let at: Ball = { ...from };
+  let t = 0;
+  let along = speed;
+  const step = (p: Ball, s: number, z: number): Ball => ({ x: p.x + ux * along * s, y: p.y + uy * along * s, z });
+  // The fall.
+  const h = Math.max(0, from.z - FLOOR_Z);
+  const fall = (-down + Math.sqrt(down * down + 2 * G * h)) / G;
+  if (fall > 0.01) {
+    const land = step(at, fall, FLOOR_Z);
+    legs.push({ from: at, to: land, arc: (G * fall * fall) / 8, seconds: fall });
+    at = land;
+    t += fall;
+  }
+  let up = (down + G * fall) * RESTITUTION;
+  const rise = catchZ - FLOOR_Z;
+  for (let n = 0; n < 12; n++) {
+    along *= SKID;
+    if (catchZ > FLOOR_Z && t >= ready && up * up > 2 * G * rise) {
+      // Taken on the way up from this bounce.
+      const tc = (up - Math.sqrt(up * up - 2 * G * rise)) / G;
+      const end = step(at, tc, catchZ);
+      legs.push({ from: at, to: end, arc: (G * tc * tc) / 8, seconds: tc });
+      return { legs, end, seconds: t + tc };
+    }
+    if (up < ROLL_BELOW_M_S) break;
+    const hop = (2 * up) / G;
+    const next = step(at, hop, FLOOR_Z);
+    legs.push({ from: at, to: next, arc: (G * hop * hop) / 8, seconds: hop });
+    at = next;
+    t += hop;
+    up *= RESTITUTION;
+  }
+  // Rolling, slowing to a stop (on average half its speed), until he is there to pick it up.
+  const roll = Math.max(0.3, ready - t);
+  const end: Ball = { x: at.x + ux * along * 0.5 * roll, y: at.y + uy * along * 0.5 * roll, z: FLOOR_Z };
+  legs.push({ from: at, to: end, arc: 0, seconds: roll });
+  return { legs, end, seconds: t + roll };
+}
+
 function hoopSpot(back: number, across: number): Spot {
   const p = fromHoop(back, across);
   return [p.x, p.y];
@@ -885,6 +965,58 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     const pick = insideCourt({ x: spot.x + ux * on, y: spot.y + uy * on }, 0.6);
     return { key: k, spot, loose: true, pick, flight, second: Math.max(0.3, dist(spot, pick) / LOOSE_M_S + 0.15) };
   };
+  /**
+   * A miss going up (not on an open break: there the late contest comes first): the players near the
+   * rim read it before it comes off the iron. A miss from the
+   * side mostly comes down on the far side, further out off a longer shot; that is where they go.
+   * Defenders near the rim box out the nearest attacker (a body between him and the rim, in contact),
+   * or, with nobody to box out, take a step or two towards that spot; the attackers in close (two at most) crash it (a box-out holds them
+   * off: bodies never pass through each other). As it comes off the rim, the rebound beat sends them
+   * all to where it really comes down. `busy`: the shooter, the man on him and the rebounder, who
+   * have their own jobs.
+   */
+  const readTheMiss = (from: Pos, busy: string[]) => {
+    const vx = from.x - HOOP.x;
+    const vy = from.y - HOOP.y;
+    const len = Math.hypot(vx, vy) || 1;
+    const r = Math.max(1.4, Math.min(3.6, 0.8 + len * 0.25));
+    // Mirrored across the lane: the far side.
+    const read = insideCourt({ x: HOOP.x + (vx / len) * r, y: HOOP.y - (vy / len) * r });
+    const near = (k: string) => !!at[k] && dist(at[k], HOOP) < READ_ZONE_M;
+    const free = (k: string) => !busy.includes(k) && near(k);
+    // The bigs in close crash it (the two nearest the spot); the others are getting back.
+    const attackers = offKeys
+      .filter((k) => free(k) && dist(at[k], HOOP) < CRASH_ZONE_M)
+      .sort((a, b) => dist(at[a], read) - dist(at[b], read))
+      .slice(0, CRASHERS);
+    const boxed = new Set<string>();
+    for (const d of defIds.map(kDef).filter(free)) {
+      const man = offKeys.filter((a) => free(a) && !boxed.has(a) && dist(at[a], at[d]) < 3.5).sort((a, b) => dist(at[a], at[d]) - dist(at[b], at[d]))[0];
+      if (man) {
+        boxed.add(man);
+        const m = at[man];
+        const l = dist(m, HOOP) || 1;
+        place(d, insideCourt({ x: m.x + ((HOOP.x - m.x) / l) * BOX_OUT_M, y: m.y + ((HOOP.y - m.y) / l) * BOX_OUT_M }));
+      } else {
+        // Nobody to box out: a step or two towards where it will come down, never leaving his man for it.
+        const l = dist(at[d], read) || 1;
+        const step = Math.min(1.5, Math.max(0, l - BODY_M));
+        place(d, insideCourt({ x: at[d].x + ((read.x - at[d].x) / l) * step, y: at[d].y + ((read.y - at[d].y) / l) * step }));
+      }
+    }
+    for (const a of attackers) {
+      // Towards the spot, from his side of it, stopping short of it: they read it, they don't know it.
+      const l = dist(at[a], read) || 1;
+      const stop = Math.min(l, BODY_M * 1.8);
+      at[a] = insideCourt({ x: read.x + ((at[a].x - read.x) / l) * stop, y: read.y + ((at[a].y - read.y) / l) * stop });
+    }
+    // No pace of their own: while the shot is up everyone goes all out anyway (motion.ts), and a pace
+    // set here would stay with them after it (crashers would run back instead of jogging).
+    contact = [...contact, ...attackers];
+    spacing = false;
+    autoDefence = false;
+  };
+
   /** Where the last defender back stands, to commit to the ball or to recover into the lane. */
   const lastBack = () => defIds.map(kDef).sort((a, b) => at[b].x - at[a].x)[0];
 
@@ -931,10 +1063,17 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     }
     // Loose: off the iron it drops and rolls out towards the end line; anywhere else it settles
     // where it is. The official walks over and picks it up.
-    const rest: Ball = dist(ballSpot, HOOP) < 1.2 ? { x: HOOP.x + 0.85, y: MID_Y + (ballSpot.y >= MID_Y ? 0.8 : -0.8), z: 0.11 } : { ...ballSpot, z: 0.11 };
+    let rest: Ball = { ...ballSpot, z: FLOOR_Z };
     if (ballSpot.z > 0.2) {
-      deadBeat = true;
-      push(0, { kind: 'fixed', from: ballAbs(ballSpot), to: ballAbs(rest), arc: 0.3 }, [], undefined, undefined, ballSpot.z > 2 ? 0.65 : 0.4);
+      // It falls, bounces and rolls (out towards the end line if it came off the iron), by physics.
+      const underRim = dist(ballSpot, HOOP) < 1.2;
+      const side = ballSpot.y >= MID_Y ? 1 : -1;
+      const loose = looseBall(ballSpot, underRim && ballSpot.z > 2 ? NET_EXIT_M_S : 0, underRim ? { x: 0.55, y: side * 0.85 } : { x: 0, y: side }, underRim ? 0.9 : 0.4, 1.2, 0);
+      for (const leg of loose.legs) {
+        deadBeat = true;
+        push(0, { kind: 'fixed', from: ballAbs(leg.from), to: ballAbs(leg.to), arc: leg.arc, settled: true }, [], undefined, undefined, leg.seconds);
+      }
+      rest = { ...loose.end, z: FLOOR_Z };
     }
     const near = { x: rest.x + (rest.x < at[official].x ? 0.4 : -0.4), y: rest.y };
     const walk = dist(at[official], near) / PACE_M_S.jog + 0.3;
@@ -1005,34 +1144,32 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
     const under: Pos = { x: COURT.w - HOOP.x, y: MID_Y };
     const thrower = offKeys.filter((k) => k !== pg).sort((a, b) => dist(at[a], under) - dist(at[b], under))[0];
     const side = at[thrower].y < MID_Y ? -1 : 1;
-    const drop: Ball = dist(ballSpot, under) < 1.5 && ballSpot.z < 1 ? { ...ballSpot } : { ...under, z: 0.15 };
-    const bounce: Ball = { x: under.x - 0.35, y: MID_Y + side * 0.45, z: 0.11 };
-    const roll: Ball = { x: under.x - 0.85, y: MID_Y + side * 0.85, z: 0.11 };
-    const rest: Ball = { x: under.x - 1.1, y: MID_Y + side * 1.05, z: 0.11 };
+    // Out of the net it falls, bounces and rolls out towards the end line on his side, by physics; he
+    // takes it as it comes up off a bounce once he is there (or picks it up when it has rolled out).
+    const dropping = dist(ballSpot, under) < 1.5;
+    const drop: Ball = dropping ? { ...ballSpot } : { ...under, z: 0.15 };
+    const ready = dist(lastAt[thrower], { x: under.x - 1.2, y: MID_Y + side * 1.2 }) / (PACE_M_S.jog * factor(thrower)) + 0.2;
+    const loose = looseBall(drop, dropping && drop.z > 1 ? NET_EXIT_M_S : 0, { x: -0.55, y: side * 0.85 }, 0.9, Math.max(0.9, ready));
+    const rest: Ball = { ...loose.end };
     trailer = thrower;
     at[pg] = { x: 3.4, y: MID_Y + side * 3.6 };
     offIds.forEach((id, i) => {
       const k = kOff(id);
       if (k !== pg && k !== thrower) at[k] = pos(BACKCOURT[slot(i)]);
     });
-    at[thrower] = { x: rest.x + 0.3, y: rest.y };
+    at[thrower] = { x: rest.x + 0.35, y: rest.y };
     getBack();
-    const reach = dist(lastAt[thrower], at[thrower]) / (PACE_M_S.jog * factor(thrower)) + 0.45;
     // In the last two minutes the clock stops after a basket; otherwise it runs.
     const stopped = ctx.quarter >= 4 && ctx.clockStart <= 120;
     holder = '';
-    for (const [from, to, arc, seconds] of [
-      [drop, bounce, 0.45, 0.45],
-      [bounce, roll, 0.15, 0.3],
-      [roll, rest, 0, Math.max(0.25, reach - 0.75)],
-    ] as const) {
+    for (const leg of loose.legs) {
       paceFor[thrower] = 'jog';
       deadBeat = stopped;
-      push(0, { kind: 'fixed', from: ballAbs(from), to: ballAbs(to), arc }, [], undefined, undefined, seconds);
+      push(0, { kind: 'fixed', from: ballAbs(leg.from), to: ballAbs(leg.to), arc: leg.arc, settled: true }, [], undefined, undefined, leg.seconds);
     }
     holder = thrower;
     deadBeat = stopped;
-    push(0, { kind: 'toPlayer', from: ballAbs(rest), to: thrower, arc: 0.05 }, [], undefined, undefined, 0.35);
+    push(0, { kind: 'toPlayer', from: ballAbs(rest), to: thrower, arc: 0.05 }, [], undefined, undefined, 0.25);
     // Out behind the end line, beside the board, and in.
     at[thrower] = { x: -OUT_M - 0.1, y: MID_Y + side * 2.3 };
     outOfBounds = thrower;
@@ -1778,9 +1915,10 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
               paceFor[k] = 'run';
             }
           }
-          push(0.2, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, style === 'dunk' ? 0.2 : 0.3);
+          push(0.2, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, style === 'dunk' ? 0.15 : 0.2);
         } else {
           const contactAt = rimContact(from, seed + i);
+          if (next?.type === 'rebound' && !openFinish) readTheMiss(from, [shooterKey, challenger, ...(reboundPlan ? [reboundPlan.key] : [])]);
           push(0.8 + shotDist * 0.033, { kind: 'fromPlayer', from: shooterKey, to: ballAbs(contactAt), arc, style }, [i], undefined, undefined, minSeconds);
           rimHit = { contact: contactAt, from };
         }
@@ -2015,7 +2153,7 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
           push(0, { kind: 'fromPlayer', from: k, to: ballAbs(to), arc: shotArc(FT_SPOT, 'set'), style: 'set' }, [i], undefined, undefined, 0.9);
           if (ev.made) {
             deadBeat = true;
-            push(0, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, 0.25);
+            push(0, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, 0.2);
           }
           // It drops under the basket; the lead official picks it up for whatever comes next.
           ballSpot = { ...(ev.made ? NET : to) };
@@ -2066,17 +2204,25 @@ export function buildScript(ctx: ScriptContext, events: TimedEvent[], prev: Fram
         push(0, { kind: 'fromPlayer', from: k, to: ballAbs(to), arc, style: 'set' }, [i], undefined, undefined, 0.9);
         if (ev.made) {
           deadBeat = !last;
-          push(0, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, 0.25);
+          push(0, { kind: 'fixed', from: ballAbs(RIM), to: ballAbs(NET), arc: 0 }, [], undefined, undefined, 0.2);
         }
         holder = '';
         if (!last) {
           // Back to the lead for the next one.
-          const bounce: Ball = { x: HOOP.x + 0.9, y: MID_Y + 1.3, z: 0.11 };
-          deadBeat = true;
-          push(0, { kind: 'fixed', from: ballAbs(ev.made ? NET : to), to: ballAbs(bounce), arc: ev.made ? 0.3 : 0.45 }, [], undefined, undefined, ev.made ? 0.4 : 0.6);
+          // Out of the net (or off the iron) it falls and bounces towards the lead, who takes it on a bounce.
+          const start: Ball = ev.made ? NET : to;
+          const leadAt = refSpot[lead] ?? at[lead];
+          const toward = { x: leadAt.x - start.x, y: leadAt.y - start.y };
+          const loose = looseBall(start, ev.made ? NET_EXIT_M_S : 0, toward, Math.min(3, Math.max(1, Math.hypot(toward.x, toward.y) / 1.6)), 0.5, 1.0);
+          for (const leg of loose.legs) {
+            deadBeat = true;
+            push(0, { kind: 'fixed', from: ballAbs(leg.from), to: ballAbs(leg.to), arc: leg.arc, settled: true }, [], undefined, undefined, leg.seconds);
+          }
+          const bounce = loose.end;
+          refSpot[lead] = insideCourt({ x: bounce.x + (leadAt.x >= bounce.x ? 0.35 : -0.35), y: bounce.y }, -0.5);
           holder = lead;
           deadBeat = true;
-          push(0, { kind: 'toPlayer', from: ballAbs(bounce), to: lead, arc: 0.35 }, [], undefined, undefined, 0.45);
+          push(0, { kind: 'toPlayer', from: ballAbs(bounce), to: lead, arc: 0.05 }, [], undefined, undefined, 0.3);
         } else if (!ev.made) rimHit = { contact: to, from: FT_SPOT };
         break;
       }

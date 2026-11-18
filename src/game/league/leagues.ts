@@ -7,6 +7,10 @@ import type { Position } from '../../engine/types';
 import { curatedPlayers, journeymen, playerPool, slug, type PoolPlayer } from '../pool';
 
 export type LeagueId = 'street' | 'pro' | 'legends';
+/** America and Europe are separate worlds: a league's clubs are all from one of them (WORLD_SPEC §1.1). */
+export type Region = 'america' | 'europe';
+export const REGIONS: Region[] = ['america', 'europe'];
+export const REGION_NAME: Record<Region, string> = { america: 'America', europe: 'Europe' };
 
 export interface LeagueDef {
   id: LeagueId;
@@ -21,10 +25,11 @@ export interface LeagueDef {
   bench: [number, number];
   benchShare: number;
   /**
-   * The computer clubs: real basketball cities, American and European, with invented nicknames (no
-   * real club's name: SEASON_SPEC R3.2, checked by a test).
+   * The clubs, per region: real cities with invented nicknames (no real club's name: SEASON_SPEC
+   * R3.2, checked by a test). American and European clubs never share a league; the bigger cities
+   * play in the higher leagues.
    */
-  teams: { name: string; abbr: string }[];
+  teams: Record<Region, { name: string; abbr: string }[]>;
 }
 
 export const POOL_SIZE = 140;
@@ -41,16 +46,28 @@ export const LEAGUES: Record<LeagueId, LeagueDef> = {
     quality: [38, 56],
     bench: [34, 46],
     benchShare: 0.3,
-    teams: [
-      { name: 'Kaunas Ambers', abbr: 'KAU' },
-      { name: 'Memphis Paddlers', abbr: 'MEM' },
-      { name: 'Bologna Porticos', abbr: 'BOL' },
-      { name: 'Sacramento Prospectors', abbr: 'SAC' },
-      { name: 'Vitoria Foxes', abbr: 'VIT' },
-      { name: 'Indianapolis Speedsters', abbr: 'IND' },
-      { name: 'Valencia Oranges', abbr: 'VAL' },
-      { name: 'Lyon Larks', abbr: 'LYO' },
-    ],
+    teams: {
+      america: [
+        { name: 'Memphis Paddlers', abbr: 'MEM' },
+        { name: 'Sacramento Prospectors', abbr: 'SAC' },
+        { name: 'Indianapolis Speedsters', abbr: 'IND' },
+        { name: 'Portland Bridges', abbr: 'POR' },
+        { name: 'Charlotte Racers', abbr: 'CHA' },
+        { name: 'Salt Lake Gulls', abbr: 'SLC' },
+        { name: 'Oklahoma City Twisters', abbr: 'OKC' },
+        { name: 'Milwaukee Anchors', abbr: 'MKE' },
+      ],
+      europe: [
+        { name: 'London Cabbies', abbr: 'LON' },
+        { name: 'Amsterdam Tulips', abbr: 'AMS' },
+        { name: 'Lisbon Navigators', abbr: 'LIS' },
+        { name: 'Manchester Bees', abbr: 'MAN' },
+        { name: 'Rome Centurions', abbr: 'ROM' },
+        { name: 'Hamburg Tugboats', abbr: 'HBG' },
+        { name: 'Antwerp Diamonds', abbr: 'ANT' },
+        { name: 'Ljubljana Larches', abbr: 'LJU' },
+      ],
+    },
   },
   pro: {
     id: 'pro',
@@ -61,16 +78,28 @@ export const LEAGUES: Record<LeagueId, LeagueDef> = {
     quality: [50, 66],
     bench: [42, 54],
     benchShare: 0.35,
-    teams: [
-      { name: 'Philadelphia Bells', abbr: 'PHI' },
-      { name: 'Milan Herons', abbr: 'MIL' },
-      { name: 'Miami Flamingos', abbr: 'MIA' },
-      { name: 'Athens Owls', abbr: 'ATH' },
-      { name: 'Denver Peaks', abbr: 'DEN' },
-      { name: 'Belgrade Kestrels', abbr: 'BEL' },
-      { name: 'Paris Swifts', abbr: 'PAR' },
-      { name: 'Seattle Squalls', abbr: 'SEA' },
-    ],
+    teams: {
+      america: [
+        { name: 'Denver Peaks', abbr: 'DEN' },
+        { name: 'Seattle Squalls', abbr: 'SEA' },
+        { name: 'Phoenix Mirages', abbr: 'PHX' },
+        { name: 'Atlanta Peaches', abbr: 'ATL' },
+        { name: 'San Francisco Trolleys', abbr: 'SFO' },
+        { name: 'Washington Monuments', abbr: 'WAS' },
+        { name: 'Detroit Gears', abbr: 'DET' },
+        { name: 'Minneapolis Voyagers', abbr: 'MIN' },
+      ],
+      europe: [
+        { name: 'Valencia Oranges', abbr: 'VAL' },
+        { name: 'Bologna Porticos', abbr: 'BOL' },
+        { name: 'Vitoria Foxes', abbr: 'VIT' },
+        { name: 'Lyon Larks', abbr: 'LYO' },
+        { name: 'Munich Alpines', abbr: 'MUN' },
+        { name: 'Berlin Sparrows', abbr: 'BER' },
+        { name: 'Vilnius Storks', abbr: 'VIL' },
+        { name: 'Zagreb Kites', abbr: 'ZAG' },
+      ],
+    },
   },
   legends: {
     id: 'legends',
@@ -81,22 +110,40 @@ export const LEAGUES: Record<LeagueId, LeagueDef> = {
     quality: [60, 74],
     bench: [46, 58],
     benchShare: 0.45,
-    teams: [
-      { name: 'Los Angeles Palms', abbr: 'LAP' },
-      { name: 'Madrid Meteors', abbr: 'MAD' },
-      { name: 'New York Skyliners', abbr: 'NYS' },
-      { name: 'Barcelona Breakers', abbr: 'BCN' },
-      { name: 'Chicago Gales', abbr: 'CHI' },
-      { name: 'Istanbul Crescents', abbr: 'IST' },
-      { name: 'Boston Lanterns', abbr: 'BOS' },
-      { name: 'Houston Orbits', abbr: 'HOU' },
-    ],
+    teams: {
+      america: [
+        { name: 'Los Angeles Palms', abbr: 'LAP' },
+        { name: 'New York Skyliners', abbr: 'NYS' },
+        { name: 'Chicago Gales', abbr: 'CHI' },
+        { name: 'Boston Lanterns', abbr: 'BOS' },
+        { name: 'Houston Orbits', abbr: 'HOU' },
+        { name: 'Philadelphia Bells', abbr: 'PHI' },
+        { name: 'Miami Flamingos', abbr: 'MIA' },
+        { name: 'Dallas Lassos', abbr: 'DAL' },
+      ],
+      europe: [
+        { name: 'Madrid Meteors', abbr: 'MAD' },
+        { name: 'Barcelona Breakers', abbr: 'BCN' },
+        { name: 'Istanbul Crescents', abbr: 'IST' },
+        { name: 'Athens Owls', abbr: 'ATH' },
+        { name: 'Belgrade Kestrels', abbr: 'BEL' },
+        { name: 'Milan Herons', abbr: 'MIL' },
+        { name: 'Kaunas Ambers', abbr: 'KAU' },
+        { name: 'Paris Swifts', abbr: 'PAR' },
+      ],
+    },
   },
 };
 
 /** The hand-made players (no generated ones), best first. */
 function curatedByOverall(): PoolPlayer[] {
   return [...curatedPlayers()].sort((a, b) => composite(b.player).overall - composite(a.player).overall || (a.player.id < b.player.id ? -1 : 1));
+}
+
+/** A league's name as shown: "Pro League · Europe" (older saves have no region: the name alone). */
+export function leagueName(id: LeagueId, region?: Region): string {
+  const name = LEAGUES[id]?.name ?? 'Quick League';
+  return region ? `${name} · ${REGION_NAME[region]}` : name;
 }
 
 const cache = new Map<string, PoolPlayer[]>();

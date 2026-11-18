@@ -5,7 +5,7 @@
 // can use a plain object.
 
 import { ROSTER_SIZE } from '../draft';
-import { LEAGUES } from './leagues';
+import { leagueName } from './leagues';
 import { MATCHDAYS, poolOf, table, type QuickLeague } from './quickLeague';
 
 /** The save format this version of the game writes. */
@@ -50,7 +50,7 @@ const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ([
 
 export function summarise(q: QuickLeague): SaveSummary {
   const me = q.teams.findIndex((t) => t.human !== null);
-  const base = { club: q.teams[me]?.name ?? '?', league: LEAGUES[q.league]?.name ?? 'Quick League', manager: q.manager };
+  const base = { club: q.teams[me]?.name ?? '?', league: leagueName(q.league, q.region), manager: q.manager };
   if (q.phase === 'draft') return { ...base, progress: `Draft · pick ${q.draft.pickNo + 1} of ${q.teams.length * ROSTER_SIZE}` };
   const rows = table(q);
   const at = rows.findIndex((r) => r.team === me);

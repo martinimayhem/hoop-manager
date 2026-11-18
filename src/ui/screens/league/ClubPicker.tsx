@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import { composite } from '../../../engine/ratings';
 import type { Team } from '../../../engine/types';
-import { LEAGUES, type LeagueId } from '../../../game/league/leagues';
+import { leagueName, type LeagueId, type Region } from '../../../game/league/leagues';
 import { createLeague, takeOver, teamOf, type QuickLeague } from '../../../game/league/quickLeague';
 import { listSlots, summarise } from '../../../game/league/saves';
 import { Rating } from '../../components/common';
@@ -57,9 +57,9 @@ function clubsOf(q: QuickLeague): Club[] {
   });
 }
 
-export function ClubPicker({ league, onBack, onStart }: { league: LeagueId; onBack: () => void; onStart: (q: QuickLeague, slot: number) => void }) {
+export function ClubPicker({ league, region, onBack, onStart }: { league: LeagueId; region: Region; onBack: () => void; onStart: (q: QuickLeague, slot: number) => void }) {
   // A new league each time the screen opens: new squads, a new schedule.
-  const [q] = useState(() => createLeague(league, Date.now() >>> 0));
+  const [q] = useState(() => createLeague(league, region, Date.now() >>> 0));
   const clubs = useMemo(() => clubsOf(q), [q]);
   const [pick, setPick] = useState(() => clubs.find((c) => c.rank === 4)?.index ?? 0);
   const [manager, setManager] = useState('');
@@ -87,7 +87,7 @@ export function ClubPicker({ league, onBack, onStart }: { league: LeagueId; onBa
       <header className="cp-bar">
         <button onClick={onBack}>◀ Leagues</button>
         <div>
-          <h1>{LEAGUES[league].name}</h1>
+          <h1>{leagueName(league, region)}</h1>
           <span className="muted small">Choose the club you will manage. 14 matchdays against the other seven.</span>
         </div>
       </header>

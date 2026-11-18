@@ -2,18 +2,23 @@
 // (then, on the next screen, the club). Saved games and a friendly match are a click away; the court
 // view and match speed below hold for every match.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Speed } from '../match/controller';
 import type { Setup } from '../App';
-import { LEAGUES, type LeagueId } from '../../game/league/leagues';
+import { LEAGUES, REGIONS, REGION_NAME, type LeagueId, type Region } from '../../game/league/leagues';
 import type { QuickLeague } from '../../game/league/quickLeague';
 import { listSlots, summarise } from '../../game/league/saves';
 import { browserStorage } from './league/storage';
+import { listWorlds, type WorldSlot } from '../../game/world/saves';
+import type { World } from '../../game/world/types';
+import { store as careerStore } from './career/CareerNew';
 
 /** Where the court view choice is remembered in this browser (shared with the match screen's toggle). */
 export const VIEW_3D_KEY = 'hm.view3d';
 /** And the match speed. */
 export const SPEED_KEY = 'hm.speed';
+/** And the region last chosen for a new game. */
+const REGION_KEY = 'hm.region';
 
 /** The view to start with: ?view=3d or ?view=2d in the address, else the last one used, else 2D. */
 function startView(): Setup['view'] {
@@ -51,16 +56,32 @@ export function MainMenu({
   onLeague,
   onLoad,
   onContinue,
+  onCareerNew,
+  onCareerOpen,
 }: {
   /** A friendly: the ready-made squads, no league. */
   onFriendly: (setup: Setup) => void;
-  /** A new game in this league: on to choosing the club. */
-  onLeague: (league: LeagueId) => void;
+  /** A new game in this league, in America or Europe: on to choosing the club. */
+  onLeague: (league: LeagueId, region: Region) => void;
   onLoad: () => void;
   onContinue: (league: QuickLeague, slot: number) => void;
+  /** A new career: build the world, choose the club. */
+  onCareerNew: () => void;
+  onCareerOpen: (world: World, slot: number) => void;
 }) {
   const [speed, setSpeedState] = useState<Speed>(lastSpeed);
   const [view, setViewState] = useState<Setup['view']>(startView);
+  const [region, setRegionState] = useState<Region>(() => {
+    try {
+      return localStorage.getItem(REGION_KEY) === 'europe' ? 'europe' : 'america';
+    } catch {
+      return 'america';
+    }
+  });
+  const setRegion = (r: Region) => {
+    setRegionState(r);
+    remember(REGION_KEY, r);
+  };
   const setSpeed = (s: Speed) => {
     setSpeedState(s);
     remember(SPEED_KEY, s);
@@ -72,6 +93,16 @@ export function MainMenu({
 
   const [slots] = useState(() => listSlots(browserStorage));
   const saves = slots.flatMap((s) => (s.status === 'ok' ? [s] : []));
+  // Careers are saved in IndexedDB (they are big): read once, after the menu is up.
+  const [careers, setCareers] = useState<Extract<WorldSlot, { status: 'ok' }>[]>([]);
+  useEffect(() => {
+    let live = true;
+    listWorlds(careerStore).then((s) => live && setCareers(s.flatMap((x) => (x.status === 'ok' ? [x] : [])).sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const career = careers[0];
   // The most recently saved game, to carry on with.
   const latest = [...saves].sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))[0];
 
@@ -104,15 +135,43 @@ export function MainMenu({
           );
         })()}
 
+      <section className="panel mm-career">
+        <div>
+          <div className="mm-kicker">Career · new</div>
+          <b className="mm-career-title">Manage a club, season after season</b>
+          <small className="muted">128 clubs in America and Europe, four divisions each. Pick any club and look around the world: squads, colleges, free agents. Playing the season comes next.</small>
+        </div>
+        <div className="mm-career-actions">
+          {career && (
+            <button className="primary" onClick={() => onCareerOpen(career.data, career.slot)} title={`${career.summary.league} · season ${career.summary.season}`}>
+              Continue {career.summary.club} ▶
+            </button>
+          )}
+          <button className={career ? '' : 'primary'} onClick={onCareerNew}>
+            New career ▶
+          </button>
+        </div>
+      </section>
+
       <section className="panel mm-new">
-        <h3>New game · choose where to start</h3>
+        <div className="mm-new-head">
+          <h3>Quick League · one season, eight clubs</h3>
+          <span className="hub-seg" title="America and Europe are separate: a league's clubs are all from one of them.">
+            {REGIONS.map((r) => (
+              <button key={r} className={region === r ? 'on' : ''} onClick={() => setRegion(r)}>
+                {REGION_NAME[r]}
+              </button>
+            ))}
+          </span>
+        </div>
         <div className="mm-leagues">
           {LEAGUE_IDS.slice()
             .reverse()
             .map((id) => (
-              <button key={id} className="mm-league" onClick={() => onLeague(id)}>
+              <button key={id} className="mm-league" onClick={() => onLeague(id, region)}>
                 <span className="mm-level">{LEVEL[id]}</span>
                 <b>{LEAGUES[id].name}</b>
+                <span className="mm-cities">{LEAGUES[id].teams[region].map((t) => t.name.split(' ').slice(0, -1).join(' ')).join(', ')}</span>
                 <small>{LEAGUES[id].blurb}</small>
                 <span className="mm-go">Choose a club ▶</span>
               </button>
