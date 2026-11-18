@@ -669,7 +669,7 @@ export class CourtRenderer {
         ctx.save();
         ctx.setTransform(ctx.getTransform().multiply(new DOMMatrix([(ax.x - o.x) / 100, (ax.y - o.y) / 100, (down.x - o.x) / 100, (down.y - o.y) / 100, o.x, o.y])));
         ctx.fillStyle = '#e8f6f3';
-        ctx.font = '800 38px system-ui, sans-serif';
+        ctx.font = '700 40px "Barlow Condensed", sans-serif';
         ctx.textBaseline = 'top';
         ctx.fillText('HOOP MANAGER', 0, 0, (panel - 0.5) * 100);
         ctx.restore();
@@ -1058,7 +1058,7 @@ export class CourtRenderer {
     ctx.translate((front ? side : -side) * 1.5, front ? -30.5 : -31.5);
     ctx.scale(Math.max(0.62, across), 1);
     ctx.fillStyle = team.text;
-    ctx.font = `800 ${front ? 7 : 9.5}px system-ui, sans-serif`;
+    ctx.font = `700 ${front ? 7.5 : 10}px "Barlow Condensed", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(info.label, 0, 0, 13);

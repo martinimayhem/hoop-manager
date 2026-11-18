@@ -9,6 +9,7 @@ import { LEAGUES } from '../../../game/league/leagues';
 import type { TableRow } from '../../../game/league/standings';
 import type { Speed } from '../../match/controller';
 import { useSort } from '../../components/sortable';
+import { NextIcon, MenuIcon, TrophyIcon } from '../../icons';
 
 const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th')}`;
 
@@ -115,7 +116,9 @@ export function LeagueHub({
   return (
     <div className="hub">
       <header className="hub-bar">
-        <button onClick={onMenu}>☰ Menu</button>
+        <button onClick={onMenu}>
+          <MenuIcon /> Menu
+        </button>
         <div className="hub-title">
           <h1>{LEAGUES[league.league].name}</h1>
           <span className="muted small">
@@ -151,14 +154,14 @@ export function LeagueHub({
             <section className="panel hub-next">
               <div className="hub-next-label">Season over</div>
               <div className="hub-champion">
-                🏆 <b>{name(rows[0].team)}</b> are the champions
+                <TrophyIcon /> <b>{name(rows[0].team)}</b> are the champions
               </div>
               <div className="hub-next-sub">
                 <span className="home">{name(me)}</span> finished {ordinal(placeOf(me))}, {my.won}–{my.lost}
               </div>
               <div className="hub-next-actions">
                 <button className="primary big" onClick={onNewLeague}>
-                  New game ▶
+                  New game <NextIcon />
                 </button>
               </div>
             </section>
@@ -182,7 +185,7 @@ export function LeagueHub({
                   Sim my match
                 </button>
                 <button className="primary big" onClick={onPlay}>
-                  Play the match ▶
+                  Play the match <NextIcon />
                 </button>
               </div>
             </section>
@@ -192,7 +195,7 @@ export function LeagueHub({
               <div className="hub-next-sub">You have no game this matchday.</div>
               <div className="hub-next-actions">
                 <button className="primary big" onClick={onPlay}>
-                  Play matchday {league.matchday + 1} ▶
+                  Play matchday {league.matchday + 1} <NextIcon />
                 </button>
               </div>
             </section>

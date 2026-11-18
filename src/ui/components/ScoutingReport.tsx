@@ -20,7 +20,7 @@ export interface ScoutView {
   hypes?: Map<string, number>;
 }
 
-export function ScoutingReport({ opponent, us, side, scout }: { opponent: Team; us: Team; /** The opponent's kit. */ side?: Side; scout?: ScoutView }) {
+export function ScoutingReport({ opponent, us, side, scout, section = 'all' }: { opponent: Team; us: Team; /** The opponent's kit. */ side?: Side; scout?: ScoutView; /** Their players, their likely tactics, or both. */ section?: 'players' | 'tendencies' | 'all' }) {
   const pool = poolById();
   const hype = (id: string) => scout?.hypes?.get(id) ?? pool.get(id)?.hype ?? HYPE_FALLBACK;
   const accuracy = scout?.accuracy ?? DEFAULT_SCOUT_ACCURACY;
@@ -39,8 +39,9 @@ export function ScoutingReport({ opponent, us, side, scout }: { opponent: Team; 
   });
   const players = sorter.sorted([...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall));
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      <div className="muted small">Ranges are your scout's estimates. Famous players are easy to read; unknowns could surprise you.</div>
+    <div className="scout-report">
+      {section !== 'tendencies' && (<>
+      <div className="muted small">Ranges are your scout's estimates: famous players are easy to read, unknowns could surprise you.</div>
       <div>
         <table className="brk-table scout-table eq">
           <thead>
@@ -81,6 +82,8 @@ export function ScoutingReport({ opponent, us, side, scout }: { opponent: Team; 
           </tbody>
         </table>
       </div>
+      </>)}
+      {section !== 'players' && (
       <div className="row" style={{ alignItems: 'flex-start' }}>
         <div style={{ flex: 1 }}>
           <h3>Likely offence</h3>
@@ -93,6 +96,7 @@ export function ScoutingReport({ opponent, us, side, scout }: { opponent: Team; 
           <ProbBars dist={t.tempo} labels={TEMPO_INFO} />
         </div>
       </div>
+      )}
     </div>
   );
 }

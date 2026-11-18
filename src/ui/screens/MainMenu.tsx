@@ -12,6 +12,7 @@ import { LEAGUES, type LeagueId } from '../../game/league/leagues';
 import type { QuickLeague } from '../../game/league/quickLeague';
 import { listSlots, summarise } from '../../game/league/saves';
 import { browserStorage } from './league/storage';
+import { NextIcon } from '../icons';
 
 /** Where the court view choice is remembered in this browser (shared with the match screen's toggle). */
 export const VIEW_3D_KEY = 'hm.view3d';
@@ -102,6 +103,8 @@ export function MainMenu({
         <div className="muted">Take over a club, scout the opponent, set your tactics, and out-coach the other bench.</div>
       </div>
 
+      <div className="mm-cols">
+      <div className="mm-col">
       {latest &&
         (() => {
           const x = summarise(latest.data);
@@ -116,7 +119,7 @@ export function MainMenu({
                 </div>
               </div>
               <button className="primary big" onClick={() => onContinue(latest.data, latest.slot)}>
-                Continue ▶
+                Continue <NextIcon />
               </button>
             </section>
           );
@@ -130,7 +133,7 @@ export function MainMenu({
             <div className="muted">318 clubs in America and 11 European countries. Pick any club and look around: squads, players, competitions, money. Playing the season comes next.</div>
           </div>
           <button className="primary big" onClick={onCareerNew}>
-            New career ▶
+            New career <NextIcon />
           </button>
         </div>
         {used.length > 0 && (
@@ -145,7 +148,9 @@ export function MainMenu({
                       {s.summary.manager ? ` · ${s.summary.manager}` : ''} · season {s.summary.season}–{String(s.summary.season + 1).slice(2)}
                     </small>
                   </span>
-                  <span className="mm-go">Continue ▶</span>
+                  <span className="mm-go">
+                    Continue <NextIcon />
+                  </span>
                 </button>
               ) : s.status === 'newer' || s.status === 'broken' ? (
                 <div key={s.slot} className="mm-career-slot bad-save" role="note">
@@ -160,6 +165,8 @@ export function MainMenu({
         )}
       </section>
 
+      </div>
+      <div className="mm-col">
       <section className="panel mm-new">
         <h3>New game · choose where to start</h3>
         <div className="mm-leagues">
@@ -170,7 +177,9 @@ export function MainMenu({
                 <span className="mm-level">{LEVEL[id]}</span>
                 <b>{LEAGUES[id].name}</b>
                 <small>{LEAGUES[id].blurb}</small>
-                <span className="mm-go">Choose a club ▶</span>
+                <span className="mm-go">
+                  Choose a club <NextIcon />
+                </span>
               </button>
             ))}
         </div>
@@ -178,10 +187,10 @@ export function MainMenu({
 
       <div className="mm-links">
         <button className="mm-link" onClick={onLoad}>
-          Saved games ({saves.length}) ▸
+          Saved games ({saves.length}) <NextIcon />
         </button>
         <button className="mm-link" onClick={() => onFriendly({ names: ['Harbor Hammers', 'Skyline Sparks'], speed, view })} title="One match, no league: Harbor Hammers (big and slow) against Skyline Sparks (small and fast).">
-          Friendly match ▸
+          Friendly match <NextIcon />
         </button>
       </div>
 
@@ -206,6 +215,8 @@ export function MainMenu({
         </span>
         <span className="muted small">Both can be changed during a match too.</span>
       </section>
+      </div>
+      </div>
     </div>
   );
 }

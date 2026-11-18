@@ -135,8 +135,8 @@ export function ShotChart({ events, side, name, compact = false }: { events: Tim
         </tbody>
       </table>
       <div className="muted" style={{ fontSize: 12 }}>
-        Squares are 1 m. <span style={{ color: 'var(--good)' }}>■</span> 1.2+ points a shot <span style={{ color: 'var(--warn)' }}>■</span> 0.9–1.2{' '}
-        <span style={{ color: 'var(--bad)' }}>■</span> under 0.9; fainter means fewer shots.
+        Squares are 1 m. <span className="swatch" style={{ background: 'var(--good)' }} /> 1.2+ points a shot <span className="swatch" style={{ background: 'var(--warn)' }} /> 0.9–1.2{' '}
+        <span className="swatch" style={{ background: 'var(--bad)' }} /> under 0.9; fainter means fewer shots.
       </div>
       </div>
     </div>

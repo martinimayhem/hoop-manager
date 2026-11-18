@@ -55,15 +55,15 @@ export function offenceOptions(s: MatchState, side: Side): CallOption<OffenceCal
   const big = bestOnCourt(s, side, 'insideScoring');
   const lead = s.teams[side].score - s.teams[other(side)].score;
   const options: CallOption<OffenceCall>[] = [
-    { call: 'isoStar', icon: '🌟', label: `Iso ${name(s, side, star)}`, detail: 'Clear out and let your best player go one-on-one.' },
-    { call: 'pickAndRoll', icon: '🔁', label: 'Pick & roll', detail: `${name(s, side, handler)} and ${name(s, side, roller)} run the two-man game.` },
-    { call: 'kickOut', icon: '🎯', label: 'Kick-out three', detail: `Drive, draw the defence, kick to ${name(s, side, shooter)} for an open three.` },
-    { call: 'postUp', icon: '💪', label: `Post up ${name(s, side, big)}`, detail: 'Feed the big man on the block.' },
+    { call: 'isoStar', icon: 'star', label: `Iso ${name(s, side, star)}`, detail: 'Clear out and let your best player go one-on-one.' },
+    { call: 'pickAndRoll', icon: 'repeat', label: 'Pick & roll', detail: `${name(s, side, handler)} and ${name(s, side, roller)} run the two-man game.` },
+    { call: 'kickOut', icon: 'target', label: 'Kick-out three', detail: `Drive, draw the defence, kick to ${name(s, side, shooter)} for an open three.` },
+    { call: 'postUp', icon: 'biceps', label: `Post up ${name(s, side, big)}`, detail: 'Feed the big man on the block.' },
   ];
   if (lead > 0 && s.clock > 20) {
-    options.push({ call: 'runClock', icon: '⏱️', label: 'Run the clock', detail: 'Burn the shot clock before shooting. Fewer possessions for them.' });
+    options.push({ call: 'runClock', icon: 'timer', label: 'Run the clock', detail: 'Burn the shot clock before shooting. Fewer possessions for them.' });
   }
-  options.push({ call: null, icon: '▶️', label: 'Play it normally', detail: 'Stick with your game plan.' });
+  options.push({ call: null, icon: 'play', label: 'Play it normally', detail: 'Stick with your game plan.' });
   return options;
 }
 
@@ -73,15 +73,15 @@ export function defenceOptions(s: MatchState, side: Side): CallOption<DefenceCal
   const worstFt = [...s.teams[opp].lineup].sort((a, b) => playerOf(s, opp, a).attrs.freeThrow - playerOf(s, opp, b).attrs.freeThrow)[0];
   const behind = s.teams[side].score < s.teams[opp].score;
   const options: CallOption<DefenceCall>[] = [
-    { call: 'doubleStar', icon: '👥', label: `Double ${name(s, opp, star)}`, detail: 'Make someone else beat you.' },
-    { call: 'packPaint', icon: '🧱', label: 'Pack the paint', detail: 'No layups: dare them to shoot threes.' },
-    { call: 'denyThree', icon: '🚫', label: 'Run them off the line', detail: 'No threes: they can drive instead.' },
+    { call: 'doubleStar', icon: 'users', label: `Double ${name(s, opp, star)}`, detail: 'Make someone else beat you.' },
+    { call: 'packPaint', icon: 'wall', label: 'Pack the paint', detail: 'No layups: dare them to shoot threes.' },
+    { call: 'denyThree', icon: 'ban', label: 'Run them off the line', detail: 'No threes: they can drive instead.' },
   ];
   if (behind && s.quarter >= 4) {
     const ft = playerOf(s, opp, worstFt).attrs.freeThrow;
-    options.push({ call: 'foul', icon: '✋', label: 'Foul on purpose', detail: `Stop the clock: send ${name(s, opp, worstFt)} (free throws ${ft}) to the line.` });
+    options.push({ call: 'foul', icon: 'hand', label: 'Foul on purpose', detail: `Stop the clock: send ${name(s, opp, worstFt)} (free throws ${ft}) to the line.` });
   }
-  options.push({ call: null, icon: '▶️', label: 'Play it normally', detail: 'Stick with your game plan.' });
+  options.push({ call: null, icon: 'play', label: 'Play it normally', detail: 'Stick with your game plan.' });
   return options;
 }
 

@@ -11,8 +11,9 @@ import { listWorlds, writeWorld, type WorldSlot } from '../../../game/world/save
 import { REGION_NAME, REGIONS, type Competition, type Region, type World, type WorldClub } from '../../../game/world/types';
 import { useConfirm } from '../../components/Confirm';
 import { careerStore } from './store';
-import { Badge, country, mid, overallRange, ratingTone, showRange } from './parts';
+import { Badge, country, mid, overallRange, Pager, ratingTone, showRange, useFitRows } from './parts';
 import './career.css';
+import { BackIcon } from '../../icons';
 
 function clubMoney(w: World, c: WorldClub): string {
   const s = moneySummary(w, c);
@@ -48,12 +49,15 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
   const comps = useMemo<Competition[]>(() => {
     if (!world) return [];
     const inRegion = world.competitions.filter((c) => c.region === region);
-    if (region === 'america' || nation === 'all') return inRegion.filter((c) => region === 'america' || c.kind === 'bigLeague' || c.tier === 1);
+    if (region === 'america') return inRegion;
+    if (nation === 'all') return inRegion.filter((c) => c.kind === 'bigLeague');
     return inRegion.filter((c) => c.country === nation);
   }, [world, region, nation]);
   const comp = comps.find((c) => c.id === compId) ?? comps[0];
   const clubs = useMemo(() => (world && comp ? comp.clubs.map((id) => world.clubs.find((c) => c.id === id)!).sort((a, b) => strength(world, b) - strength(world, a)) : []), [world, comp]);
   const club = clubs.find((c) => c.id === chosen) ?? clubs[0];
+  // The list shows as many clubs as fit; more go on further pages (GAME_FLOW §6.1a).
+  const fit = useFitRows(clubs.length, '.cr-club', comp?.id);
 
   if (failed) return <div className="cr-wait">The world could not be created. Reload the page to try again.</div>;
   if (!world || !club || !comp)
@@ -99,11 +103,11 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
       {confirm.dialog}
       <header className="cr-top">
         <button className="cr-back" onClick={onBack}>
-          ← Menu
+          <BackIcon /> Menu
         </button>
         <div className="cr-new-title">
           <h1>New career</h1>
-          <span className="cr-sub">Choose any club, in America or Europe, at any level. Start at the top, or climb from the bottom.</span>
+          <span className="cr-sub">Choose any club, at any level: start at the top, or climb from the bottom.</span>
         </div>
       </header>
 
@@ -153,7 +157,7 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
           </div>
 
           <div className="cr-clubs" role="list">
-            {clubs.map((c) => {
+            {clubs.slice(fit.from, fit.to).map((c) => {
               const best = squad(world, c).slice(0, 3);
               return (
                 <button key={c.id} role="listitem" className={`cr-club ${c.id === club.id ? 'on' : ''}`} aria-pressed={c.id === club.id} onClick={() => setChosen(c.id)}>
@@ -174,11 +178,12 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
               );
             })}
           </div>
+          <Pager fit={fit} total={clubs.length} />
         </section>
 
         <aside className="cr-card cr-new-side" id="cr-new-side">
           <div className="cr-new-club">
-            <Badge club={club} size={56} />
+            <Badge club={club} size={44} />
             <div>
               <h2>{club.name}</h2>
               <span className="cr-sub">
@@ -205,10 +210,10 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
             <dd>{club.arena.capacity.toLocaleString('en-US')} seats</dd>
           </dl>
           <div>
-            <span className="cr-label">Best players</span>
+            <span className="cr-label">Best players (scout estimates)</span>
             <ul className="cr-best">
               {squad(world, club)
-                .slice(0, 5)
+                .slice(0, 3)
                 .map((p) => {
                   const r = overallRange(world, p);
                   return (
@@ -220,7 +225,6 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
                   );
                 })}
             </ul>
-            <span className="cr-sub">Ratings of other clubs' players are scout estimates.</span>
           </div>
           <label className="cr-field">
             <span className="cr-label">Your name (manager)</span>
@@ -229,11 +233,11 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
           {slots && empty < 0 && (
             <div className="cr-replace">
               <span className="cr-sub">All three career slots are in use. Save over:</span>
-              <div className="cr-pills">
+              <div className="cr-pills cr-slots">
                 {slots.map((s) => (
-                  <button key={s.slot} className={replace === s.slot ? 'on' : ''} onClick={() => setReplace(s.slot)}>
-                    Slot {s.slot + 1}
-                    {s.status === 'ok' ? ` · ${s.summary.club}` : s.status === 'empty' ? '' : ` · ${s.status}`}
+                  <button key={s.slot} className={replace === s.slot ? 'on' : ''} aria-pressed={replace === s.slot} onClick={() => setReplace(s.slot)}>
+                    <b>Slot {s.slot + 1}</b>
+                    <small>{s.status === 'ok' ? s.summary.club : s.status === 'empty' ? 'empty' : s.status}</small>
                   </button>
                 ))}
               </div>
@@ -245,22 +249,6 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
         </aside>
       </div>
 
-      {/* Tablet: the details are below the list, so the chosen club and its button stay in reach. */}
-      <div className="cr-new-bar">
-        <Badge club={club} size={36} />
-        <span className="cr-club-main">
-          <b>{club.name}</b>
-          <small>
-            Rating {strength(world, club).toFixed(0)} · {clubMoney(world, club)}
-          </small>
-        </span>
-        <button className="cr-back" onClick={() => void document.getElementById('cr-new-side')?.scrollIntoView({ behavior: 'smooth' })}>
-          Details
-        </button>
-        <button className="cr-start" disabled={slot === null || saving || !slots} onClick={start}>
-          {saving ? 'Saving…' : 'Manage'}
-        </button>
-      </div>
     </div>
   );
 }

@@ -11,6 +11,8 @@
   --good: #3ccf7a;
   --warn: #ffc83d;
   --bad: #ff4d4d;
+  /* Bundled fonts (src/ui/main.tsx): Inter for text, Barlow Condensed for headings and numbers. */
+  --text-font: 'Inter Variable', sans-serif;
   color-scheme: dark;
 }
 
@@ -22,7 +24,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 14px/1.4 var(--text-font);
 }
 
 button {
@@ -218,7 +220,7 @@ tr.taken {
 }
 .tag {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   padding: 0 6px;
   border-radius: 10px;
   background: var(--panel-2);
@@ -405,7 +407,7 @@ tr.taken {
   border-radius: 8px;
   background: var(--warn);
   color: #000;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   text-align: center;
 }
@@ -435,7 +437,7 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 4px;
   padding: 0 5px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .team-panel {
   display: flex;
@@ -491,7 +493,7 @@ kbd {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   margin-right: 6px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .feed .score {
   font-weight: 700;
@@ -653,12 +655,12 @@ tr.starter td {
   outline: 1px solid var(--warn);
 }
 .pending {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--warn);
 }
 .mins {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .prep > .panel {
@@ -679,7 +681,7 @@ tr.starter td {
   border-radius: 4px;
   padding: 0 4px;
   font-weight: 800;
-  font-size: 11px;
+  font-size: 12px;
   color: #10141c;
 }
 .rating.muted {
@@ -701,18 +703,19 @@ tr.starter td {
 }
 .clutch-title {
   text-align: center;
-  font: 900 44px Impact, 'Arial Black', system-ui, sans-serif;
+  font: 700 44px var(--display);
   letter-spacing: 0.08em;
   color: var(--warn);
   text-shadow: 0 0 18px #ffc83d80;
   animation: pulse 1s ease-in-out infinite alternate;
 }
+/* A glow that breathes (no scaling: scaled text blurs, GAME_FLOW §6.1a). */
 @keyframes pulse {
   from {
-    transform: scale(1);
+    text-shadow: 0 0 10px #ffc83d55;
   }
   to {
-    transform: scale(1.05);
+    text-shadow: 0 0 26px #ffc83dcc;
   }
 }
 .clutch-options {
@@ -757,7 +760,7 @@ tr.starter td {
 }
 tr.group-row td {
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   color: var(--muted);
   padding-top: 8px;
@@ -808,7 +811,7 @@ tr.picked-row td {
   margin-right: 6px;
   padding: 0 4px;
   border-radius: 4px;
-  font: 800 11px/16px system-ui, sans-serif;
+  font: 700 12px/16px var(--text-font);
   text-align: center;
 }
 .player-cell {
@@ -854,7 +857,7 @@ tr.picked-row td {
   background: #2a3756;
 }
 .tt-label {
-  font: 11px system-ui, sans-serif;
+  font: 12px var(--text-font);
   color: #fff;
   min-width: 110px;
 }
@@ -945,7 +948,7 @@ tr.picked-row td {
   border-right-width: 4px;
 }
 .brk-key-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -996,7 +999,7 @@ tr.picked-row td {
 }
 .brk-cmp-label {
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   line-height: 1.2;
 }
@@ -1039,7 +1042,7 @@ tr.picked-row td {
 }
 .brk-table .rating {
   padding: 0 4px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .brk-name {
   max-width: 140px;
@@ -1057,7 +1060,7 @@ tr.picked-row td {
 }
 button.tiny {
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
   margin-left: 2px;
 }
@@ -1094,7 +1097,7 @@ button.tiny {
 }
 .brk-choice-label {
   width: 64px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1198,7 +1201,7 @@ th.sorted {
   white-space: nowrap;
 }
 .dr-who .muted {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .dr-side {
   display: flex;
@@ -1240,7 +1243,7 @@ th.sorted {
 }
 .dr-squad .brk-table .range {
   min-width: 44px;
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 0 4px;
 }
 .dr-budget {
@@ -1253,7 +1256,7 @@ th.sorted {
   height: 100%;
 }
 .dr-need {
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 1px 8px;
   border-radius: 10px;
   border: 1px solid var(--line);
@@ -1316,7 +1319,7 @@ th.sorted {
 }
 .pbp-time {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   margin-right: 6px;
@@ -1324,7 +1327,7 @@ th.sorted {
 }
 .pbp-more {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .pbp-older {
   margin-top: 3px;
@@ -1380,7 +1383,7 @@ th.sorted {
 /* ---- Bench rows: one line each, so the panel fits without scrolling ---- */
 .pl.compact {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .pl.compact .portrait {
   grid-row: auto;
@@ -1417,7 +1420,7 @@ th.sorted {
 .lt-c,
 .gc-tile-l,
 .gc-tile-v {
-  font-family: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  font-family: var(--display);
   font-stretch: condensed;
 }
 
@@ -1441,7 +1444,7 @@ th.sorted {
 .ov-star-head {
   background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 55%, #000));
   color: #fff;
-  font-size: 0.95cqw;
+  font-size: max(12px, 0.95cqw);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1481,7 +1484,7 @@ th.sorted {
   min-width: 0;
 }
 .ov-star-name {
-  font-size: 1.75cqw;
+  font-size: max(12px, 1.75cqw);
   font-weight: 700;
   line-height: 1.05;
   text-transform: uppercase;
@@ -1493,7 +1496,7 @@ th.sorted {
 }
 .ov-star-team {
   margin-top: 0.2cqw;
-  font-size: 0.9cqw;
+  font-size: max(12px, 0.9cqw);
   color: #9fb0c8;
   white-space: nowrap;
   overflow: hidden;
@@ -1513,14 +1516,14 @@ th.sorted {
   border-radius: 0.4cqw;
 }
 .tile-v {
-  font-size: 1.45cqw;
+  font-size: max(12px, 1.45cqw);
   font-weight: 700;
   line-height: 1.1;
   color: #fff;
   font-variant-numeric: tabular-nums;
 }
 .tile-l {
-  font-size: 0.65cqw;
+  font-size: max(12px, 0.65cqw);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1548,7 +1551,7 @@ th.sorted {
 .ov-coach-head {
   display: flex;
   justify-content: space-between;
-  font-size: 0.85cqw;
+  font-size: max(12px, 0.85cqw);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1560,7 +1563,7 @@ th.sorted {
 }
 .ov-coach-text {
   margin-top: 0.2cqw;
-  font-size: 1.15cqw;
+  font-size: max(12px, 1.15cqw);
   line-height: 1.3;
   color: #e8edf7;
 }
@@ -1596,7 +1599,7 @@ th.sorted {
   box-shadow: inset 0 1px 0 #ffffff0d;
 }
 .gc-tile-l {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1659,7 +1662,7 @@ th.sorted {
 }
 .lt-sub {
   margin-left: 10px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
   opacity: 0.8;
@@ -1675,7 +1678,7 @@ th.sorted {
 .lt-head {
   text-transform: uppercase;
   padding: 5px 0 3px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   color: #f4a23c;
@@ -1740,7 +1743,7 @@ th.sorted {
   line-height: 1.1;
 }
 .lt-team {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--team);
   white-space: nowrap;
 }
@@ -1768,7 +1771,7 @@ th.sorted {
    heading; orange column headers; team colours as accents. Later rules win over earlier.
    ===================================================================================== */
 :root {
-  --display: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  --display: 'Barlow Condensed', sans-serif;
   --card-1: #161f2e;
   --card-2: #0e151f;
   --card-line: #2a3a52;
@@ -1850,7 +1853,7 @@ h3 {
 /* Tables */
 th {
   color: var(--head);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1954,7 +1957,7 @@ select:focus {
   letter-spacing: 0.04em;
 }
 .choice small {
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--text-font);
   font-stretch: normal;
   font-weight: 400;
   letter-spacing: 0;
@@ -2117,7 +2120,7 @@ select:focus {
   font-size: 20px;
 }
 .card-tiles .tile-l {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 /* ---- Roster cards: the team name in a banner of its colour ---- */
@@ -2236,7 +2239,7 @@ select:focus {
   width: 30px;
   text-align: right;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: -1px;
 }
 .pl.compact {
@@ -2248,7 +2251,7 @@ select:focus {
 }
 .pl.compact .fouls {
   width: 18px;
-  font-size: 7px;
+  font-size: 12px;
 }
 .pl.compact .pl-sub {
   justify-content: flex-end;
@@ -2285,7 +2288,7 @@ select:focus {
   min-width: 0;
 }
 .pcard-name {
-  font-family: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  font-family: var(--display);
   font-stretch: condensed;
   font-size: 18px;
   font-weight: 700;
@@ -2297,7 +2300,7 @@ select:focus {
 }
 .pcard-meta {
   color: #8d9ab5;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .pcard-status {
   display: flex;
@@ -2306,12 +2309,12 @@ select:focus {
   padding: 4px 6px;
   background: #ffffff0a;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: #b9c4d8;
 }
 .pcard-section {
   margin: 9px 0 4px;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -2336,7 +2339,7 @@ select:focus {
   font-variant-numeric: tabular-nums;
 }
 .pcard-tile span {
-  font-size: 9.5px;
+  font-size: 12px;
   color: #8d9ab5;
 }
 .pcard-tile .rating {
@@ -2348,7 +2351,7 @@ select:focus {
   display: flex;
   justify-content: space-between;
   margin-top: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: #8d9ab5;
 }
 .pcard-shooting b {
@@ -2368,7 +2371,7 @@ select:focus {
   grid-template-columns: 92px 1fr 24px;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .pcard-rating b {
   text-align: right;
@@ -2387,7 +2390,7 @@ select:focus {
 }
 .pcard-note {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: #8d9ab5;
   font-style: italic;
 }
@@ -2459,7 +2462,7 @@ th.sortable .sort-mark {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 8px;
+  font-size: 12px;
 }
 th.sortable.left .sort-mark {
   position: static;
@@ -2485,7 +2488,7 @@ table.scout-table.eq .wide {
 }
 table.scout-table.eq .range {
   padding: 0 3px;
-  font-size: 11px;
+  font-size: 12px;
 }
 table.eq th {
   padding-left: 3px;
@@ -2496,7 +2499,7 @@ table.scout-table.eq .wide {
   width: 27%;
 }
 table.scout-table.eq .stars {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: -0.05em;
 }
 .brk-roster table.eq .wide {
@@ -2593,7 +2596,7 @@ table.scout-table.eq .stars {
 }
 .ql-league small {
   color: var(--muted);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--text-font);
   font-stretch: normal;
   letter-spacing: 0;
   font-size: 13px;
@@ -2900,8 +2903,10 @@ table.scout-table.eq .stars {
 .res-box .brk-table td {
   height: 22px;
 }
+/* Smaller faces in the result's box score: drawn at that size (SVG), not scaled down. */
 .res-box .portrait {
-  transform: scale(0.85);
+  width: 16px !important;
+  height: 20px !important;
 }
 .res-box .box-totals {
   margin-top: 4px;
@@ -2913,7 +2918,7 @@ table.scout-table.eq .stars {
   font-size: 12.5px;
 }
 .shot-compact .shot-zones .muted {
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 .res-compare .brk-compare {
   align-content: center;
@@ -3030,7 +3035,7 @@ table.scout-table.eq .stars {
   text-align: center;
 }
 .hub-side-where {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -3092,7 +3097,7 @@ table.scout-table.eq .stars {
   border-radius: 50%;
   display: inline-grid;
   place-items: center;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   color: #0b111b;
   background: #ffffff14;
@@ -3171,7 +3176,7 @@ table.scout-table.eq .stars {
   font-size: 20px;
 }
 .hub-stats .tile-l {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 /* ---- Main menu ---- */
@@ -3250,7 +3255,7 @@ table.scout-table.eq .stars {
 .mm-option small {
   grid-column: 1 / -1;
   color: var(--muted);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--text-font);
   font-stretch: normal;
   letter-spacing: 0;
   font-size: 13px;
@@ -3329,7 +3334,7 @@ table.scout-table.eq .stars {
   font-stretch: condensed;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .mm-new .mm-league b {
@@ -3427,7 +3432,7 @@ table.scout-table.eq .stars {
 }
 .cp-standing,
 .cp-tag {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3450,7 +3455,7 @@ table.scout-table.eq .stars {
 }
 .cp-club small {
   color: var(--muted);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--text-font);
   font-stretch: normal;
   letter-spacing: 0;
   font-size: 13px;
@@ -3507,7 +3512,7 @@ table.scout-table.eq .stars {
   font-stretch: condensed;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   padding-top: 2px;
 }
@@ -3569,7 +3574,7 @@ table.scout-table.eq .stars {
 }
 .brk-talk-option small {
   color: var(--muted);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--text-font);
   font-stretch: normal;
   letter-spacing: 0;
   font-weight: 400;
@@ -3662,4 +3667,416 @@ button.danger {
 .mm-career-slot.bad-save {
   border: 1px solid var(--line);
   background: #2a1414;
+}
+
+/* ---- Icons: Lucide SVG, sized and coloured by the text around them (GAME_FLOW §6.1a) ---- */
+.icon-svg {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.18em;
+}
+button .icon-svg {
+  margin: 0 0.1em;
+}
+/* Foul count: one dot per foul (drawn, not a text symbol). */
+.foul-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+}
+/* A colour key square in a legend. */
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.stars svg {
+  vertical-align: -0.12em;
+}
+
+/* No text under 12 px anywhere (GAME_FLOW §6.1a). */
+small {
+  font-size: max(12px, 0.85em);
+}
+
+/* ---- Game plan: two tabbed panels, one screen (GAME_FLOW §6.1a) ---- */
+.prep-screen {
+  display: grid;
+  gap: 10px;
+}
+.prep-screen > .row h1 {
+  font-size: 26px;
+}
+.prep-screen .prep {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: start;
+}
+.prep-screen .prep:has(> .prep-panel:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.prep-panel {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.prep-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -4px 0 0;
+}
+.prep-tabs button {
+  border-radius: 7px;
+  font-size: 14px;
+}
+.prep-tabs button.on {
+  background: var(--banner);
+  border-color: transparent;
+  color: #fff;
+}
+.plan-editor,
+.scout-report {
+  display: grid;
+  gap: 10px;
+}
+.plan-editor .suggest ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.plan-editor .explain {
+  padding: 6px 10px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.plan-editor h3 {
+  margin: 0 0 4px;
+}
+.plan-editor .cards {
+  gap: 6px;
+}
+
+.app:has(> .prep-screen) {
+  padding: 10px 16px;
+}
+.plan-editor h3 + .swap-hint {
+  margin-top: 0;
+}
+
+/* The scouting table's potential stars need their room (they were cut off). */
+.scout-table th:last-child {
+  width: 76px;
+}
+.scout-table td:last-child {
+  text-overflow: clip;
+}
+.key-matchup {
+  display: grid;
+  gap: 8px;
+}
+.key-matchup h3 {
+  margin: 0;
+}
+
+/* ---- Quick League hub: one screen at 1366 x 650 ---- */
+.app:has(> .hub) {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.hub .hub-main {
+  gap: 10px;
+}
+.hub .standings td {
+  height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* ---- Main menu: one screen at every size (GAME_FLOW §6.1a) ---- */
+.menu.mm {
+  margin: 12px auto;
+  gap: 12px;
+}
+.mm .title {
+  font-size: 56px;
+  line-height: 1;
+}
+.mm-career {
+  padding: 12px 16px;
+  gap: 10px;
+}
+.mm-career-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 8px;
+}
+.mm-career-slot {
+  min-height: 44px;
+  padding: 4px 12px;
+}
+.mm-new .mm-league {
+  padding: 10px 14px;
+  gap: 4px;
+}
+.mm-settings {
+  padding: 8px 14px;
+}
+
+.mm .title {
+  font-size: 48px;
+}
+.menu.mm {
+  gap: 10px;
+}
+
+/* Two columns on wide screens: your games on the left, a new Quick League and settings on the right. */
+.mm-cols,
+.mm-col {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+@media (min-width: 1100px) {
+  .menu.mm {
+    max-width: 1240px;
+  }
+  .mm-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .mm-cols .mm-leagues {
+    grid-template-columns: minmax(0, 1fr);
+    display: grid;
+    gap: 8px;
+  }
+  .mm-cols .mm-career-slots {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mm-cols .mm-league {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'level go' 'name go' 'blurb go';
+    align-items: center;
+    text-align: left;
+    padding: 8px 14px;
+    gap: 2px 12px;
+  }
+  .mm-cols .mm-league .mm-level {
+    grid-area: level;
+  }
+  .mm-cols .mm-league b {
+    grid-area: name;
+  }
+  .mm-cols .mm-league small {
+    grid-area: blurb;
+  }
+  .mm-cols .mm-league .mm-go {
+    grid-area: go;
+  }
+}
+
+@media (min-width: 1100px) {
+  .mm-cols .mm-league {
+    min-height: 0;
+    height: auto;
+  }
+}
+
+/* ---- Break screen: one part at a time, in tabs (GAME_FLOW §6.1a) ---- */
+.brk-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.brk-views button {
+  border-radius: 7px;
+  font-size: 14px;
+}
+.brk-views button.on {
+  background: var(--banner);
+  border-color: transparent;
+  color: #fff;
+}
+.brk-views button.due:not(.on) {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.brk-rosters.one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .brk .brk-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .brk .brk-top > :nth-child(2) {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .brk .brk-top > * {
+    min-width: 0;
+  }
+}
+
+/* ---- Touch screens: 44 px tap targets in the older screens too (GAME_FLOW §6.1a) ---- */
+@media (pointer: coarse) {
+  button,
+  select,
+  input {
+    min-height: 44px;
+  }
+  button.tiny,
+  button.small {
+    min-width: 44px;
+  }
+  /* Rows you tap to make a substitution. */
+  .brk-table tbody tr.clickable td {
+    height: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* ---- Touch tablets: tight spacing so whole rosters of 44 px rows fit 1024 x 768 ---- */
+.prep-panel .rot-title {
+  display: none;
+}
+.brk-table .group-row td {
+  height: 18px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+@media (min-width: 1000px) {
+  .mm-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .mm-cols .mm-career-slots {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (pointer: coarse) {
+  .app:has(> .prep-screen) {
+    padding: 6px 10px;
+  }
+  .prep-screen,
+  .prep-panel,
+  .plan-editor {
+    gap: 6px;
+  }
+  .prep-panel {
+    padding: 8px 10px;
+  }
+  .plan-editor .swap-hint {
+    padding: 4px 8px;
+    margin: 0;
+  }
+  .overlay {
+    padding: 6px;
+  }
+  .brk.modal {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+  .brk-quarters th,
+  .brk-quarters td {
+    padding-top: 0;
+    padding-bottom: 0;
+    line-height: 17px;
+  }
+  .brk-roster-head {
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+}
+
+/* The line between starters and bench stays a thin line on touch screens. */
+.brk-table tbody tr.brk-divider td {
+  height: 6px !important;
+  padding: 0 !important;
+}
+@media (pointer: coarse) {
+  /* Room for two 44 px order buttons. */
+  .brk-table:has(td.brk-order) th:last-child {
+    width: 124px !important;
+  }
+  .brk-order button {
+    padding: 0;
+  }
+}
+
+/* ---- Match: team panels fit (GAME_FLOW §6.1a) ---- */
+.tp-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 4px 0 6px;
+}
+.tp-tabs button {
+  font-size: 13px;
+  padding: 4px 6px;
+}
+.tp-tabs button.on {
+  border-color: var(--team, var(--accent));
+  color: #fff;
+}
+.team-panel .tp-head {
+  margin: 4px 0 2px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.team-panel .tactics-bar {
+  display: grid;
+  gap: 6px;
+}
+/* One line per player in the team panels; 44 px rows on touch screens (each row is tapped to swap). */
+.team-panel .pl.compact {
+  min-height: 30px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+@media (pointer: coarse) {
+  .team-panel .pl {
+    min-height: 44px;
+  }
+  .team-panel.panel {
+    padding: 6px 8px;
+  }
+  .team-panel .tp-tabs {
+    margin: 2px 0 4px;
+  }
+}
+@media (pointer: fine) {
+  .team-panel .pl.compact {
+    height: 30px;
+    min-height: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+}
+
+/* Result: the parts of the box score (box, shot chart, summary). */
+.res-parts {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.res-parts button.on {
+  border-color: var(--accent);
+  color: #fff;
+}
+@media (max-width: 1100px) {
+  .res-main {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+.res-box .res-side-in {
+  display: grid;
+  gap: 10px;
 }

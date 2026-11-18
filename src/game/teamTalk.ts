@@ -6,10 +6,10 @@ import type { MatchState, Side } from '../engine/types';
 export type Talk = 'praise' | 'demand' | 'calm' | 'fireUp';
 
 export const TALKS: { talk: Talk; icon: string; label: string; line: string }[] = [
-  { talk: 'praise', icon: '👏', label: 'Praise', line: '"Great half, keep doing exactly this."' },
-  { talk: 'demand', icon: '😤', label: 'Demand more', line: '"That\'s not good enough. I want more effort."' },
-  { talk: 'calm', icon: '🧘', label: 'Calm down', line: '"Deep breath. Stick to the plan, one possession at a time."' },
-  { talk: 'fireUp', icon: '🔥', label: 'Fire them up', line: '"This is OUR game! Go out there and take it!"' },
+  { talk: 'praise', icon: 'thumbsUp', label: 'Praise', line: '"Great half, keep doing exactly this."' },
+  { talk: 'demand', icon: 'megaphone', label: 'Demand more', line: '"That\'s not good enough. I want more effort."' },
+  { talk: 'calm', icon: 'wind', label: 'Calm down', line: '"Deep breath. Stick to the plan, one possession at a time."' },
+  { talk: 'fireUp', icon: 'flame', label: 'Fire them up', line: '"This is OUR game! Go out there and take it!"' },
 ];
 
 type Situation = 'ahead' | 'close' | 'behind';

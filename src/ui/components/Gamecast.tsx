@@ -9,6 +9,7 @@ import type { Player, PlayerStats, Side } from '../../engine/types';
 import { clockString, periodLabel } from '../labels';
 import type { LiveMatch } from '../match/controller';
 import { Portrait } from './Portrait';
+import { SortDownIcon, SortUpIcon } from '../icons';
 
 const colourOf = (side: Side | null) => (side === 0 ? 'var(--home)' : side === 1 ? 'var(--away)' : 'var(--muted)');
 const pct = (made: number, att: number) => (att > 0 ? Math.round((100 * made) / att) : 0);
@@ -32,7 +33,7 @@ export function PlayByPlay({ m }: { m: LiveMatch }) {
           {periodLabel(m.quarter)} {clockString(m.clock)}
         </span>
         <span className={`pbp-text ${live?.kind === 'setup' ? 'setup' : ''}`}>{live ? live.text : (feed[0]?.text ?? 'The tip-off is coming…')}</span>
-        <span className="pbp-more">{open ? '▲' : '▼'}</span>
+        <span className="pbp-more">{open ? <SortUpIcon /> : <SortDownIcon />}</span>
       </div>
       <div className="pbp-older">
         {(live ? feed : feed.slice(1)).slice(0, 2).map((f) => (

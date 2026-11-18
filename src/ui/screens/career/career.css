@@ -13,13 +13,13 @@
   --cr-red: #ff8a8a;
   --cr-soft: #c4cde0;
   --cr-dim: #a7b3cb;
-  --cr-head: 'Barlow Condensed', var(--display);
+  --cr-head: var(--display);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--text-font);
   font-size: 14px;
 }
 
@@ -63,7 +63,7 @@
 
 .cr-label {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
@@ -88,7 +88,7 @@
   font-size: 20px;
 }
 .cr-big small {
-  font-family: Inter, system-ui, sans-serif;
+  font-family: var(--text-font);
   font-size: 14px;
   font-weight: 500;
   color: var(--muted);
@@ -234,7 +234,7 @@
 }
 .cr-soon {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -326,7 +326,7 @@
   justify-content: space-between;
   gap: 12px 16px;
 }
-.cr-row-head > div:not(.cr-tabs):not(.cr-controls) {
+.cr-row-head > div:not(.cr-tabs):not(.cr-controls):not(.cr-pager) {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -442,7 +442,7 @@
   border-radius: 6px;
   background: var(--panel-2);
   color: var(--cr-dim);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   vertical-align: middle;
 }
@@ -481,8 +481,8 @@
   background: none;
   text-align: left;
   color: var(--muted);
-  font-family: Inter, system-ui, sans-serif;
-  font-size: 11px;
+  font-family: var(--text-font);
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -677,7 +677,7 @@
 .cr-attr-what {
   grid-column: 1 / -1;
   margin-top: -4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .cr-facts {
@@ -710,7 +710,7 @@
 .cr-bar-labels {
   position: relative;
   height: 18px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   margin-top: 4px;
 }
@@ -911,7 +911,7 @@
   font-size: 20px;
 }
 .cr-club-num small {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .cr-new-side {
@@ -1077,8 +1077,19 @@
   line-height: 0;
 }
 .cr-stars {
-  display: inline-block;
+  display: inline-flex;
+  gap: 2px;
   vertical-align: middle;
+}
+.cr-star {
+  position: relative;
+  display: inline-block;
+}
+.cr-star svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 .cr-face {
   display: inline-flex;
@@ -1137,9 +1148,12 @@
 
 /* Desktop has room: larger stars in the tables (tablet keeps 11 px so every view fits 768 px). */
 @media (min-width: 1024px) {
+  .cr .cr-table td.cr-star-cell .cr-star {
+    width: 14px !important;
+    height: 14px !important;
+  }
   .cr .cr-table td.cr-star-cell .cr-stars {
-    width: auto;
-    height: 14px;
+    height: 14px !important;
   }
 }
 
@@ -1217,4 +1231,401 @@
   .cr-attr-cols {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* =====================================================================================
+   Fit every screen without scrolling (GAME_FLOW §6.1a). Sizes come from two variables:
+   touch screens keep 44 px tap targets and rows; with a mouse (laptop, desktop) controls are
+   32 px and table rows 28 px (owner's answer, 18 Nov 2026: compact rows with a mouse). Text stays
+   14 px; labels 12 px.
+   ===================================================================================== */
+.cr {
+  --tap: 44px;
+  --row: 44px;
+  --row-head: 30px;
+}
+@media (pointer: fine) {
+  .cr {
+    --tap: 32px;
+    --row: 28px;
+    --row-head: 26px;
+  }
+}
+.cr .cr-tabs button,
+.cr .cr-pills button,
+.cr .cr-nav,
+.cr .cr-back,
+.cr .cr-continue,
+.cr .cr-comp,
+.cr .cr-chip.link,
+.cr .cr-toggle,
+.cr .cr-start,
+.cr-field input {
+  min-height: var(--tap);
+}
+.cr .cr-tabs button,
+.cr .cr-pills button {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.cr-tabs {
+  padding: 2px;
+}
+.cr .cr-back.icon {
+  width: var(--tap);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.cr .cr-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--cr-soft);
+  font-weight: 600;
+  flex: none;
+}
+.cr .cr-toggle.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* Top bar and page: tighter. */
+.cr .cr-top {
+  padding: 6px 16px;
+  gap: 8px 16px;
+}
+.cr .cr-top .cr-badge {
+  width: 36px !important;
+  height: 36px !important;
+}
+.cr .cr-continue {
+  padding: 0 16px;
+}
+.cr .cr-main {
+  padding: 12px 20px;
+}
+.cr .cr-page {
+  gap: 10px;
+}
+.cr h1 {
+  font-size: 28px;
+  line-height: 1.15;
+}
+.cr .cr-card {
+  padding: 14px 18px;
+  gap: 10px;
+}
+.cr .cr-row-head {
+  align-items: center;
+  gap: 8px 12px;
+}
+.cr .cr-row-head.start {
+  justify-content: flex-start;
+}
+
+/* Tables: rows from the variables; no extra padding. */
+.cr .cr-table td {
+  height: var(--row);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.cr .cr-table th,
+.cr .cr-table-wrap[class*='view-'] .cr-table th {
+  height: var(--row-head);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.cr .cr-table td.cr-player-cell .cr-name,
+.cr .cr-table .cr-name {
+  min-height: var(--row);
+  padding: 0;
+}
+.cr .cr-table td.cr-portrait-cell {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+.cr .cr-table-wrap {
+  overflow: visible;
+}
+.cr-key {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+}
+.cr-key .cr-face-legend {
+  margin: 0;
+  gap: 2px 10px;
+}
+
+/* Sidebar: icons only up to 1100 px wide, so a 1024 tablet has the room. */
+@media (max-width: 1100px) {
+  .cr-side {
+    width: 68px;
+    padding: 10px 8px;
+  }
+  .cr .cr-nav {
+    justify-content: center;
+    padding: 0;
+  }
+  .cr-nav-label,
+  .cr-soon,
+  .cr-saved {
+    display: none;
+  }
+  .cr .cr-main {
+    padding: 10px 12px;
+  }
+}
+.cr-side {
+  gap: 2px;
+}
+.cr .cr-nav {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Another club: one header row with back, name, tabs and views. */
+.cr-club-bar {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+.cr-club-bar .cr-club-title {
+  flex: 1 1 auto;
+  min-width: 80px;
+  font-size: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-club-bar .cr-controls {
+  flex-wrap: nowrap;
+}
+@media (max-width: 1280px) {
+  .cr-club-bar .cr-count {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .cr-club-bar {
+    flex-wrap: wrap;
+  }
+}
+.cr-club-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);
+  gap: 10px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .cr-club-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cr .cr-club-head {
+  padding: 10px 16px;
+}
+
+/* Competitions: one compact row per country. */
+.cr-comp-region {
+  gap: 8px;
+}
+.cr .cr-comp {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+.cr .cr-comp small {
+  font-size: 12px;
+}
+.cr-countries {
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+  gap: 8px 16px;
+}
+.cr-country {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cr-country .cr-comps {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Touch screens: the tightest spacing that keeps 44 px targets, so a 13-man squad fits 1024 x 768. */
+@media (pointer: coarse) {
+  .cr .cr-top {
+    padding: 4px 12px;
+  }
+  .cr .cr-main {
+    padding: 8px 12px;
+  }
+  .cr .cr-page {
+    gap: 8px;
+  }
+  .cr .cr-table td {
+    height: calc(var(--row) - 1px);
+  }
+}
+.cr-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--cr-soft);
+  white-space: nowrap;
+}
+.cr .cr-pager .cr-back.icon:disabled {
+  opacity: 0.35;
+}
+.cr-key .cr-pager {
+  margin-left: auto;
+}
+@media (max-width: 900px) {
+  .cr-club-bar .cr-controls,
+  .cr .cr-controls {
+    flex-wrap: wrap;
+  }
+  .cr .cr-table-wrap[class*='view-'] .cr-table th,
+  .cr .cr-table-wrap[class*='view-'] .cr-table td {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+}
+
+/* New career: two columns at every size (filters and a paged club list | the chosen club), one screen. */
+.cr-new .cr-new-body,
+.cr .cr-new-body {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 12px;
+  padding: 10px 16px;
+}
+.cr .cr-new-side {
+  position: static;
+  gap: 10px;
+}
+.cr .cr-new-pick {
+  gap: 10px;
+}
+.cr .cr-filters {
+  gap: 8px;
+}
+.cr .cr-filter {
+  gap: 4px;
+}
+.cr .cr-club {
+  min-height: var(--tap);
+  padding: 4px 12px;
+  gap: 10px;
+}
+.cr .cr-club .cr-badge {
+  width: 30px !important;
+  height: 30px !important;
+}
+.cr .cr-clubs {
+  gap: 4px;
+}
+.cr .cr-new-club h2 {
+  font-size: 22px;
+}
+.cr .cr-best li {
+  padding: 3px 0;
+}
+.cr-new .cr-top h1 {
+  font-size: 26px;
+}
+@media (max-width: 1023px) {
+  .cr .cr-new-body {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+    padding: 8px 12px;
+  }
+  .cr .cr-club {
+    grid-template-columns: 30px minmax(0, 1fr) 56px;
+  }
+  .cr .cr-club .cr-club-num.money {
+    display: none;
+  }
+}
+
+/* Every pixel counts on a 1366 x 650 laptop page: an 18-club table fits whole. */
+.cr .cr-table td {
+  height: calc(var(--row) - 1px);
+}
+.cr .cr-top-money {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+.cr .cr-top-money .cr-big {
+  font-size: 22px;
+}
+.cr .cr-main {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.cr .cr-row-head h1 {
+  font-size: 26px;
+}
+.cr .cr-row-head .cr-sub {
+  flex: 0 1 auto;
+}
+.cr-face-disc {
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+}
+/* A row is exactly --row tall, border included. */
+.cr .cr-table td.cr-player-cell .cr-name,
+.cr .cr-table .cr-name {
+  min-height: calc(var(--row) - 1px);
+}
+.cr .cr-top-name {
+  font-size: 19px;
+  line-height: 1.1;
+}
+.cr .cr-top-comps {
+  line-height: 14px;
+}
+
+.cr .cr-card.cr-table-wrap {
+  padding: 0 0 2px;
+  gap: 0;
+}
+
+.cr .cr-slots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.cr .cr-slots button {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2px 8px;
+  line-height: 1.15;
+  min-width: 0;
+}
+.cr .cr-slots small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  font-weight: 500;
+}
+.cr .cr-replace {
+  display: grid;
+  gap: 4px;
 }

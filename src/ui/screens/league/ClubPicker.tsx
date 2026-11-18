@@ -11,6 +11,7 @@ import { listSlots, summarise } from '../../../game/league/saves';
 import { Rating } from '../../components/common';
 import { browserStorage } from './storage';
 import { useConfirm } from '../../components/Confirm';
+import { NextIcon, PrevIcon } from '../../icons';
 
 interface Club {
   index: number;
@@ -85,7 +86,9 @@ export function ClubPicker({ league, onBack, onStart }: { league: LeagueId; onBa
     <div className="cp">
       {confirm.dialog}
       <header className="cp-bar">
-        <button onClick={onBack}>◀ Leagues</button>
+        <button onClick={onBack}>
+          <PrevIcon /> Leagues
+        </button>
         <div>
           <h1>{LEAGUES[league].name}</h1>
           <span className="muted small">Choose the club you will manage. 14 matchdays against the other seven.</span>
@@ -171,7 +174,7 @@ export function ClubPicker({ league, onBack, onStart }: { league: LeagueId; onBa
             </div>
           )}
           <button className="primary big" disabled={slot === null} onClick={start}>
-            Manage {chosen.team.name} ▶
+            Manage {chosen.team.name} <NextIcon />
           </button>
         </aside>
       </div>

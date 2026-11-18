@@ -1,6 +1,12 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+// The game's own fonts, bundled (GAME_FLOW §6.1a: never the computer's): Inter for text, Barlow
+// Condensed for headings and big numbers.
+import '@fontsource-variable/inter';
+import '@fontsource/barlow-condensed/500.css';
+import '@fontsource/barlow-condensed/600.css';
+import '@fontsource/barlow-condensed/700.css';
 import './styles.css';
 
 // Dev only: ?turntable shows every hairstyle and skin tone from eight angles. Left out of builds.
@@ -33,7 +39,11 @@ const dribblecheck = DribbleCheck && new URLSearchParams(window.location.search)
 const JointCheck = import.meta.env.DEV ? lazy(() => import('./dev/JointCheck').then((m) => ({ default: m.JointCheck }))) : null;
 const jointcheck = JointCheck && new URLSearchParams(window.location.search).has('jointcheck');
 
-createRoot(document.getElementById('root')!).render(
+// The court draws its numbers and labels on canvases in these fonts: load them before the first frame,
+// so nothing is ever drawn in a fallback. (They are bundled, so this is quick; a failure still starts.)
+const fontsReady = Promise.all(['500 16px "Barlow Condensed"', '600 16px "Barlow Condensed"', '700 16px "Barlow Condensed"', '400 16px "Inter Variable"', '700 16px "Inter Variable"'].map((f) => document.fonts.load(f))).catch(() => undefined);
+
+void fontsReady.then(() => createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {jointcheck && JointCheck ? (
       <Suspense fallback={null}>
@@ -83,4 +93,5 @@ createRoot(document.getElementById('root')!).render(
       <App />
     )}
   </StrictMode>,
+)
 );

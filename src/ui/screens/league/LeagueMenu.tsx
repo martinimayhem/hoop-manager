@@ -6,6 +6,7 @@ import type { QuickLeague } from '../../../game/league/quickLeague';
 import { clearSlot, listSlots, summarise, type SlotInfo } from '../../../game/league/saves';
 import { browserStorage } from './storage';
 import { useConfirm } from '../../components/Confirm';
+import { NextIcon, PrevIcon } from '../../icons';
 
 
 function savedWhen(iso: string): string {
@@ -27,7 +28,9 @@ export function LeagueMenu({ onOpen, onBack }: { onOpen: (league: QuickLeague, s
     <div className="menu ql">
       {confirm.dialog}
       <div className="row">
-        <button onClick={onBack}>◀ Back</button>
+        <button onClick={onBack}>
+          <PrevIcon /> Back
+        </button>
         <div className="title" style={{ fontSize: 34 }}>
           Saved <span>games</span>
         </div>
@@ -52,7 +55,7 @@ export function LeagueMenu({ onOpen, onBack }: { onOpen: (league: QuickLeague, s
                 </div>
                 <div className="ql-slot-actions">
                   <button className="primary" onClick={() => onOpen(s.data, s.slot)}>
-                    Continue ▶
+                    Continue <NextIcon />
                   </button>
                   <button className="small ql-delete" onClick={() => clear(s.slot, `${x.club} (${x.league})`)}>
                     Delete

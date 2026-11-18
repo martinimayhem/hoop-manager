@@ -86,7 +86,7 @@ function numberTexture(n: string, fill: string, outline: string): THREE.Texture 
   c.width = 128;
   c.height = 128;
   const g = c.getContext('2d')!;
-  g.font = '900 96px system-ui, sans-serif';
+  g.font = '700 104px "Barlow Condensed", sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineWidth = 10;

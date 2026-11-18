@@ -14,6 +14,7 @@ import type { LiveMatch } from '../match/controller';
 import { EnergyBar, RatingBadge } from './common';
 import { Portrait, ShirtNumber } from './Portrait';
 import { useSort } from './sortable';
+import { NextIcon, CheckIcon, CrossIcon, Icon } from '../icons';
 
 const other = (s: Side): Side => (s === 0 ? 1 : 0);
 const pct = (made: number, att: number) => (att > 0 ? `${Math.round((100 * made) / att)}%` : '–');
@@ -55,11 +56,24 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
   const halftime = m.phase === 'break' && m.breakQuarter === 2;
   // Redrawn as soon as the talk is given (the card and the way back), whatever else listens to the match.
   const [, redraw] = useState(0);
+  // One part at a time, so the break fits the window (GAME_FLOW §6.1a); at halftime the team talk first.
+  const talkPending = halftime && editing !== null && !m.talks[editing];
+  const [view, setView] = useState<BreakView>(talkPending ? 'talk' : 'ours');
+  const views: [BreakView, string][] = [
+    ...(halftime && editing !== null ? ([['talk', talkPending ? 'Team talk (to give)' : 'Team talk']] as [BreakView, string][]) : []),
+    ['ours', m.s.teams[us].team.name],
+    ['theirs', m.s.teams[other(us)].team.name],
+    ['stats', 'Key players & team stats'],
+    ['tactics', 'Tactics'],
+  ];
+  const roster = (side: Side) => (
+    <Roster key={side} m={m} side={side} plan={side === editing ? drafts[side] : livePlan(side)} onChange={side === editing ? (p) => setDrafts((d) => ({ ...d, [side]: p })) : undefined} />
+  );
 
   return (
     <div className="overlay">
       <div className="panel modal brk">
-        <BreakHeader m={m} title={title} valid={valid} onBack={apply} talkPending={halftime && editing !== null && !m.talks[editing]} />
+        <BreakHeader m={m} title={title} valid={valid} onBack={apply} talkPending={talkPending} />
         {ordered.length > 1 && (
           <div className="tabs">
             {ordered.map((s) => (
@@ -70,36 +84,36 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
             ))}
           </div>
         )}
-
-        {halftime && editing !== null && <TeamTalk m={m} side={editing} onSaid={() => redraw((n) => n + 1)} />}
-
-        <div className="brk-top">
-          <KeyPlayer m={m} side={0} />
-          <TeamCompare m={m} />
-          <KeyPlayer m={m} side={1} />
-        </div>
-
-        <div className="brk-rosters">
-          {([us, other(us)] as const).map((side) => (
-            <Roster
-              key={side}
-              m={m}
-              side={side}
-              plan={side === editing ? drafts[side] : livePlan(side)}
-              onChange={side === editing ? (p) => setDrafts((d) => ({ ...d, [side]: p })) : undefined}
-            />
+        <div className="brk-views" role="tablist">
+          {views.map(([v, label]) => (
+            <button key={v} role="tab" aria-selected={view === v} className={`${view === v ? 'on' : ''} ${v === 'talk' && talkPending ? 'due' : ''}`} onClick={() => setView(v)}>
+              {label}
+            </button>
           ))}
         </div>
 
-        {editing !== null ? (
-          <Tactics m={m} side={editing} plan={drafts[editing]} onChange={(p) => setDrafts((d) => ({ ...d, [editing]: p }))} />
-        ) : (
-          <div className="muted">The coaches are talking it over…</div>
+        {view === 'talk' && editing !== null && <TeamTalk m={m} side={editing} onSaid={() => redraw((n) => n + 1)} />}
+        {view === 'stats' && (
+          <div className="brk-top">
+            <KeyPlayer m={m} side={0} />
+            <TeamCompare m={m} />
+            <KeyPlayer m={m} side={1} />
+          </div>
         )}
+        {view === 'ours' && <div className="brk-rosters one">{roster(us)}</div>}
+        {view === 'theirs' && <div className="brk-rosters one">{roster(other(us))}</div>}
+        {view === 'tactics' &&
+          (editing !== null ? (
+            <Tactics m={m} side={editing} plan={drafts[editing]} onChange={(p) => setDrafts((d) => ({ ...d, [editing]: p }))} />
+          ) : (
+            <div className="muted">The coaches are talking it over…</div>
+          ))}
       </div>
     </div>
   );
 }
+
+type BreakView = 'talk' | 'ours' | 'theirs' | 'stats' | 'tactics';
 
 /** Title, the score by quarter, and the way back to the game. */
 function BreakHeader({ m, title, valid, onBack, talkPending = false }: { m: LiveMatch; title: string; valid: boolean; onBack: () => void; talkPending?: boolean }) {
@@ -139,7 +153,7 @@ function BreakHeader({ m, title, valid, onBack, talkPending = false }: { m: Live
       </table>
       <div className="spacer" />
       <button className={talkPending ? '' : 'primary'} disabled={!valid} onClick={onBack} title={talkPending ? 'You have not given your team talk yet (above).' : undefined}>
-        {talkPending ? 'Back without a team talk ▶' : 'Back to the game ▶'}
+        {talkPending ? 'Back without a team talk' : 'Back to the game'} <NextIcon />
       </button>
     </div>
   );
@@ -352,11 +366,11 @@ function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: G
             {!onCourt && (
               <>
                 <span className="muted small">{benchIndex + 1}</span>
-                <button className="tiny" onClick={() => move(id, -1)} title="Comes in earlier">
-                  ↑
+                <button className="tiny" onClick={() => move(id, -1)} title="Comes in earlier" aria-label="Comes in earlier">
+                  <Icon name="up" />
                 </button>
-                <button className="tiny" onClick={() => move(id, 1)} title="Comes in later">
-                  ↓
+                <button className="tiny" onClick={() => move(id, 1)} title="Comes in later" aria-label="Comes in later">
+                  <Icon name="down" />
                 </button>
               </>
             )}
@@ -388,7 +402,7 @@ function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: G
             {sorter.th('fg', 'FG', { tip: 'Field goals made/attempted' })}
             {sorter.th('3p', '3P', { tip: 'Three-pointers made/attempted' })}
             {sorter.th('pf', 'PF', { tip: 'Personal fouls (6 = out); T = a technical' })}
-            {sorter.th('energy', '🔋', { tip: 'Energy: tired players play worse' })}
+            {sorter.th('energy', <Icon name="battery" />, { tip: 'Energy: tired players play worse' })}
             {onChange && sorter.th('sub', 'Sub', { tip: 'Sub order: who comes off the bench first', plain: true, width: 74 })}
           </tr>
         </thead>
@@ -423,18 +437,26 @@ function Tactics({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: 
     <div className="brk-tactics">
       <div className="brk-advice">
         <div className="row">
-          <b>🧑‍🏫 Assistant coach:</b>
+          <b>
+            <Icon name="lightbulb" /> Assistant coach:
+          </b>
           <span>
             {follows ? 'Stick with it: ' : 'I would go '}
             <b>
-              {OFFENCE_INFO[suggestion.offence].icon} {OFFENCE_INFO[suggestion.offence].label} · {DEFENCE_INFO[suggestion.defence].icon} {DEFENCE_INFO[suggestion.defence].label} ·{' '}
-              {TEMPO_INFO[suggestion.tempo].icon} {TEMPO_INFO[suggestion.tempo].label} · {AGGRESSION_INFO[suggestion.aggression].icon}{' '}
+              <Icon name={OFFENCE_INFO[suggestion.offence].icon} /> {OFFENCE_INFO[suggestion.offence].label} · <Icon name={DEFENCE_INFO[suggestion.defence].icon} /> {DEFENCE_INFO[suggestion.defence].label} ·{' '}
+              <Icon name={TEMPO_INFO[suggestion.tempo].icon} /> {TEMPO_INFO[suggestion.tempo].label} · <Icon name={AGGRESSION_INFO[suggestion.aggression].icon} />{' '}
               {AGGRESSION_INFO[suggestion.aggression].label} intensity
             </b>
           </span>
           <div className="spacer" />
           <button className="small" disabled={follows} onClick={() => set({ offence: suggestion.offence, defence: suggestion.defence, tempo: suggestion.tempo, aggression: suggestion.aggression })}>
-            {follows ? 'Using it ✓' : 'Use this'}
+            {follows ? (
+              <>
+                Using it <CheckIcon />
+              </>
+            ) : (
+              'Use this'
+            )}
           </button>
         </div>
         <div className="brk-why small">
@@ -449,7 +471,7 @@ function Tactics({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: 
         </div>
       </div>
       {m.phase === 'timeout' && m.s.quarter <= 2 && (
-        <div className="brk-talk-hint">🗣️ At half-time you give your players a team talk: it can lift them for the second half.</div>
+        <div className="brk-talk-hint"><Icon name="message" /> At half-time you give your players a team talk: it can lift them for the second half.</div>
       )}
       <div className="brk-choices">
         <Choice label="Attack" options={OFFENSIVE_FOCI} info={OFFENCE_INFO} value={plan.offence} onPick={(offence) => set({ offence })} />
@@ -504,12 +526,19 @@ function Choice<K extends string>({ label, options, info, value, onPick }: { lab
       <div className="brk-chips">
         {options.map((o) => (
           <button key={o} className={`chip ${value === o ? 'active' : ''}`} onClick={() => onPick(o)} title={`${info[o].blurb}\nGood when: ${info[o].good}\nWeak against: ${info[o].weak}`}>
-            {info[o].icon} {info[o].label}
+            <Icon name={info[o].icon} /> {info[o].label}
           </button>
         ))}
       </div>
       <span className="brk-choice-why small">
-        <span className="good">✔</span> {sel.good} <span className="bad">✘</span> {sel.weak}
+        <span className="good">
+          <CheckIcon />
+        </span>{' '}
+        {sel.good}{' '}
+        <span className="bad">
+          <CrossIcon />
+        </span>{' '}
+        {sel.weak}
       </span>
     </div>
   );
@@ -529,7 +558,9 @@ function TeamTalk({ m, side, onSaid }: { m: LiveMatch; side: Side; onSaid: () =>
   return (
     <section className={`brk-talk ${given ? 'done' : ''}`}>
       <div className="brk-talk-head">
-        <span className="brk-talk-title">🗣️ Half-time team talk</span>
+        <span className="brk-talk-title">
+          <Icon name="megaphone" /> Half-time team talk
+        </span>
         <span className="brk-talk-sub">
           {given ? 'Said.' : `Once a match. ${score}: read the room. The right words lift them for the second half; the wrong ones can backfire.`}
         </span>
@@ -537,7 +568,7 @@ function TeamTalk({ m, side, onSaid }: { m: LiveMatch; side: Side; onSaid: () =>
       {given && said ? (
         <div className={`brk-talk-result ${given.morale > 0.25 ? 'good' : given.morale < 0 ? 'bad' : ''}`}>
           <b>
-            {said.icon} {said.label}
+            <Icon name={said.icon} /> {said.label}
           </b>{' '}
           {said.line} <span className="brk-talk-reaction">{given.reaction}</span>
         </div>
@@ -553,7 +584,7 @@ function TeamTalk({ m, side, onSaid }: { m: LiveMatch; side: Side; onSaid: () =>
               }}
             >
               <b>
-                {t.icon} {t.label}
+                <Icon name={t.icon} /> {t.label}
               </b>
               <small>{t.line}</small>
             </button>

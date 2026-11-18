@@ -17,6 +17,7 @@ import { CANVAS_H, CANVAS_W, CourtRenderer } from '../court/render';
 import { courtDots } from '../court/dots';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
 import { ARGUE_SECONDS, LiveMatch, type TeamView } from '../match/controller';
+import { NextIcon, PlayIcon, PauseIcon, HighlightsIcon, SoundOnIcon, SoundOffIcon, Icon } from '../icons';
 
 /** The timeout key, for the player's team (the button beside the court does the same). */
 const TIMEOUT_KEY = 'q';
@@ -286,7 +287,7 @@ export function MatchScreen({
                 <div className="away-title">Paused</div>
                 <div className="muted">The game waits while you are away.</div>
                 <button className="primary" onClick={continueGame} autoFocus>
-                  ▶ Continue <kbd>Space</kbd>
+                  <PlayIcon /> Continue <kbd>Space</kbd>
                 </button>
               </div>
             </div>
@@ -318,7 +319,16 @@ export function MatchScreen({
             </button>
           ))}
           <button onClick={() => m.togglePause()} disabled={m.phase !== 'playing'}>
-            {m.paused ? '▶ Resume' : '⏸ Pause'} <kbd>Space</kbd>
+            {m.paused ? (
+              <>
+                <PlayIcon /> Resume
+              </>
+            ) : (
+              <>
+                <PauseIcon /> Pause
+              </>
+            )}{' '}
+            <kbd>Space</kbd>
           </button>
           <div className="spacer" />
           <span className="muted small">Speed</span>
@@ -333,7 +343,7 @@ export function MatchScreen({
             title="Show only the best plays: 3 in each of the first three quarters, 5 in the fourth. The rest is played out instantly. A close finish is always shown."
             onClick={() => m.toggleHighlights()}
           >
-            ★ Highlights
+            <HighlightsIcon /> Highlights
           </button>
           <button
             className="small"
@@ -359,7 +369,7 @@ export function MatchScreen({
               setMuted(!muted);
             }}
           >
-            {muted ? '🔇' : '🔊'}
+            {muted ? <SoundOffIcon /> : <SoundOnIcon />}
           </button>
           {!roomy && (
             <button
@@ -405,7 +415,7 @@ export function MatchScreen({
               {Math.abs(m.score[0] - m.score[1])}
             </div>
             <button className="primary" onClick={() => onFinish(m)}>
-              See the result ▶
+              See the result <NextIcon />
             </button>
           </div>
         </div>
@@ -489,6 +499,8 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
   const team = m.s.teams[side].team;
   const colour = side === 0 ? 'var(--home)' : 'var(--away)';
   const [picked, setPicked] = useState<string | null>(null);
+  // Your panel shows the players or the sideline calls, so twelve tappable rows fit a tablet (GAME_FLOW §6.1a).
+  const [panelTab, setPanelTab] = useState<'players' | 'calls'>('players');
   const [error, setError] = useState<string | null>(null);
   /** The player the mouse is over: his card shows beside the panel. */
   const [hover, setHover] = useState<{ id: string; at: CardAnchor } | null>(null);
@@ -530,21 +542,25 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
         }}
         onMouseLeave={() => setHover((h) => (h?.id === id ? null : h))}
       >
-        <Portrait player={p} side={side} size={compact ? 30 : 40} />
+        <Portrait player={p} side={side} size={26} />
         <span className="pl-name">
           <ShirtNumber player={p} side={side} />
           {/* The name gives way before the position does. */}
           <span className="pl-n" title={p.name}>{p.name}</span>
           <span className="pl-pos muted">{p.position}</span>
-          {goingOut && <span className="pending">⬇ out</span>}
-          {comingIn && <span className="pending">⬆ in</span>}
+          {goingOut && <span className="pending">
+              <Icon name="down" /> out
+            </span>}
+          {comingIn && <span className="pending">
+              <Icon name="up" /> in
+            </span>}
         </span>
         <span className="pl-sub">
           <EnergyBar energy={v.energy} width={compact ? 30 : 88} />
           <span className="mins muted">{Math.floor(v.seconds / 60)}′</span>
         </span>
         <span className="fouls">
-          {v.ejected ? 'EJECTED' : v.fouledOut ? 'OUT' : '●'.repeat(v.fouls)}
+          {v.ejected ? 'EJECTED' : v.fouledOut ? 'OUT' : Array.from({ length: v.fouls }, (_, i) => <span key={i} className="foul-dot" />)}
           {!v.fouledOut && v.technicals > 0 && <span className="bad"> T</span>}
         </span>
       </div>
@@ -556,38 +572,49 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
     <div className="panel team-panel" style={{ ['--team' as string]: colour }}>
       <div className="tp-banner">{team.name}</div>
       {human && (
+        <div className="tp-tabs" role="tablist">
+          <button role="tab" aria-selected={panelTab === 'players'} className={panelTab === 'players' ? 'on' : ''} onClick={() => setPanelTab('players')}>
+            Players
+          </button>
+          <button role="tab" aria-selected={panelTab === 'calls'} className={panelTab === 'calls' ? 'on' : ''} onClick={() => setPanelTab('calls')}>
+            Sideline calls{m.queuedTactics[side] ? ' ·' : ''}
+          </button>
+        </div>
+      )}
+      {human && panelTab === 'calls' && (
         <div className="tactics-bar">
-          <h3 style={{ color: colour, margin: 0 }}>Sideline calls</h3>
           <select value={planned.offence} disabled={!canAct} onChange={(e) => m.queueTactics(side, { offence: e.target.value as GamePlan['offence'] })}>
             {OFFENSIVE_FOCI.map((o) => (
               <option key={o} value={o}>
-                {OFFENCE_INFO[o].icon} Attack: {OFFENCE_INFO[o].label}
+                Attack: {OFFENCE_INFO[o].label}
               </option>
             ))}
           </select>
           <select value={planned.defence} disabled={!canAct} onChange={(e) => m.queueTactics(side, { defence: e.target.value as GamePlan['defence'] })}>
             {DEFENCE_SCHEMES.map((d) => (
               <option key={d} value={d}>
-                {DEFENCE_INFO[d].icon} Defence: {DEFENCE_INFO[d].label}
+                Defence: {DEFENCE_INFO[d].label}
               </option>
             ))}
           </select>
           <select value={planned.tempo} disabled={!canAct} onChange={(e) => m.queueTactics(side, { tempo: e.target.value as GamePlan['tempo'] })}>
             {TEMPOS.map((t) => (
               <option key={t} value={t}>
-                {TEMPO_INFO[t].icon} Tempo: {TEMPO_INFO[t].label}
+                Tempo: {TEMPO_INFO[t].label}
               </option>
             ))}
           </select>
-          {m.queuedTactics[side] && <div className="pending">⏳ Changes at the next dead ball</div>}
+          {m.queuedTactics[side] && <div className="pending">
+              <Icon name="hourglass" /> Changes at the next dead ball
+            </div>}
         </div>
       )}
-      {human && (
-        <div style={{ marginTop: 8 }}>
+      {panelTab === 'players' && human && (
+        <div className="tp-subs">
           {picked && <div className="swap-hint active">{nameOf(picked)} selected: now click who swaps with them.</div>}
           {m.queuedSubs[side].map((q) => (
             <div key={q.outId + q.inId} className="pending">
-              ⇄ {nameOf(q.inId)} in for {nameOf(q.outId)}: at the next dead ball
+              <Icon name="swap" /> {nameOf(q.inId)} in for {nameOf(q.outId)}: at the next dead ball
             </div>
           ))}
           {m.queuedSubs[side].length > 0 && (
@@ -598,12 +625,16 @@ function TeamPanel({ m, side, view, human }: { m: LiveMatch; side: Side; view: T
           {error && <div className="bad small">{error}</div>}
         </div>
       )}
-      <h3 style={{ color: colour, marginTop: 6 }} title={human ? 'Substitute: click a player on court, then one on the bench' : undefined}>
-        On court
-      </h3>
-      {view.lineup.map((id) => row(id))}
-      <h3 style={{ marginTop: 6 }}>Bench</h3>
-      {bench.map((id) => row(id, true))}
+      {panelTab === 'players' && (
+        <>
+          <h3 className="tp-head" style={{ color: colour }}>
+            On court{human ? ': tap one, then a bench player, to swap' : ''}
+          </h3>
+          {view.lineup.map((id) => row(id, true))}
+          <h3 className="tp-head">Bench</h3>
+          {bench.map((id) => row(id, true))}
+        </>
+      )}
       {hover && view.players[hover.id] && (
         <PlayerCard
           player={team.players.find((p) => p.id === hover.id)!}
@@ -683,7 +714,7 @@ function ClutchModal({ m }: { m: LiveMatch }) {
             const best = Math.abs(o.est.points - bestPts) < 1e-9;
             return (
               <button key={o.call ?? 'none'} className={`clutch-option ${best ? 'best' : ''}`} onClick={() => m.submitClutch(role, o.call)}>
-                <span className="icon">{o.icon}</span>
+                <span className="icon"><Icon name={o.icon} /></span>
                 <b>{o.label}</b>
                 <span className="muted small">{o.detail}</span>
                 <span className="odds">

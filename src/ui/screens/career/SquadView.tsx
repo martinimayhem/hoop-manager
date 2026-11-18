@@ -9,7 +9,7 @@ import { money } from '../../../game/world/money';
 import { academy, ageOf, devSquad, squad } from '../../../game/world/query';
 import { MORALES, type World, type WorldClub, type WorldPlayer } from '../../../game/world/types';
 import { useSort, type SortValue } from '../../components/sortable';
-import { cameThrough, CareerPortrait, code3, contractEnd, country, isMine, mid, MoraleFace, MoraleLegend, overallRange, playerStars, potentialRange, ratingTone, Stars, type StarKind } from './parts';
+import { cameThrough, CareerPortrait, code3, contractEnd, country, isMine, mid, MoraleFace, MoraleLegend, overallRange, playerStars, potentialRange, ratingTone, Stars, useFitRows, Pager, type StarKind } from './parts';
 import { starScale } from '../../../game/world/query';
 
 export type SquadTab = 'first' | 'dev' | 'academy';
@@ -18,16 +18,16 @@ const POS_ORDER = 'PG SG SF PF C';
 const VIEW_KEY = 'hm.squadView';
 
 export function SquadTabs({ club, tab, onTab }: { club: WorldClub; tab: SquadTab; onTab: (t: SquadTab) => void }) {
-  const tabs: [SquadTab, string][] = [
-    ['first', `First team · ${club.roster.length}`],
-    ['dev', `Dev squad · ${club.dev.length}/5`],
-    ...(club.region === 'europe' ? ([['academy', `Academy · ${club.academy.length}`]] as [SquadTab, string][]) : []),
+  const tabs: [SquadTab, string, string][] = [
+    ['first', 'First team', `· ${club.roster.length}`],
+    ['dev', 'Dev squad', `· ${club.dev.length}/5`],
+    ...(club.region === 'europe' ? ([['academy', 'Academy', `· ${club.academy.length}`]] as [SquadTab, string, string][]) : []),
   ];
   return (
     <div className="cr-tabs" role="tablist" aria-label="Squad lists">
-      {tabs.map(([id, label]) => (
+      {tabs.map(([id, label, count]) => (
         <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'on' : ''} onClick={() => onTab(id)}>
-          {label}
+          {label} <span className="cr-count">{count}</span>
         </button>
       ))}
     </div>
@@ -160,7 +160,9 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
     }
     return null;
   });
-  const rows = sorted(playersOn(w, club, tab));
+  const all = sorted(playersOn(w, club, tab));
+  const fit = useFitRows(all.length, '.cr-table tbody tr', `${club.id}|${tab}|${view}`);
+  const rows = all.slice(fit.from, fit.to);
   const name = (wp: WorldPlayer) => (
     <td className="left cr-player-cell">
       <button className="cr-name" onClick={() => onPlayer(wp.p.id)}>
@@ -177,7 +179,7 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
   );
   const face = (wp: WorldPlayer) => (
     <td className="cr-portrait-cell" aria-hidden="true">
-      <CareerPortrait w={w} wp={wp} size={34} />
+      <CareerPortrait w={w} wp={wp} size={26} />
     </td>
   );
   const star = (wp: WorldPlayer, kind: StarKind) => (
@@ -186,7 +188,11 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
     </td>
   );
   const scale = starScale(w, club.id);
-  const starKey = <>Stars compare with {scale.label}: ability <b className="cr-ab">gold</b>, potential <b className="cr-po">blue</b> (estimates). </>;
+  const starKey = (
+    <>
+      Stars vs {scale.label.replace(/^the /, '')}: <b className="cr-ab">ability</b> · <b className="cr-po">potential</b> (estimates)
+    </>
+  );
 
   let head: ReactNode;
   let body: (wp: WorldPlayer) => ReactNode;
@@ -229,7 +235,8 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
     };
     key = (
       <>
-        {starKey}Ends the summer the contract ends{cap ? ' · Yrs left on the contract' : ' · Buyout the fee to release him'}. <MoraleLegend />
+        {starKey}
+        <MoraleLegend />
       </>
     );
   } else if (view === 'attributes') {
@@ -285,7 +292,7 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
     );
     key = (
       <>
-        {starKey}Ht height in cm · Wt weight in kg.
+        {starKey} · Ht cm · Wt kg
       </>
     );
   }
@@ -304,8 +311,10 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
           </tbody>
         </table>
       </div>
-      <span className="cr-sub">
-        {key} {rows.some((wp) => !isMine(w, wp)) ? 'Ranges are scout estimates.' : ''}
+      <span className="cr-key">
+        {key}
+        {view === 'attributes' && rows.some((wp) => !isMine(w, wp)) ? ' · ranges are scout estimates' : ''}
+        <Pager fit={fit} total={all.length} />
       </span>
     </>
   );

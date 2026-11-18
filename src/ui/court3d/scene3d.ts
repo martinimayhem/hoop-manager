@@ -186,7 +186,8 @@ export class Scene3D {
     private lookFor: (key: string) => PlayerLook | null,
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    // The screen's own pixel density (GAME_FLOW §6.1a: canvases are drawn at devicePixelRatio).
+    this.renderer.setPixelRatio(window.devicePixelRatio || 1);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // A dark arena: the court is the bright thing in it.
@@ -512,7 +513,7 @@ export class Scene3D {
     }
     // The name along the far apron.
     g.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    g.font = `800 ${Math.round(0.9 * PX)}px system-ui, sans-serif`;
+    g.font = `700 ${Math.round(0.95 * PX)}px "Barlow Condensed", sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText('HOOP MANAGER', X(HALF_X), Y(-APRON / 2));
@@ -561,7 +562,7 @@ export class Scene3D {
     g.fillStyle = '#ffffff';
     g.strokeStyle = '#1b1b1b';
     g.lineWidth = r * 0.07;
-    g.font = `900 ${Math.round(r * 0.62)}px system-ui, sans-serif`;
+    g.font = `700 ${Math.round(r * 0.66)}px "Barlow Condensed", sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     // Turned to read from the camera's side of the court.
@@ -588,10 +589,10 @@ export class Scene3D {
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.fillStyle = '#f3e3b5';
-      g.font = '700 66px ui-monospace, Consolas, monospace';
+      g.font = '700 70px "Barlow Condensed", sans-serif';
       g.fillText(gameText, 128, 62);
       g.fillStyle = '#ff2a1a';
-      g.font = '800 168px ui-monospace, Consolas, monospace';
+      g.font = '700 176px "Barlow Condensed", sans-serif';
       g.fillText(shotText, 128, 200);
       f.tex.needsUpdate = true;
     }

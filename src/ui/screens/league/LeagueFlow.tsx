@@ -20,6 +20,7 @@ import { ResultScreen } from '../ResultScreen';
 import { VIEW_3D_KEY, lastSpeed } from '../MainMenu';
 import { LeagueHub } from './LeagueHub';
 import { browserStorage } from './storage';
+import { WarningIcon } from '../../icons';
 
 interface Game {
   game: number;
@@ -64,7 +65,8 @@ export function LeagueFlow({ initial, slot, onMenu, onNewLeague }: { initial: Qu
     setLeagueState(q);
     setSaveFailed(!writeSlot(browserStorage, slot, q));
   };
-  const banner = saveFailed ? <div className="panel" style={{ borderColor: 'var(--away)' }}>⚠ The browser would not save this league (storage full or blocked). Progress may be lost when you close the page.</div> : null;
+  const banner = saveFailed ? <div className="panel" style={{ borderColor: 'var(--away)' }}>
+      <WarningIcon /> The browser would not save this league (storage full or blocked). Progress may be lost when you close the page.</div> : null;
   // Saved as soon as it opens: a new game (or a finished draft) is there to continue at once.
   useEffect(() => {
     setSaveFailed(!writeSlot(browserStorage, slot, league));
@@ -110,7 +112,7 @@ export function LeagueFlow({ initial, slot, onMenu, onNewLeague }: { initial: Qu
                 {
                   title: 'Sim to the end of the season?',
                   body: `The computer plays all ${MATCHDAYS - league.matchday} remaining matchdays, your matches included, with the plans it would choose. The results stand.`,
-                  confirm: 'Sim the season ▶',
+                  confirm: 'Sim the season',
                   cancel: 'Keep playing',
                 },
                 () => {

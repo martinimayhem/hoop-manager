@@ -1,3 +1,4 @@
+import { Star } from 'lucide-react';
 import type { Range } from '../../game/scouting';
 
 /** Background colour for a 1–99 rating: red → yellow → green. */
@@ -27,8 +28,9 @@ export function Rating({ v }: { v: number }) {
 export function Stars({ n }: { n: number }) {
   return (
     <span className="stars" title="Development potential (scout estimate)">
-      {'★'.repeat(n)}
-      <span style={{ opacity: 0.25 }}>{'★'.repeat(5 - n)}</span>
+      {Array.from({ length: 5 }, (_, i) => (
+        <Star key={i} size="1em" fill="currentColor" strokeWidth={0} aria-hidden="true" style={i < n ? undefined : { opacity: 0.25 }} />
+      ))}
     </span>
   );
 }

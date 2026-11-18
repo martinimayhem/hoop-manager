@@ -10,6 +10,7 @@ import { AGGRESSION_INFO, DEFENCE_INFO, OFFENCE_INFO, TEMPO_INFO, type OptionInf
 import { EnergyBar, Rating } from './common';
 import { Portrait, ShirtNumber } from './Portrait';
 import { useSort } from './sortable';
+import { CheckIcon, CrossIcon, Icon } from '../icons';
 
 interface Props {
   team: Team;
@@ -32,7 +33,9 @@ const COLUMNS = [
   { key: 'rebounding', label: 'Boards', tip: 'Rebounding' },
 ] as const;
 
-export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props) {
+export function PlanEditor({ team, opponent, plan, onChange, live, side, section = 'all' }: Props & { /** Which part to show: the tactics, the rotation (starting five, bench, key matchup), or both. */ section?: 'tactics' | 'rotation' | 'matchup' | 'all' }) {
+  // Which choice the explanation box describes: the one picked last.
+  const [focus, setFocus] = useState<Focus>('offence');
   const byId = new Map(team.players.map((p) => [p.id, p]));
   const bench = [...plan.bench, ...team.players.map((p) => p.id).filter((id) => !plan.starters.includes(id) && !plan.bench.includes(id))];
   const set = (patch: Partial<GamePlan>) => onChange({ ...plan, ...patch });
@@ -128,11 +131,11 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
           {!onCourt && (
             <span className="row" style={{ gap: 2, justifyContent: 'flex-end' }}>
               <span className="muted small">{benchIndex + 1}.</span>
-              <button className="small" onClick={() => moveBench(id, -1)} title="Comes in earlier">
-                ↑
+              <button className="small" onClick={() => moveBench(id, -1)} title="Comes in earlier" aria-label="Comes in earlier">
+                <Icon name="up" />
               </button>
-              <button className="small" onClick={() => moveBench(id, 1)} title="Comes in later">
-                ↓
+              <button className="small" onClick={() => moveBench(id, 1)} title="Comes in later" aria-label="Comes in later">
+                <Icon name="down" />
               </button>
             </span>
           )}
@@ -145,14 +148,22 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
   const oppSorted = [...opponent.players].sort((a, b) => composite(b).overall - composite(a).overall);
   const setKm = (k: KeyMatchup) => set({ keyMatchup: k });
 
+  const focusInfo =
+    focus === 'offence' ? OFFENCE_INFO[plan.offence] : focus === 'defence' ? DEFENCE_INFO[plan.defence] : focus === 'tempo' ? TEMPO_INFO[plan.tempo] : AGGRESSION_INFO[plan.aggression ?? 'normal'];
+  const tactics = section === 'tactics' || section === 'all';
+  const rotation = section === 'rotation' || section === 'all';
+  const matchup = section === 'matchup' || section === 'all';
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
+    <div className="plan-editor">
+      {tactics && (<>
       <div className="suggest">
         <div className="row">
-          <b>🧑‍🏫 Assistant suggests:</b>
+          <b>
+            <Icon name="lightbulb" /> Assistant suggests:
+          </b>
           <span>
-            {OFFENCE_INFO[suggestion.offence].icon} {OFFENCE_INFO[suggestion.offence].label} · {DEFENCE_INFO[suggestion.defence].icon}{' '}
-            {DEFENCE_INFO[suggestion.defence].label} · {TEMPO_INFO[suggestion.tempo].icon} {TEMPO_INFO[suggestion.tempo].label} · {AGGRESSION_INFO[suggestion.aggression].icon} {AGGRESSION_INFO[suggestion.aggression].label} intensity
+            <Icon name={OFFENCE_INFO[suggestion.offence].icon} /> {OFFENCE_INFO[suggestion.offence].label} · <Icon name={DEFENCE_INFO[suggestion.defence].icon} />{' '}
+            {DEFENCE_INFO[suggestion.defence].label} · <Icon name={TEMPO_INFO[suggestion.tempo].icon} /> {TEMPO_INFO[suggestion.tempo].label} · <Icon name={AGGRESSION_INFO[suggestion.aggression].icon} /> {AGGRESSION_INFO[suggestion.aggression].label} intensity
           </span>
           <div className="spacer" />
           <button
@@ -160,33 +171,38 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
             disabled={followsSuggestion}
             onClick={() => set({ offence: suggestion.offence, defence: suggestion.defence, tempo: suggestion.tempo, aggression: suggestion.aggression })}
           >
-            {followsSuggestion ? 'Using it ✓' : 'Use this'}
+            {followsSuggestion ? (
+              <>
+                Using it <CheckIcon />
+              </>
+            ) : (
+              'Use this'
+            )}
           </button>
         </div>
-        <ul>
-          {suggestion.reasons.map((r) => (
-            <li key={r}>{r}</li>
-          ))}
-        </ul>
+        <div className="muted small">{suggestion.reasons.join(' · ')}</div>
       </div>
 
-      <OptionPicker title="Attack: how do we score?" options={OFFENSIVE_FOCI} info={OFFENCE_INFO} value={plan.offence} onPick={(offence) => set({ offence })} />
-      <OptionPicker title="Defence: how do we stop them?" options={DEFENCE_SCHEMES} info={DEFENCE_INFO} value={plan.defence} onPick={(defence) => set({ defence })} />
-      <OptionPicker title="Tempo: how fast do we play?" options={TEMPOS} info={TEMPO_INFO} value={plan.tempo} onPick={(tempo) => set({ tempo })} />
+      <OptionPicker title="Attack: how do we score?" options={OFFENSIVE_FOCI} info={OFFENCE_INFO} value={plan.offence} onPick={(offence) => (set({ offence }), setFocus('offence'))} />
+      <OptionPicker title="Defence: how do we stop them?" options={DEFENCE_SCHEMES} info={DEFENCE_INFO} value={plan.defence} onPick={(defence) => (set({ defence }), setFocus('defence'))} />
+      <OptionPicker title="Tempo: how fast do we play?" options={TEMPOS} info={TEMPO_INFO} value={plan.tempo} onPick={(tempo) => (set({ tempo }), setFocus('tempo'))} />
       <OptionPicker
         title="Defensive intensity: how hard do we play them?"
         options={AGGRESSIONS}
         info={AGGRESSION_INFO}
         value={plan.aggression ?? 'normal'}
-        onPick={(aggression) => set({ aggression })}
+        onPick={(aggression) => (set({ aggression }), setFocus('aggression'))}
       />
+      <Explain info={focusInfo} title={FOCUS_TITLE[focus]} />
+      </>)}
 
+      {rotation && (<>
       <div>
-        <h3>{live ? 'Players on court' : 'Starting five'} &amp; bench</h3>
+        <h3 className="rot-title">{live ? 'Players on court' : 'Starting five'} &amp; bench</h3>
         <div className={`swap-hint ${picked ? 'active' : ''}`}>
           {picked
             ? `${pickedName} selected: now click a ${pickedOnCourt ? 'bench player to bring in' : 'player on court to take off'}.`
-            : 'To swap: click a player on court, then a bench player.'}
+            : 'To swap: pick a player on court, then a bench player. Tired players and players in foul trouble are swapped automatically, in sub order.'}
         </div>
         <div>
           <table className="brk-table eq">
@@ -215,16 +231,13 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
             </tbody>
           </table>
         </div>
-        <div className="muted small">
-          Ratings: green = strong, red = weak. Hover a column header for what it means. Tired players and players in foul trouble are swapped automatically, in
-          sub order.
-        </div>
       </div>
+      </>)}
 
-      <details>
-        <summary>
-          <b>Advanced: key matchup</b> <span className="muted small">(optional) {km.kind === 'double' ? '· doubling their star' : km.kind === 'assign' ? '· stopper assigned' : ''}</span>
-        </summary>
+      {matchup && (<>
+
+      <div className="key-matchup">
+        <h3>Key matchup (optional)</h3>
         <div className="row wrap" style={{ marginTop: 8 }}>
           <select
             value={km.kind}
@@ -268,7 +281,8 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side }: Props
               ? 'Your chosen defender follows their player everywhere (man-to-man only; a zone ignores it).'
               : 'Everyone guards the player in the same position.'}
         </div>
-      </details>
+      </div>
+      </>)}
     </div>
   );
 }
@@ -286,26 +300,45 @@ function OptionPicker<K extends string>({
   value: K;
   onPick: (k: K) => void;
 }) {
-  const sel = info[value];
   return (
     <div>
       <h3>{title}</h3>
       <div className="cards">
         {options.map((o) => (
           <button key={o} className={`card ${value === o ? 'active' : ''}`} onClick={() => onPick(o)} title={info[o].blurb}>
-            <span className="icon">{info[o].icon}</span>
+            <span className="icon"><Icon name={info[o].icon} /></span>
             {info[o].label}
           </button>
         ))}
       </div>
-      <div className="explain">
-        <div>{sel.blurb}</div>
-        <div>
-          <span className="good">✔ Good when:</span> {sel.good}
-        </div>
-        <div>
-          <span className="bad">✘ Weak against:</span> {sel.weak}
-        </div>
+    </div>
+  );
+}
+
+type Focus = 'offence' | 'defence' | 'tempo' | 'aggression';
+const FOCUS_TITLE: Record<Focus, string> = { offence: 'Attack', defence: 'Defence', tempo: 'Tempo', aggression: 'Intensity' };
+
+/** What the option last picked does: one box for all four choices, so the plan fits one screen. */
+function Explain({ info, title }: { info: OptionInfo; title: string }) {
+  return (
+    <div className="explain">
+      <div>
+        <b>
+          {title}: {info.label}.
+        </b>{' '}
+        {info.blurb}
+      </div>
+      <div>
+        <span className="good">
+          <CheckIcon /> Good when:
+        </span>{' '}
+        {info.good}
+      </div>
+      <div>
+        <span className="bad">
+          <CrossIcon /> Weak against:
+        </span>{' '}
+        {info.weak}
       </div>
     </div>
   );

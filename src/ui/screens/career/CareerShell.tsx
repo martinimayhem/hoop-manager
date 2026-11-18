@@ -3,7 +3,8 @@
 // Continue and the sidebar items with nothing to show yet are disabled: tapping one says "Coming soon"
 // (a tooltip alone would be hover-only on a tablet).
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowLeftRight, ArrowRight, CalendarDays, ChevronLeft, ClipboardList, House, Search, Shield, Trophy, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { clubById, competitionsOf, moneySummary, positionIn } from '../../../game/world/query';
 import type { World } from '../../../game/world/types';
 import { Badge, moneyLine } from './parts';
@@ -12,43 +13,17 @@ import './career.css';
 
 type Item = 'home' | 'squad' | 'tactics' | 'schedule' | 'competitions' | 'transfers' | 'scouting' | 'club' | 'manager';
 
-const ICON: Record<Item, ReactNode> = {
-  home: <path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" />,
-  squad: (
-    <>
-      <circle cx="9" cy="8" r="3.2" />
-      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-      <circle cx="17" cy="9" r="2.5" />
-      <path d="M16 14.2c2.8.3 5 2.6 5 5.8" />
-    </>
-  ),
-  tactics: (
-    <>
-      <rect x="4" y="4" width="16" height="16" rx="2" />
-      <path d="M8 9l3 3M11 9l-3 3M15 14a1.6 1.6 0 1 0 0 .1M9 16c2-3 4-5 7-6" />
-    </>
-  ),
-  schedule: (
-    <>
-      <rect x="3.5" y="5" width="17" height="15" rx="2" />
-      <path d="M3.5 10h17M8 3v4M16 3v4" />
-    </>
-  ),
-  competitions: <path d="M7 4h10v4a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M9 17h6v4H9z" />,
-  transfers: <path d="M4 8h14l-3-3M20 16H6l3 3" />,
-  scouting: (
-    <>
-      <circle cx="10.5" cy="10.5" r="6" />
-      <path d="M15 15l5.5 5.5" />
-    </>
-  ),
-  club: <path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z" />,
-  manager: (
-    <>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" />
-    </>
-  ),
+/** Lucide icons (GAME_FLOW §6.1a: one SVG icon set). */
+const ICON: Record<Item, LucideIcon> = {
+  home: House,
+  squad: Users,
+  tactics: ClipboardList,
+  schedule: CalendarDays,
+  competitions: Trophy,
+  transfers: ArrowLeftRight,
+  scouting: Search,
+  club: Shield,
+  manager: UserRound,
 };
 
 const ITEMS: { id: Item; label: string; ready: boolean }[] = [
@@ -64,11 +39,8 @@ const ITEMS: { id: Item; label: string; ready: boolean }[] = [
 ];
 
 function Icon({ id }: { id: Item }) {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {ICON[id]}
-    </svg>
-  );
+  const C = ICON[id];
+  return <C size={22} strokeWidth={1.9} aria-hidden="true" />;
 }
 
 /** Which sidebar item a view belongs to. */
@@ -131,9 +103,7 @@ export function CareerShell({ world, slot, onMenu }: { world: World; slot: numbe
           </div>
           <button className="cr-continue" aria-disabled="true" title="Coming soon: the season starts in the next slice" onClick={() => say('Continue: coming soon. The season starts in the next slice.')}>
             Continue
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
+            <ArrowRight size={18} strokeWidth={2.5} aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -160,9 +130,7 @@ export function CareerShell({ world, slot, onMenu }: { world: World; slot: numbe
               {world.human?.manager ? ` · ${world.human.manager}` : ''}
             </span>
             <button className="cr-nav" onClick={onMenu} title="Main menu">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7" />
-              </svg>
+              <ChevronLeft size={22} strokeWidth={1.9} aria-hidden="true" />
               <span className="cr-nav-label">Main menu</span>
             </button>
           </div>

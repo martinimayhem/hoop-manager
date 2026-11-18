@@ -15,35 +15,35 @@ export interface OptionInfo {
 
 export const OFFENCE_INFO: Record<OffensiveFocus, OptionInfo> = {
   inside: {
-    icon: '💪',
+    icon: 'biceps',
     label: 'Inside',
     blurb: 'Feed your big men close to the basket.',
     good: 'You have tall, strong scorers. Also grabs more offensive rebounds.',
     weak: 'A 2-3 zone clogs the paint.',
   },
   balanced: {
-    icon: '⚖️',
+    icon: 'scale',
     label: 'Balanced',
     blurb: 'A bit of everything, so the defence can\'t key on one thing.',
     good: 'Your team has no single standout strength.',
     weak: 'Never bad, never spectacular.',
   },
   three: {
-    icon: '🎯',
+    icon: 'target',
     label: '3-Point',
     blurb: 'Move the ball and shoot from deep.',
     good: 'You have 3+ good shooters and a passer. Great against a zone.',
     weak: 'Quick man-to-man defenders, or a cold shooting night.',
   },
   pickAndRoll: {
-    icon: '🔁',
+    icon: 'repeat',
     label: 'Pick & Roll',
     blurb: 'Your guard uses a screen from a big man, who then rolls to the rim.',
     good: 'Quick point guard + athletic big. Punishes slow big men.',
     weak: 'A zone (it doesn\'t chase the screen).',
   },
   fastBreak: {
-    icon: '⚡',
+    icon: 'zap',
     label: 'Fast Break',
     blurb: 'Sprint the other way after every rebound and steal.',
     good: 'Your team is quicker than theirs.',
@@ -53,21 +53,21 @@ export const OFFENCE_INFO: Record<OffensiveFocus, OptionInfo> = {
 
 export const DEFENCE_INFO: Record<DefenceScheme, OptionInfo> = {
   man: {
-    icon: '🧍',
+    icon: 'user',
     label: 'Man-to-man',
     blurb: 'Every player guards one opponent.',
     good: 'The safe default. Best against good shooters.',
     weak: 'Opponents who are better one-on-one, or quick pick-and-roll guards vs your slow bigs.',
   },
   zone: {
-    icon: '🧱',
+    icon: 'wall',
     label: '2-3 Zone',
     blurb: 'Players guard an area instead of a man, packing the paint.',
     good: 'Against inside scorers and drivers. Hides weak defenders.',
     weak: 'Good 3-point shooters and passers.',
   },
   press: {
-    icon: '🔥',
+    icon: 'flame',
     label: 'Full-court Press',
     blurb: 'Trap the ball all over the court to force turnovers.',
     good: 'Their ball handlers are weak, or you need a comeback.',
@@ -77,15 +77,15 @@ export const DEFENCE_INFO: Record<DefenceScheme, OptionInfo> = {
 
 export const TEMPO_INFO: Record<Tempo, OptionInfo> = {
   slow: {
-    icon: '🐢',
+    icon: 'turtle',
     label: 'Slow',
     blurb: 'Use the whole shot clock: fewer possessions.',
     good: 'Your team is big or tired, or you are protecting a lead.',
     weak: 'When you are behind and need points fast.',
   },
-  normal: { icon: '▶️', label: 'Normal', blurb: 'Standard pace.', good: 'No clear speed advantage either way.', weak: 'Nothing in particular.' },
+  normal: { icon: 'play', label: 'Normal', blurb: 'Standard pace.', good: 'No clear speed advantage either way.', weak: 'Nothing in particular.' },
   fast: {
-    icon: '🐇',
+    icon: 'rabbit',
     label: 'Fast',
     blurb: 'Shoot early: more possessions for both teams.',
     good: 'Your team is quicker and fitter, or you are behind.',
@@ -95,15 +95,15 @@ export const TEMPO_INFO: Record<Tempo, OptionInfo> = {
 
 export const AGGRESSION_INFO: Record<Aggression, OptionInfo> = {
   careful: {
-    icon: '🧊',
+    icon: 'snowflake',
     label: 'Careful',
     blurb: "Stay down, don't reach: few fouls, but looser contests and fewer steals.",
     good: 'They handle the ball well and make their free throws, or your bigs are in foul trouble.',
     weak: 'Against shaky ball handlers: you let them off the hook.',
   },
-  normal: { icon: '▶️', label: 'Normal', blurb: 'Standard defence.', good: 'No clear reason to change.', weak: 'Nothing in particular.' },
+  normal: { icon: 'play', label: 'Normal', blurb: 'Standard defence.', good: 'No clear reason to change.', weak: 'Nothing in particular.' },
   aggressive: {
-    icon: '🔥',
+    icon: 'flame',
     label: 'Aggressive',
     blurb: 'Crowd the ball, jump at shots: more turnovers and blocks, but more fouls and free throws.',
     good: 'They turn the ball over easily, or miss their free throws.',

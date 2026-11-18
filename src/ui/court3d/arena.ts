@@ -290,7 +290,7 @@ export class Arena {
     g.fillStyle = '#05070a';
     g.fillRect(0, 0, W, 64);
     g.textBaseline = 'middle';
-    g.font = '800 40px system-ui, sans-serif';
+    g.font = '700 42px "Barlow Condensed", sans-serif';
     if (flash) {
       for (let x = 0; x < W; x += 512) {
         g.fillStyle = flash.colour;

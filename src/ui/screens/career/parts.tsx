@@ -1,7 +1,9 @@
 // Career screens' shared parts: the club badge, ratings (exact for your own players, a scout's range
 // for everyone else, as in the rest of the game), the payroll bar (GAME_FLOW §4.4) and small helpers.
 
-import { useId, type ReactNode } from 'react';
+import { Angry, Frown, Laugh, Meh, Smile, Star, StarHalf, type LucideIcon } from 'lucide-react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { NextIcon, PrevIcon } from '../../icons';
 import { HEAD_VIEWBOX, portraitUrl, type Kit } from '../../looks';
 import { composite } from '../../../engine/ratings';
 import { hashUnit } from '../../../game/pricing';
@@ -65,30 +67,27 @@ export const moraleName = (m: Morale) => m[0].toUpperCase() + m.slice(1);
 // Morale faces (GAME_FLOW §6.5): five faces that differ in mouth shape and colour (and the colours
 // in lightness), so they read without colour vision. Each has a text label for screen readers.
 
-const FACE: Record<Morale, { fill: string; mouth: string; open?: boolean; brows?: string }> = {
-  superb: { fill: '#2fbf6a', mouth: 'M6 11.2 Q10 17.5 14 11.2 Z', open: true },
-  good: { fill: '#a3e07c', mouth: 'M6.5 12 Q10 15.2 13.5 12' },
-  okay: { fill: '#ffd34d', mouth: 'M6.5 13.2 H13.5' },
-  low: { fill: '#ff9f43', mouth: 'M6.5 14.4 Q10 11.8 13.5 14.4' },
-  'very low': { fill: '#e8484f', mouth: 'M6 15.5 Q10 10.5 14 15.5', brows: 'M5.6 5.6 L8.6 7.2 M14.4 5.6 L11.4 7.2' },
+/** Lucide's five faces (GAME_FLOW §6.1a: one icon set), filled with the morale colour. */
+const FACE: Record<Morale, { icon: LucideIcon; fill: string }> = {
+  superb: { icon: Laugh, fill: '#2fbf6a' },
+  good: { icon: Smile, fill: '#a3e07c' },
+  okay: { icon: Meh, fill: '#ffd34d' },
+  low: { icon: Frown, fill: '#ff9f43' },
+  'very low': { icon: Angry, fill: '#e8484f' },
 };
 
 export function MoraleFace({ m, size = 20, label = false }: { m: Morale; size?: number; label?: boolean }) {
-  const f = FACE[m];
+  const { icon: C, fill } = FACE[m];
   return (
     <span className="cr-face">
-      <svg width={size} height={size} viewBox="0 0 20 20" role="img" aria-label={`Morale: ${m}`}>
-        <circle cx="10" cy="10" r="9.3" fill={f.fill} />
-        <circle cx="7" cy="8.2" r="1.3" fill="#151a26" />
-        <circle cx="13" cy="8.2" r="1.3" fill="#151a26" />
-        {f.brows && <path d={f.brows} stroke="#151a26" strokeWidth="1.3" strokeLinecap="round" />}
-        <path d={f.mouth} fill={f.open ? '#151a26' : 'none'} stroke="#151a26" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      {/* The colour is a disc behind the drawing: Lucide draws its circle last, so a filled one would hide the face. */}
+      <span className="cr-face-disc" style={{ width: size, height: size, background: fill }} role="img" aria-label={`Morale: ${m}`}>
+        <C size={size} fill="none" stroke="#151a26" strokeWidth={2} aria-hidden="true" />
+      </span>
       {label && <span>{moraleName(m)}</span>}
     </span>
   );
 }
-
 /** The legend under a table: every face with its name. */
 export function MoraleLegend() {
   return (
@@ -109,31 +108,20 @@ export function MoraleLegend() {
 
 export type StarKind = 'ability' | 'potential';
 const STAR_FILL: Record<StarKind, string> = { ability: '#ffc83d', potential: '#4c8ef7' };
-const STAR_PATH = 'M6 0.6 L7.6 4.1 L11.4 4.5 L8.55 7.05 L9.35 10.8 L6 8.9 L2.65 10.8 L3.45 7.05 L0.6 4.5 L4.4 4.1 Z';
 
-/** Five stars drawn 12 units wide with 2 between them (68 × 12), scaled to `size` px high. */
+/** Five Lucide stars, filled to the half star, `size` px each. */
 export function Stars({ n, kind, size = 12 }: { n: number; kind: StarKind; size?: number }) {
-  const id = useId();
-  const x = (i: number) => i * 14;
   return (
-    <svg className="cr-stars" width={(size * 68) / 12} height={size} viewBox="0 0 68 12" role="img" aria-label={`${kind === 'ability' ? 'Ability' : 'Potential'}: ${n} of 5 stars`}>
-      <defs>
-        <clipPath id={id}>
-          <rect x="0" y="0" width={x(Math.floor(n)) + (n % 1 ? 6 : 0)} height="12" />
-        </clipPath>
-      </defs>
+    <span className="cr-stars" role="img" aria-label={`${kind === 'ability' ? 'Ability' : 'Potential'}: ${n} of 5 stars`} style={{ height: size }}>
       {[0, 1, 2, 3, 4].map((i) => (
-        <path key={`e${i}`} d={STAR_PATH} transform={`translate(${x(i)} 0)`} fill="#2c3a58" />
+        <span key={i} className="cr-star" style={{ width: size, height: size }}>
+          <Star size={size} fill={i < Math.floor(n) ? STAR_FILL[kind] : '#2c3a58'} strokeWidth={0} aria-hidden="true" />
+          {i === Math.floor(n) && n % 1 !== 0 && <StarHalf size={size} fill={STAR_FILL[kind]} strokeWidth={0} aria-hidden="true" />}
+        </span>
       ))}
-      <g clipPath={`url(#${id})`}>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <path key={`f${i}`} d={STAR_PATH} transform={`translate(${x(i)} 0)`} fill={STAR_FILL[kind]} />
-        ))}
-      </g>
-    </svg>
+    </span>
   );
 }
-
 /** A player's ability and potential stars, against his club's league (other clubs': your scouts' estimate). */
 export function playerStars(w: World, wp: WorldPlayer): { ability: number; potential: number; scale: StarScale } {
   const scale = starScale(w, wp.club ?? w.human?.club ?? w.clubs[0].id);
@@ -168,7 +156,7 @@ export function initials(club: WorldClub): string {
 /** The club badge: its initials in its colours. */
 export function Badge({ club, size = 40 }: { club: WorldClub; size?: number }) {
   return (
-    <span className="cr-badge" style={{ width: size, height: size, fontSize: size * 0.42, background: club.colours[0], borderColor: club.colours[1] }} aria-hidden="true">
+    <span className="cr-badge" style={{ width: size, height: size, fontSize: Math.max(12, size * 0.42), background: club.colours[0], borderColor: club.colours[1] }} aria-hidden="true">
       <span style={{ color: readableOn(club.colours[0]) }}>{initials(club)}</span>
     </span>
   );
@@ -333,4 +321,62 @@ export function cameThrough(w: World, wp: WorldPlayer): string {
   if (o.kind === 'academy') return `${clubById(w, o.club)?.name ?? '?'} academy`;
   if (o.kind === 'star') return 'Established star';
   return 'International';
+}
+
+// ---------------------------------------------------------------------------
+// Lists that fit (GAME_FLOW §6.1a: nothing scrolls; a list longer than the space is split into
+// pages). Shows as many rows as fit in the window: after each render, if the page is taller than the
+// window, fewer rows; a resize starts again from all rows. Whole lists where they fit.
+
+const MIN_ROWS = 3;
+
+/** How many of `total` rows to show, and which page; `rowSelector` finds one row to measure. */
+export function useFitRows(total: number, rowSelector: string, resetKey: unknown = null) {
+  const [size, setSize] = useState(total);
+  const [page, setPage] = useState(0);
+  // A new list, a new window size: try all rows again.
+  useEffect(() => {
+    setSize(total);
+    setPage(0);
+  }, [total, resetKey]);
+  useEffect(() => {
+    const again = () => setSize(total);
+    window.addEventListener('resize', again);
+    return () => window.removeEventListener('resize', again);
+  }, [total]);
+  // Check again whenever the page changes size (fonts arriving, the screen settling).
+  const [, recheck] = useState(0);
+  useEffect(() => {
+    const ro = new ResizeObserver(() => recheck((n) => n + 1));
+    ro.observe(document.body);
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const de = document.scrollingElement ?? document.documentElement;
+    const over = de.scrollHeight - window.innerHeight;
+    if (over <= 0 || size <= MIN_ROWS) return;
+    const row = document.querySelector(rowSelector)?.getBoundingClientRect().height || 40;
+    setSize((s) => Math.max(MIN_ROWS, Math.min(s, total) - Math.max(1, Math.ceil(over / row))));
+  });
+  const pages = Math.max(1, Math.ceil(total / size));
+  const p = Math.min(page, pages - 1);
+  return { from: p * size, to: Math.min(total, (p + 1) * size), paged: pages > 1, page: p, pages, setPage };
+}
+
+/** "1–13 of 18" with previous and next: only when a list is split into pages. */
+export function Pager({ fit, total }: { fit: ReturnType<typeof useFitRows>; total: number }) {
+  if (!fit.paged) return null;
+  return (
+    <div className="cr-pager" role="navigation" aria-label="Pages">
+      <button className="cr-back icon" disabled={fit.page === 0} onClick={() => fit.setPage(fit.page - 1)} aria-label="Previous page">
+        <PrevIcon />
+      </button>
+      <span>
+        {fit.from + 1}–{fit.to} of {total}
+      </span>
+      <button className="cr-back icon" disabled={fit.page >= fit.pages - 1} onClick={() => fit.setPage(fit.page + 1)} aria-label="Next page">
+        <NextIcon />
+      </button>
+    </div>
+  );
 }

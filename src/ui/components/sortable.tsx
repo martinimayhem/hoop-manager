@@ -3,6 +3,7 @@
 // (the standings, the starters first, and so on). Rows without a value (a DNP) always go last.
 
 import { useState, type ReactNode } from 'react';
+import { SortDownIcon, SortUpIcon } from '../icons';
 
 export type SortValue = number | string | null | undefined;
 export interface SortState {
@@ -62,7 +63,7 @@ export function useSort<T>(value: (row: T, key: string) => SortValue, initial: S
         onClick={() => click(key, !!o.left)}
       >
         {label}
-        <span className="sort-mark">{sort.key === key ? (sort.desc ? '▼' : '▲') : ''}</span>
+        <span className="sort-mark">{sort.key === key ? sort.desc ? <SortDownIcon /> : <SortUpIcon /> : null}</span>
       </th>
     );
   };
