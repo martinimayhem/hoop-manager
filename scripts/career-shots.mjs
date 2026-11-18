@@ -73,6 +73,7 @@ async function run(width) {
   await page.getByRole('tab', { name: /First team/ }).click();
   await page.locator('.cr-table .cr-name').first().click();
   await shot('4-player');
+  await page.screenshot({ path: join(out, `${width}-4b-player-viewport.png`) });
   await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
   await shot('5-competitions');
   await page.locator('.cr-comp', { hasText: 'Big League · Europe' }).first().click();
@@ -86,6 +87,7 @@ async function run(width) {
   await page.getByRole('radio', { name: 'Overview' }).click();
   await page.locator('.cr-table .cr-name').first().click();
   await shot('5d-other-player');
+  await page.screenshot({ path: join(out, `${width}-5e-other-player-viewport.png`) });
   await page.locator('.cr-nav', { hasText: 'Club' }).click();
   await shot('6-club-budget');
   // Disabled for real (aria-disabled), but a tap still says "coming soon".

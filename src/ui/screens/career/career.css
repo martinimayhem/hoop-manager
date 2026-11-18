@@ -671,7 +671,7 @@
   left: 0;
   border-radius: 3px;
 }
-.cr-attr-bar i.range {
+.cr-attr-bar i.cr-fill-range {
   opacity: 0.85;
 }
 .cr-attr-what {
@@ -1140,5 +1140,81 @@
   .cr .cr-table td.cr-star-cell .cr-stars {
     width: auto;
     height: 14px;
+  }
+}
+
+/* ---- Player page, compact: fits a desktop screen without scrolling ---- */
+.cr-player {
+  gap: 16px;
+}
+.cr-player .cr-card {
+  padding: 16px 20px;
+  gap: 10px;
+}
+.cr-player .cr-card h2 {
+  font-size: 18px;
+}
+.cr-player .cr-player-head {
+  gap: 16px 24px;
+}
+.cr-player .cr-player-name h1 {
+  font-size: 34px;
+}
+.cr-player .cr-player-name {
+  width: 100%;
+}
+.cr .cr-back.small {
+  margin-left: auto;
+  align-self: center;
+  min-height: 44px;
+  padding: 6px 12px;
+}
+.cr-player .cr-player-stars {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 12px 14px;
+  min-width: 0;
+}
+.cr-player .cr-player-stars .cr-star-num {
+  grid-column: auto;
+  font-family: var(--cr-head);
+  font-stretch: condensed;
+  font-size: 24px;
+  line-height: 1;
+}
+.cr-player-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.cr-attr-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 32px;
+}
+.cr-player .cr-attr-group {
+  gap: 5px;
+  padding-top: 2px;
+  margin-bottom: 8px;
+}
+.cr-player .cr-attr {
+  grid-template-columns: 112px 1fr 58px;
+}
+.cr-player .cr-attr b {
+  white-space: nowrap;
+}
+.cr-player .cr-facts {
+  gap: 7px 16px;
+}
+@media (max-width: 1023px) {
+  .cr-player-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .cr-attr-cols {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

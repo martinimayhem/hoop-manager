@@ -83,20 +83,21 @@ function AttrRow({ label, lo, hi }: { label: string; lo: number; hi: number }) {
     <div className="cr-attr">
       <span>{label}</span>
       <span className="cr-attr-bar">
-        {lo === hi ? <i style={{ width: `${hi}%`, background: tone }} /> : <i className="range" style={{ left: `${lo}%`, width: `${Math.max(2, hi - lo)}%`, background: tone }} />}
+        {lo === hi ? <i style={{ width: `${hi}%`, background: tone }} /> : <i className="cr-fill-range" style={{ left: `${lo}%`, width: `${Math.max(2, hi - lo)}%`, background: tone }} />}
       </span>
       <b>{lo === hi ? lo : `${lo}–${hi}`}</b>
     </div>
   );
 }
 
-const PERSONALITY: [keyof World['players'][string]['personality'], string, string][] = [
-  ['professionalism', 'Professionalism', 'Trains well: grows faster, declines slower'],
-  ['ambition', 'Ambition', 'Wants minutes and a bigger club'],
-  ['loyalty', 'Loyalty', 'Likes to stay at his club'],
-  ['temperament', 'Temperament', 'Keeps his head in a heated game'],
+const PERSONALITY: [keyof World['players'][string]['personality'], string][] = [
+  ['professionalism', 'Professionalism'],
+  ['ambition', 'Ambition'],
+  ['loyalty', 'Loyalty'],
+  ['temperament', 'Temperament'],
 ];
 
+/** The player page, compact: everything fits a desktop screen without scrolling. */
 export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
   const wp = w.players[id];
   if (!wp) return <div className="cr-page">Player not found.</div>;
@@ -108,17 +109,32 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
   const k = wp.contract;
   const cap = club?.moneySystem === 'cap';
   const origin = wp.origin.kind === 'academy' ? 'Academy graduate' : wp.origin.kind === 'college' ? 'College' : wp.origin.kind === 'star' ? 'Established star' : 'International';
+  const group = (keys: string[]) =>
+    ATTRIBUTE_GROUPS.filter((g) => keys.includes(g.key)).map((g) => (
+      <div key={g.key} className="cr-attr-group">
+        <span className="cr-label">{g.label}</span>
+        {g.attrs.map((a) => {
+          const v = wp.p.attrs[a.key];
+          const s = mine ? { lo: v, hi: v } : scoutAttr(wp.p, a.key, wp.reputation, DEFAULT_SCOUT_ACCURACY);
+          return <AttrRow key={a.key} label={a.label} lo={s.lo} hi={s.hi} />;
+        })}
+      </div>
+    ));
   return (
-    <div className="cr-page">
-      <BackLink nav={nav} label="Back" />
+    <div className="cr-page cr-player">
       <section className="cr-card cr-player-head">
-        <CareerPortrait w={w} wp={wp} size={132} />
+        <CareerPortrait w={w} wp={wp} size={112} />
         <div className="cr-player-id">
           <div className="cr-player-name">
             <h1>{wp.p.name}</h1>
             <span className="cr-num">
               #{wp.p.number} · {wp.p.position}
             </span>
+            {nav.canBack && (
+              <button className="cr-back small" onClick={nav.back}>
+                ← Back
+              </button>
+            )}
           </div>
           <span className="cr-sub big">
             {ageOf(w, wp)} years · {country(wp.nationality)} · {wp.p.heightCm} cm, {wp.p.weightKg} kg · {wp.p.archetype} · {origin}
@@ -134,66 +150,55 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
             ) : (
               <span className="cr-chip">{whereIs(w, wp)}</span>
             )}
-            <span className="cr-chip">Hometown: {wp.hometown}</span>
+            <span className="cr-chip">Stars vs {stars.scale.label.replace(/^the /, '')}</span>
           </div>
         </div>
         <div className="cr-player-stars">
-          <div>
-            <span className="cr-label">Ability</span>
-            <Stars n={stars.ability} kind="ability" size={20} />
-            <span className="cr-star-num">
-              OVR <b style={{ color: ratingTone(mid(r)) }}>{showRange(r)}</b> <small>{mine ? 'exact' : 'scout estimate'}</small>
-            </span>
-          </div>
-          <div>
-            <span className="cr-label">Potential</span>
-            <Stars n={stars.potential} kind="potential" size={20} />
-            <span className="cr-star-num">
-              Range <b style={{ color: 'var(--cr-blue)' }}>{showRange(pot)}</b> <small>{mine ? 'staff estimate' : 'scout estimate'}</small>
-            </span>
-          </div>
-          <span className="cr-sub">Stars compare him with {stars.scale.label}.</span>
+          <span className="cr-label">Ability</span>
+          <Stars n={stars.ability} kind="ability" size={20} />
+          <b className="cr-star-num" style={{ color: ratingTone(mid(r)) }} title="Overall">
+            {showRange(r)}
+          </b>
+          <span className="cr-label">Potential</span>
+          <Stars n={stars.potential} kind="potential" size={20} />
+          <b className="cr-star-num" style={{ color: 'var(--cr-blue)' }} title="Potential range">
+            {showRange(pot)}
+          </b>
         </div>
       </section>
 
-      <div className="cr-grid-2">
-        <section className="cr-card">
+      <div className="cr-player-grid">
+        <section className="cr-card cr-player-attrs">
           <h2>Attributes</h2>
-          {ATTRIBUTE_GROUPS.map((g) => (
-            <div key={g.key} className="cr-attr-group">
-              <span className="cr-label">{g.label}</span>
-              {g.attrs.map((a) => {
-                const v = wp.p.attrs[a.key];
-                const s = mine ? { lo: v, hi: v } : scoutAttr(wp.p, a.key, wp.reputation, DEFAULT_SCOUT_ACCURACY);
-                return <AttrRow key={a.key} label={a.label} lo={s.lo} hi={s.hi} />;
-              })}
+          <div className="cr-attr-cols">
+            <div>{group(['physical', 'scoring'])}</div>
+            <div>
+              {group(['playmaking', 'defence'])}
+              <div className="cr-attr-group">
+                <span className="cr-label">Personality</span>
+                {mine ? (
+                  PERSONALITY.map(([key, label]) => (
+                    <div key={key} className="cr-attr">
+                      <span>{label}</span>
+                      <span className="cr-attr-bar">
+                        <i style={{ width: `${(wp.personality[key] / 20) * 100}%`, background: ratingTone((wp.personality[key] / 20) * 99) }} />
+                      </span>
+                      <b>{wp.personality[key]}</b>
+                    </div>
+                  ))
+                ) : (
+                  <span className="cr-sub">Unknown until he joins you.</span>
+                )}
+              </div>
             </div>
-          ))}
-          <div className="cr-attr-group">
-            <span className="cr-label">Personality</span>
-            {mine ? (
-              PERSONALITY.map(([key, label, what]) => (
-                <div key={key} className="cr-attr">
-                  <span>{label}</span>
-                  <span className="cr-attr-bar">
-                    <i style={{ width: `${(wp.personality[key] / 20) * 100}%`, background: ratingTone((wp.personality[key] / 20) * 99) }} />
-                  </span>
-                  <b>{wp.personality[key]}</b>
-                  <small className="cr-attr-what">{what}</small>
-                </div>
-              ))
-            ) : (
-              <span className="cr-sub">You learn his character once he is at your club.</span>
-            )}
           </div>
-          {!mine && <p className="cr-note">Scout estimates: the true rating is inside the range. Famous players are easier to read.</p>}
         </section>
 
-        <div className="cr-col">
-          <section className="cr-card">
-            <h2>Contract</h2>
+        <section className="cr-card">
+          <h2>Contract</h2>
+          <dl className="cr-facts">
             {k && club ? (
-              <dl className="cr-facts">
+              <>
                 <dt>Wage</dt>
                 <dd>{money(k.wage)} a year</dd>
                 <dt>Until</dt>
@@ -203,9 +208,7 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
                 {cap ? (
                   <>
                     <dt>Type</dt>
-                    <dd>{k.rookie ? 'Rookie-scale contract' : wp.status === 'dev' ? 'Minimum deal, outside the cap' : 'Salary-cap contract'}</dd>
-                    <dt>Buyout fee</dt>
-                    <dd className="muted">None: cap-system players move by trade</dd>
+                    <dd>{k.rookie ? 'Rookie scale' : wp.status === 'dev' ? 'Minimum, outside the cap' : 'Salary cap'}</dd>
                   </>
                 ) : (
                   <>
@@ -215,23 +218,26 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
                 )}
                 <dt>Promises</dt>
                 <dd className="muted">{wp.promises.length ? wp.promises.map((p) => p.what).join(', ') : 'None'}</dd>
-              </dl>
+              </>
             ) : (
-              <p className="cr-note">{wp.status === 'academy' ? 'An academy player: no professional contract yet.' : wp.status === 'free' ? 'None: a free agent.' : wp.status === 'college' ? 'A college player: no contract.' : 'None.'}</p>
+              <>
+                <dt>Contract</dt>
+                <dd className="muted">{wp.status === 'academy' ? 'Academy, none yet' : wp.status === 'free' ? 'Free agent' : 'None'}</dd>
+              </>
             )}
-          </section>
-          <section className="cr-card">
-            <h2>Background</h2>
-            <dl className="cr-facts">
-              <dt>Born</dt>
-              <dd>{wp.born}</dd>
-              <dt>Came through</dt>
-              <dd>{cameThrough(w, wp)}</dd>
-              <dt>Known</dt>
-              <dd>{wp.reputation >= 80 ? 'Everywhere' : wp.reputation >= 55 ? 'Across the league' : wp.reputation >= 30 ? 'In his league' : wp.reputation >= 12 ? 'Locally' : 'Hardly at all'}</dd>
-            </dl>
-          </section>
-        </div>
+          </dl>
+          <h2>Background</h2>
+          <dl className="cr-facts">
+            <dt>Born</dt>
+            <dd>{wp.born}</dd>
+            <dt>Hometown</dt>
+            <dd>{wp.hometown}</dd>
+            <dt>Came through</dt>
+            <dd>{cameThrough(w, wp)}</dd>
+            <dt>Known</dt>
+            <dd>{wp.reputation >= 80 ? 'Everywhere' : wp.reputation >= 55 ? 'Across the league' : wp.reputation >= 30 ? 'In his league' : wp.reputation >= 12 ? 'Locally' : 'Hardly at all'}</dd>
+          </dl>
+        </section>
       </div>
     </div>
   );
