@@ -1,5 +1,12 @@
 # Hoop Manager: working rules
 
+## Scope
+
+Hoop Manager is a simplified Football Manager for basketball. [SCOPE.md](SCOPE.md) lists what is
+In, Built, Later and Out. Don't build anything marked Out or Later, and don't add a feature that
+isn't on that list, without asking first. One player against the computer: no multiplayer code.
+Screens must work on desktop and tablet (touch); every keyboard shortcut needs an on-screen button.
+
 ## DEFENDERS ALWAYS TRY
 
 The engine (`src/engine/`) decides every outcome. The animation (`src/ui/court/animation.ts`,
