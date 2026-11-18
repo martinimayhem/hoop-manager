@@ -22,6 +22,8 @@ const url = server.resolvedUrls.local[0];
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH, headless: true } : { channel: 'chrome', headless: true });
 
 const times = [];
+const wide = [];
+let checked = 0;
 async function run(width) {
   const ctx = await browser.newContext({ viewport: { width, height: width >= 1024 ? 900 : 1024 }, deviceScaleFactor: 1, hasTouch: width < 1024 });
   const page = await ctx.newPage();
@@ -34,6 +36,12 @@ async function run(width) {
     await page.waitForTimeout(150);
     await page.screenshot({ path: join(out, `${width}-${name}.png`), fullPage: true });
     console.log(`  ${width}-${name}.png`);
+  };
+  // Whether any squad table is wider than its card (GAME_FLOW §6.4: every view fits 768 px).
+  const overflow = async (label) => {
+    const r = await page.evaluate(() => [...document.querySelectorAll('.cr-table-wrap')].map((e) => [e.scrollWidth, e.clientWidth]));
+    checked++;
+    for (const [s, c] of r) if (s > c + 1) wide.push(`${width}px ${label}: table ${s}px in a ${c}px card`);
   };
   const newCareer = async () => {
     await page.goto(url);
@@ -54,6 +62,12 @@ async function run(width) {
   await page.locator('.cr-new-side .cr-start').click();
   await page.locator('.cr-top-name').waitFor();
   await shot('3-squad');
+  for (const v of ['Attributes', 'Profile']) {
+    await page.getByRole('radio', { name: v }).click();
+    await overflow(`Kaunas · ${v}`);
+    await shot(`3-squad-${v.toLowerCase()}`);
+  }
+  await page.getByRole('radio', { name: 'Overview' }).click();
   await page.getByRole('tab', { name: /Academy/ }).click();
   await shot('3b-squad-academy');
   await page.getByRole('tab', { name: /First team/ }).click();
@@ -65,6 +79,11 @@ async function run(width) {
   await shot('5b-big-league-europe');
   await page.locator('.cr-table .cr-name').nth(1).click();
   await shot('5c-other-club');
+  await page.getByRole('radio', { name: 'Attributes' }).click();
+  await shot('5c-other-club-attributes');
+  await page.getByRole('radio', { name: 'Profile' }).click();
+  await shot('5c-other-club-profile');
+  await page.getByRole('radio', { name: 'Overview' }).click();
   await page.locator('.cr-table .cr-name').first().click();
   await shot('5d-other-player');
   await page.locator('.cr-nav', { hasText: 'Club' }).click();
@@ -81,6 +100,39 @@ async function run(width) {
   await shot('8-squad-cap');
   await page.locator('.cr-nav', { hasText: 'Club' }).click();
   await shot('9-club-cap');
+  await page.locator('.cr-nav', { hasText: 'Squad' }).click();
+  for (const v of ['Overview', 'Attributes', 'Profile']) {
+    await page.getByRole('radio', { name: v }).click();
+    await overflow(`New York · ${v}`);
+    await shot(`8-squad-cap-${v.toLowerCase()}`);
+  }
+  await page.getByRole('radio', { name: 'Overview' }).click();
+
+  // Every club in the world, every view and list: no squad table wider than its card.
+  if (process.argv.includes('--sweep') && width < 1024) {
+    await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+    const comps = await page.locator('.cr-comp').count();
+    for (let c = 0; c < comps; c++) {
+      await page.locator('.cr-comp').nth(c).click();
+      // Your own club opens the Club screen (no squad table, no Back): skip its row.
+      const clubs = await page.locator('.cr-table tr:not(.me) .cr-name').count();
+      const compName = await page.locator('h1').first().textContent();
+      for (let k = 0; k < clubs; k++) {
+        await page.locator('.cr-table tr:not(.me) .cr-name').nth(k).click();
+        const tabs = await page.getByRole('tab').count();
+        for (let t = 0; t < tabs; t++) {
+          await page.getByRole('tab').nth(t).click();
+          for (const v of ['Overview', 'Attributes', 'Profile']) {
+            await page.getByRole('radio', { name: v }).click();
+            await overflow(`${compName} club ${k + 1} tab ${t + 1} ${v}`);
+          }
+        }
+        await page.getByRole('radio', { name: 'Overview' }).click();
+        await page.locator('.cr-back').click();
+      }
+      await page.locator('.cr-back').click();
+    }
+  }
   await page.locator('.cr-nav', { hasText: 'Main menu' }).click();
   await shot('10-menu');
   await ctx.close();
@@ -89,6 +141,8 @@ async function run(width) {
 try {
   for (const w of [1440, 768]) await run(w);
   console.log(times.join('\n'));
+  console.log(`Squad tables measured: ${checked}; wider than their card: ${wide.length}`);
+  for (const x of wide.slice(0, 40)) console.log(`  ${x}`);
 } finally {
   await browser.close();
   await server.close();

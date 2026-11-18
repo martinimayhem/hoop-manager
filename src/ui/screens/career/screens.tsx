@@ -8,7 +8,7 @@ import { EUROPE_COUNTRIES } from '../../../game/world/places';
 import { ageOf, clubById, competitionById, competitionsOf, leagueOf, moneySummary, ordinal, standings, strength, whereIs } from '../../../game/world/query';
 import { REGION_NAME, type Competition, type World, type WorldClub } from '../../../game/world/types';
 import { Badge, cameThrough, contractEnd, country, isMine, MoraleDot, mid, overallRange, PayrollBar, potentialRange, ratingTone, showRange } from './parts';
-import { SquadTable, SquadTabs, TAB_NOTE, type SquadTab } from './SquadView';
+import { SquadControls, SquadTable, TAB_NOTE, useSquadView, type SquadTab } from './SquadView';
 
 export type View = { kind: 'squad' } | { kind: 'player'; id: string } | { kind: 'competitions' } | { kind: 'competition'; id: string } | { kind: 'club'; id: string };
 
@@ -50,6 +50,7 @@ function strengthRank(w: World, club: WorldClub): string {
 
 export function SquadScreen({ w, club, nav }: { w: World; club: WorldClub; nav: Nav }) {
   const [tab, setTab] = useState<SquadTab>('first');
+  const [view, setView] = useSquadView();
   const first = club.roster.map((id) => w.players[id]);
   const avgAge = first.reduce((s, p) => s + ageOf(w, p), 0) / first.length;
   const m = moneySummary(w, club);
@@ -60,7 +61,7 @@ export function SquadScreen({ w, club, nav }: { w: World; club: WorldClub; nav: 
           <h1>Squad</h1>
           <span className="cr-sub">{TAB_NOTE[tab]}</span>
         </div>
-        <SquadTabs club={club} tab={tab} onTab={setTab} />
+        <SquadControls club={club} tab={tab} onTab={setTab} view={view} onView={setView} />
       </div>
       <div className="cr-stats">
         <Stat label="Team rating" value={strength(w, club).toFixed(0)} sub={`· ${strengthRank(w, club)} in ${leagueOf(w, club.id).name}`} />
@@ -68,8 +69,8 @@ export function SquadScreen({ w, club, nav }: { w: World; club: WorldClub; nav: 
         {m.system === 'cap' ? <Stat label="Payroll" value={money(m.payroll)} sub={`/ cap ${money(m.cap)}`} /> : <Stat label="Budget used" value={money(m.committed)} sub={`/ ${money(m.budget)}`} />}
         <Stat label="Dev squad" value={`${club.dev.length}`} sub="/ 5" />
       </div>
-      <SquadTable w={w} club={club} tab={tab} onPlayer={(id) => nav.go({ kind: 'player', id })} />
-      <span className="cr-sub">Tap a name to open the player. Tap a column heading to sort. Morale: superb · good · okay · low · very low.</span>
+      <SquadTable w={w} club={club} tab={tab} view={view} onPlayer={(id) => nav.go({ kind: 'player', id })} />
+      <span className="cr-sub">Tap a name to open the player. Tap a column heading to sort.</span>
     </div>
   );
 }
@@ -341,6 +342,7 @@ export function CompetitionTable({ w, id, nav }: { w: World; id: string; nav: Na
 export function ClubPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
   const club = clubById(w, id);
   const [tab, setTab] = useState<SquadTab>('first');
+  const [view, setView] = useSquadView();
   if (!club) return <div className="cr-page">Club not found.</div>;
   const mine = w.human?.club === club.id;
   const comps = competitionsOf(w, club.id);
@@ -396,9 +398,9 @@ export function ClubPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
         <>
           <div className="cr-row-head">
             <h2>Squad</h2>
-            <SquadTabs club={club} tab={tab} onTab={setTab} />
+            <SquadControls club={club} tab={tab} onTab={setTab} view={view} onView={setView} />
           </div>
-          <SquadTable w={w} club={club} tab={tab} onPlayer={(pid) => nav.go({ kind: 'player', id: pid })} />
+          <SquadTable w={w} club={club} tab={tab} view={view} onPlayer={(pid) => nav.go({ kind: 'player', id: pid })} />
         </>
       )}
     </div>

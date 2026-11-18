@@ -326,7 +326,7 @@
   justify-content: space-between;
   gap: 12px 16px;
 }
-.cr-row-head > div:not(.cr-tabs) {
+.cr-row-head > div:not(.cr-tabs):not(.cr-controls) {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -508,6 +508,52 @@
 .cr .cr-table th:first-child,
 .cr .cr-table td:first-child {
   padding-left: 20px;
+}
+
+/* Squad tables (GAME_FLOW §6.4): every view fits 768 px. Tighter cells; numbers in the condensed
+   face; names and long text may wrap onto a second line rather than push the table wider. */
+.cr .cr-table-wrap[class*='view-'] .cr-table th,
+.cr .cr-table-wrap[class*='view-'] .cr-table td {
+  padding: 0 6px;
+}
+.cr .cr-table-wrap[class*='view-'] .cr-table th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.cr .cr-table-wrap[class*='view-'] .cr-table th:first-child,
+.cr .cr-table-wrap[class*='view-'] .cr-table td:first-child {
+  padding-left: 14px;
+}
+.cr .cr-table-wrap[class*='view-'] .cr-table th:last-child,
+.cr .cr-table-wrap[class*='view-'] .cr-table td:last-child {
+  padding-right: 14px;
+}
+.cr .cr-table td.wrap,
+.cr .cr-table td.cr-player-cell {
+  white-space: normal;
+  line-height: 1.25;
+}
+.cr .cr-table td.cr-player-cell .cr-name {
+  min-height: 44px;
+  padding: 4px 0;
+}
+.cr-num-cell {
+  font-family: var(--cr-head);
+  font-stretch: condensed;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.1;
+}
+.cr .view-attributes .cr-table th:not(.left):not(:first-child),
+.cr .view-attributes .cr-table td.cr-attr-cell {
+  text-align: center;
+  padding: 0 3px;
+}
+.cr-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 .cr .cr-table tbody tr:nth-child(even) {
   background: none;
@@ -983,5 +1029,20 @@
 @media (max-width: 1023px) {
   .cr .cr-nav.soon {
     opacity: 0.45;
+  }
+}
+
+.cr-num-cell.nowrap {
+  white-space: nowrap;
+}
+
+.cr-num-cell {
+  white-space: nowrap;
+}
+/* At tablet width the Attributes view (14 columns) has no room for one-line ranges: every range is
+   shown low over –high, the same in every cell. */
+@media (max-width: 1023px) {
+  .cr .view-attributes .cr-num-cell .hi {
+    display: block;
   }
 }

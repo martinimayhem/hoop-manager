@@ -41,7 +41,13 @@ export function potentialRange(w: World, wp: WorldPlayer): Range {
   const pot = { lo: Math.min(lo, wp.p.attrs.potential), hi: Math.max(hi, wp.p.attrs.potential) };
   // Never below what the scouts think he is today.
   const today = overallRange(w, wp);
-  return { lo: Math.max(pot.lo, today.lo), hi: Math.max(pot.hi, today.hi) };
+  const out = { lo: Math.max(pot.lo, today.lo), hi: Math.max(pot.hi, today.hi) };
+  // Always a range, also for your own players: it is your staff's estimate (GAME_FLOW §6.4).
+  if (out.hi === out.lo) {
+    if (out.hi < 99) out.hi++;
+    else out.lo--;
+  }
+  return out;
 }
 
 export const showRange = (r: Range) => (r.lo === r.hi ? String(r.lo) : `${r.lo}–${r.hi}`);
