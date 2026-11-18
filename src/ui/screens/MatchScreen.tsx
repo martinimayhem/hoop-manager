@@ -18,7 +18,8 @@ import { courtDots } from '../court/dots';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
 import { ARGUE_SECONDS, LiveMatch, type TeamView } from '../match/controller';
 
-const TIMEOUT_KEYS = ['q', 'p'] as const;
+/** The timeout key, for the player's team (the button beside the court does the same). */
+const TIMEOUT_KEY = 'q';
 /** What the match screen needs of the 3D scene; the scene itself loads only when the view is turned on. */
 interface Scene3DLike {
   render(frame: ReturnType<LiveMatch['frame']>, action: ReturnType<LiveMatch['currentAction']>, holder: string | null, dt: number, next: ReturnType<LiveMatch['upcomingAction']>): void;
@@ -249,7 +250,7 @@ export function MatchScreen({
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       const k = e.key.toLowerCase();
       for (const side of [0, 1] as const) {
-        if (k === TIMEOUT_KEYS[side] && controllers[side] === 'human') m.requestTimeout(side);
+        if (k === TIMEOUT_KEY && controllers[side] === 'human') m.requestTimeout(side);
         if (k === 'a' && m.phase === 'argue' && m.argue?.side === side && controllers[side] === 'human') m.argueCall();
       }
       if (k === ' ') {
@@ -313,7 +314,7 @@ export function MatchScreen({
               onClick={() => m.requestTimeout(side)}
               style={{ borderColor: side === 0 ? 'var(--home)' : 'var(--away)' }}
             >
-              {m.pending[side] ? 'Timeout coming…' : `Timeout ${m.s.teams[side].team.abbr}`} <kbd>{TIMEOUT_KEYS[side].toUpperCase()}</kbd>
+              {m.pending[side] ? 'Timeout coming…' : `Timeout ${m.s.teams[side].team.abbr}`} <kbd>{TIMEOUT_KEY.toUpperCase()}</kbd>
             </button>
           ))}
           <button onClick={() => m.togglePause()} disabled={m.phase !== 'playing'}>
@@ -648,14 +649,12 @@ function ArgueBar({ m }: { m: LiveMatch }) {
 
 
 
-/** A clutch moment: the human(s) call the play. The defence chooses first so the offence can't react to it. */
+/** A clutch moment: the player makes the call, the play when his team has the ball, the defence when it hasn't. */
 function ClutchModal({ m }: { m: LiveMatch }) {
   const c = m.clutch!;
   const role = c.pending[0];
   const side: Side = role === 'offence' ? c.offence : c.offence === 0 ? 1 : 0;
   const team = m.s.teams[side].team;
-  const hotSeat = m.controllers[0] === 'human' && m.controllers[1] === 'human';
-  const [ready, setReady] = useState(!hotSeat);
   const options = useMemo(() => {
     const base: PossessionCalls = {};
     if (role === 'offence') {
@@ -679,33 +678,22 @@ function ClutchModal({ m }: { m: LiveMatch }) {
           {team.name}: {role === 'offence' ? 'call the play!' : 'how do we defend this one?'}{' '}
           <span className="muted small">({margin > 0 ? `up ${margin}` : margin < 0 ? `down ${-margin}` : 'tied'})</span>
         </h2>
-        {!ready ? (
-          <div style={{ textAlign: 'center', padding: 24 }}>
-            <p>
-              Pass the keyboard to <b>{team.name}</b>. The other coach: no peeking!
-            </p>
-            <button className="primary" onClick={() => setReady(true)}>
-              I'm ready
-            </button>
-          </div>
-        ) : (
-          <div className="clutch-options">
-            {options.map((o) => {
-              const best = Math.abs(o.est.points - bestPts) < 1e-9;
-              return (
-                <button key={o.call ?? 'none'} className={`clutch-option ${best ? 'best' : ''}`} onClick={() => m.submitClutch(role, o.call)}>
-                  <span className="icon">{o.icon}</span>
-                  <b>{o.label}</b>
-                  <span className="muted small">{o.detail}</span>
-                  <span className="odds">
-                    {role === 'offence' ? 'We score' : 'They score'} {Math.round(o.est.scoreChance * 100)}% · {o.est.points.toFixed(2)} pts
-                  </span>
-                  {best && <span className="tag">assistant's pick</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div className="clutch-options">
+          {options.map((o) => {
+            const best = Math.abs(o.est.points - bestPts) < 1e-9;
+            return (
+              <button key={o.call ?? 'none'} className={`clutch-option ${best ? 'best' : ''}`} onClick={() => m.submitClutch(role, o.call)}>
+                <span className="icon">{o.icon}</span>
+                <b>{o.label}</b>
+                <span className="muted small">{o.detail}</span>
+                <span className="odds">
+                  {role === 'offence' ? 'We score' : 'They score'} {Math.round(o.est.scoreChance * 100)}% · {o.est.points.toFixed(2)} pts
+                </span>
+                {best && <span className="tag">assistant's pick</span>}
+              </button>
+            );
+          })}
+        </div>
         <div className="muted small" style={{ textAlign: 'center', marginTop: 8 }}>
           Odds come from your assistant simulating this exact possession 150 times. Nothing is guaranteed!
         </div>

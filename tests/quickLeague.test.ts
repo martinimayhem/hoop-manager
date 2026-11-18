@@ -5,29 +5,23 @@ import { composite, positionGroup } from '../src/engine/ratings';
 import { createRng } from '../src/engine/rng';
 import { simulateMatch } from '../src/engine/match';
 import { aiGamePlan } from '../src/game/ai';
-import { aiDraftPick } from '../src/game/ai';
-import { GROUPS, MIN_PER_GROUP, ROSTER_SIZE, canPick } from '../src/game/draft';
+import { GROUPS, MIN_PER_GROUP, ROSTER_SIZE } from '../src/game/draft';
 import { LEAGUES, MIN_PER_POSITION, POOL_SIZE, leaguePool, type LeagueId } from '../src/game/league/leagues';
 import {
   MATCHDAYS,
   SCOUT_MIN_HALF,
-  autoDraftRest,
-  canSignMinimum,
+  beginLeague,
   completeMatchday,
   createLeague,
   createQuickLeague,
   finishDraft,
   humanGames,
   takeOver,
-  humanSignMinimum,
   poolOf,
   fixtures,
   recordFrom,
-  draftOf,
-  draftTurn,
-  humanPick,
-  runAiPicks,
   scoutAccuracy,
+  signMinimum,
   table,
   teamOf,
   type QuickLeague,
@@ -39,14 +33,14 @@ import { nameSource } from '../src/game/names';
 import { slug } from '../src/game/pool';
 import { scoutAttr } from '../src/game/scouting';
 
-/** A whole draft, the human picking as the AI would for him. */
-function drafted(league: LeagueId, seed: number, humans = ['You']): QuickLeague {
-  let q = runAiPicks(createQuickLeague(league, humans, seed));
-  for (let turn = draftTurn(q); turn !== null; turn = draftTurn(q)) {
-    const id = aiDraftPick(draftOf(q), turn, createRng(seed + q.draft.pickNo));
-    q = humanPick(q, id!);
-  }
-  return q;
+/** A league with the player's club, every squad drafted by the computer. */
+function drafted(league: LeagueId, seed: number): QuickLeague {
+  return createQuickLeague(league, 'You', seed);
+}
+
+/** The same league before its draft. */
+function undrafted(league: LeagueId, seed: number): QuickLeague {
+  return beginLeague(league, createQuickLeague(league, 'You', seed).teams, seed);
 }
 
 function memoryStorage(): SaveStorage & { data: Record<string, string> } {
@@ -86,12 +80,12 @@ describe('league pools (R2.1)', () => {
     expect(leaguePool('pro').map((p) => p.player)).toEqual(leaguePool('pro').map((p) => p.player));
   });
   it('WHEN the player picks Pro THEN every team has a budget of 100', () => {
-    const q = createQuickLeague('pro', ['You'], 1);
+    const q = undrafted('pro', 1);
     expect(q.draft.teams.every((t) => t.budgetLeft === 100)).toBe(true);
   });
 });
 
-describe('snake draft for 8 teams (R2.2)', () => {
+describe('the behind-the-scenes snake draft for 8 teams (R2.2)', () => {
   for (const id of Object.keys(LEAGUES) as LeagueId[]) {
     it(`WHEN the ${id} draft ends THEN every team has 12 players, 2+ per group, within budget`, () => {
       const q = drafted(id, 42);
@@ -115,46 +109,14 @@ describe('snake draft for 8 teams (R2.2)', () => {
       expect(avg - Math.min(...strength), `seed ${seed}`).toBeLessThanOrEqual(6);
     }
   }, 120_000);
-  it('WHEN a human takes the three dearest players first THEN he can always still pick, and the draft finishes with every team full and within budget', () => {
-    let q = runAiPicks(createQuickLeague('pro', ['You'], 21));
-    for (let k = 0; k < 3; k++) {
-      const d = draftOf(q);
-      const dearest = d.pool.filter((p) => !(p.player.id in d.owner)).sort((a, b) => b.price - a.price);
-      const id = dearest.find((p) => canPick(d, draftTurn(q)!, p.player.id).ok)!.player.id;
-      q = humanPick(q, id);
-    }
-    // Then always the dearest he may take, or a minimum signing when nothing fits.
-    for (let turn = draftTurn(q); turn !== null; turn = draftTurn(q)) {
-      const d = draftOf(q);
-      const ok = d.pool.filter((p) => canPick(d, turn, p.player.id).ok).sort((a, b) => b.price - a.price);
-      expect(ok.length > 0 || canSignMinimum(q), `pick ${d.pickNo}`).toBe(true);
-      q = ok.length ? humanPick(q, ok[0].player.id) : humanSignMinimum(q);
-    }
-    expect(q.phase).toBe('season');
-    for (const t of q.draft.teams) {
-      expect(t.picks.length).toBe(ROSTER_SIZE);
-      expect(t.budgetLeft).toBeGreaterThanOrEqual(0);
-    }
-    expect(q.draft.log?.length).toBe(96);
-  });
-  it('WHEN a human auto-drafts the rest THEN his roster fills and the draft runs to the end', () => {
-    const q = autoDraftRest(runAiPicks(createQuickLeague('legends', ['You'], 8)));
-    expect(q.phase).toBe('season');
-    expect(q.draft.teams[0].picks.length).toBe(ROSTER_SIZE);
-  });
   it('WHEN a league with minimum signings is saved THEN it loads, its extra players included', () => {
-    let q = runAiPicks(createQuickLeague('pro', ['You'], 30));
-    q = humanSignMinimum(q);
+    const q = signMinimum(undrafted('pro', 30));
     expect(q.draft.extras?.length).toBeGreaterThan(0);
     const st = memoryStorage();
     writeSlot(st, 0, q);
     const slot = readSlot(st, 0);
     expect(slot.status).toBe('ok');
     if (slot.status === 'ok') expect(poolOf(slot.data).length).toBe(POOL_SIZE + (q.draft.extras?.length ?? 0));
-  });
-  it('WHEN it is not a human pick THEN a human pick is refused', () => {
-    const q = drafted('pro', 3);
-    expect(() => humanPick(q, leaguePool('pro')[0].player.id)).toThrow();
   });
 });
 
@@ -257,7 +219,7 @@ describe('saves (R11.2)', () => {
   }, 60_000);
   it('WHEN a save is from a newer version THEN it is not loaded; WHEN one is unreadable THEN it is reported and the others still load', () => {
     const st = memoryStorage();
-    writeSlot(st, 0, createQuickLeague('pro', ['You'], 1));
+    writeSlot(st, 0, createQuickLeague('pro', 'You', 1));
     st.data['hm.save.1'] = JSON.stringify({ format: SAVE_FORMAT + 1, kind: 'quick', savedAt: '', data: {} });
     st.data['hm.save.2'] = '{not json';
     const slots = listSlots(st);
@@ -265,7 +227,7 @@ describe('saves (R11.2)', () => {
   });
   it('WHEN a save names a player the game no longer has THEN the slot is incompatible', () => {
     const st = memoryStorage();
-    const q = createQuickLeague('pro', ['You'], 1);
+    const q = createQuickLeague('pro', 'You', 1);
     writeSlot(st, 0, { ...q, draft: { ...q.draft, owner: { 'no-such-player': 0 } } });
     expect(readSlot(st, 0).status).toBe('incompatible');
   });
@@ -285,8 +247,8 @@ describe('a new game: choose the league, then the club', () => {
       expect(humanGames(mine)).toHaveLength(1);
     }
   });
-  it('WHEN an old save stopped mid-draft is opened THEN the computer finishes the draft, the player picks too', () => {
-    const q = runAiPicks(createQuickLeague('pro', ['Old Club'], 3));
+  it('WHEN an old save stopped mid-draft is opened THEN the computer finishes the draft, the player\'s club\'s picks too', () => {
+    const q = signMinimum(undrafted('pro', 3));
     expect(q.phase).toBe('draft');
     const done = finishDraft(q);
     expect(done.phase).toBe('season');
