@@ -280,6 +280,49 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 - **Minimum sizes:** body text 14 px, labels 12 px, tap targets 44 px.
 - The look follows the approved mockups (§6.3).
 
+**Details settled after the first sweep (18 Nov 2026):**
+- **Text sizes:** 14 px is the minimum for anything you read as content, **table cells included**
+  (names, numbers, stars' labels). 12–13 px only for column headers, labels and captions. The sweep
+  checks both.
+- **Row heights:** table rows 28 px with a mouse, 44 px on touch screens (where a long table then
+  pages sooner).
+- **Nothing is cut off.** If something can't be shown whole at a size (for example the "Player of
+  the game" card on a small court), it is hidden at that size or moved, never clipped.
+- **Sorting on touch:** column headers stay compact; touch screens get a 44 px **Sort** button above
+  each sortable table that opens the sort choices. Headers still sort with a mouse.
+- **Dropdowns:** a native browser dropdown is allowed only when all its options fit without
+  scrolling (about 12 or fewer). Longer choices use the game's own picker, filtered and paged.
+- **Pop-ups during a match** (clutch call, arguing a call, team talk) are part of the sweep.
+- Moved to make screens fit, and agreed: the squad's stat cards are on the Club screen; the game plan
+  explains only the last choice you made; the key matchup is its own game-plan tab; game plan, breaks,
+  the match team panel and the result screen use tabs.
+
+### 6.1b Navigation: you always know where you are and how to get back (decided 18 Nov 2026)
+
+1. **One frame on every screen.** Apart from the main menu, every screen has the same **top bar**.
+   In a career it also has the **sidebar**. Full-screen moments (match preparation, the match, the
+   result, the draft room, the board meeting) keep the top bar.
+2. **Back is always in the same place:** the first button on the left of the top bar, on every
+   screen, the same size and position. It is never hidden; when there is nothing to go back to it is
+   greyed out.
+3. **Back means the previous screen**, and every way of going back does the same: the Back button,
+   the **browser's back button**, a mouse's back button, **Escape** (when no pop-up is open) and the
+   tablet's swipe back. Reloading the page brings you back to where you were, not to the main menu.
+4. **Where am I?** Under the top bar, the path to this screen, every part clickable: *Competitions ›
+   Big League Europe › Kaunas Ironwood › Andrius Varnas*.
+5. **Leaving a full-screen moment** uses the Back position, labelled **Leave**. If leaving would lose
+   something (a match in progress), it asks first; a match pauses while it asks.
+6. **The main menu** is a menu button right next to Back, never hidden at the bottom of the sidebar.
+   Leaving a career saves first and says so.
+7. **No dead ends, no fake buttons.** The sidebar only shows sections that work; Continue only appears
+   when it does something. Nothing says "coming soon".
+8. **Sidebar items open the start screen of their section**; the current section is highlighted.
+9. **Pop-ups** close with an X top right, Escape, or tapping outside, unless they ask for a decision.
+10. **The same rules for the Quick League and the Friendly match** while they still exist.
+11. **Checked automatically:** a navigation sweep visits every screen and fails if Back is missing or
+    not in its place, if browser back doesn't return to the previous screen, if a screen has no way
+    out, or if a sidebar item or button leads nowhere.
+
 ### 6.2 Screen map
 
 | Sidebar | Screens |
