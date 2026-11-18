@@ -2,7 +2,10 @@
 
 > Working title. A browser-based basketball management game in the spirit of Football Manager:
 > build a squad under a budget, scout opponents, set tactics, and out-coach the other side in fast,
-> watchable matches. One player against the computer, across a full season.
+> watchable matches. One player against the computer, across a full season and a career.
+>
+> **What is in and out, measured against Football Manager, is decided in [SCOPE.md](SCOPE.md)**
+> (18 Nov 2026). Where this brief disagrees with SCOPE.md, SCOPE.md wins.
 
 ---
 
@@ -12,25 +15,28 @@
   anyone who likes management games. Clear enough for a teenager, deep enough for adults.
 - **Fair play:** no manipulative mechanics: no paid random packs, no energy timers or forced waiting,
   no guilt-driven streaks or notifications, no pay-to-win.
-- **Mode:** one player against the computer. (A two-player hot-seat mode was built and then removed: it will not be used.)
+- **Mode:** one player against the computer. **No multiplayer of any kind** (no hot-seat, no
+  online play, no team codes), confirmed 18 Nov 2026. (A hot-seat mode was built and then removed.)
+- **Role:** head coach and general manager in one, as in Football Manager.
 - **Feel:** Quick to play (a match takes about 5–8 minutes including timeouts), fun to watch, and
   **skill-based**: the better manager should win more often, not the one who spent the most on
   ratings.
-- **Platform:** Runs in the browser (desktop/laptop). No server, no accounts. Saves stored locally.
+- **Platform:** Runs in the browser on **desktop/laptop and tablet** (touch). No server, no
+  accounts. Saves stored locally. English at launch.
 
 ### Out of scope (v1)
-- Online multiplayer (two devices over the internet)
-- Mobile or touch layout
+- Multiplayer of any kind (online, hot-seat, team codes)
+- Phone layout (tablets are in scope)
 - Real player names, photos, team logos or league branding (see §8)
-- Trading between two human players, and a salary cap (contracts, trades and multi-season careers
-  are designed in [WORLD_SPEC.md](WORLD_SPEC.md))
+- The full NBA rulebook (contracts, a simplified cap, trades and multi-season careers are designed
+  in [WORLD_SPEC.md](WORLD_SPEC.md) and [GAME_FLOW.md](GAME_FLOW.md))
 
 ---
 
 ## 2. Core game loop
 
 ```
-Pick league → Draft squad (12 players + 3 coaches) under budget
+Take over a club (Career: pick any club in the world; the Quick League until Career is playable)
    → Season: for each matchday
         Scout opponent (fuzzy info) → Set game plan → Play match (4 quarters, live)
         → Post-match: results, injuries, player development, morale
@@ -38,8 +44,8 @@ Pick league → Draft squad (12 players + 3 coaches) under budget
    → Career: offseason (retirements, draft, contracts, free agency, ageing) → next season
 ```
 
-The two moments that must be fun first: **the draft** and **the live match**. Everything else
-supports them.
+The two moments that must be fun first: **building the squad** (draft, trades, free agency) and
+**the live match**. Everything else supports them.
 
 ---
 
@@ -153,6 +159,8 @@ These form a **counter system** (rock-paper-scissors with nuance), e.g.:
   above.
 - **Substitutions** at timeouts and quarter breaks (plus automatic subs for exhausted or fouled-out
   players, following your rotation).
+- **Halftime team talk** (built): praise, demand more, calm down or fire up; the right one depends
+  on the score. A close foul call can be **argued** (built).
 - **Live feedback** to read what's working: momentum bar, a mini box score, player fatigue bars, and
   assistant-coach tips. Better staff = clearer tips.
 
@@ -179,7 +187,7 @@ generator. That means:
   decides every outcome; the animation never changes it (see CLAUDE.md).
 - **Rules and court:** NBA (28.65 × 15.24 m court, 7.24 m three-point arc, 12-minute quarters,
   6 fouls to foul out), except timeouts (see 7.3).
-- **3D view:** an experiment, kept off the main branch until it looks better than the 2D view.
+- **3D view:** merged into main (arena, crowd, TV camera, Mixamo clips); the 2D view stays.
 - **Commentary feed** with short, fun lines ("Hot Curry pulls up from deep… BANG!").
 - Scoreboard, quarter clock, fouls, timeouts left, momentum bar.
 
@@ -187,15 +195,16 @@ generator. That means:
 
 ## 8. Leagues and season
 
-> **Career mode is designed in [WORLD_SPEC.md](WORLD_SPEC.md)**: a world of 126 clubs in the US and
-> Europe with promotion and relegation. It replaces the 48-club Career of SEASON_SPEC.md (Parts 3–12).
-> The **Quick League** (one 8-team season, SEASON_SPEC.md Part 2) is built and stays as it is; the
+> **Career mode is designed in [WORLD_SPEC.md](WORLD_SPEC.md)**: a world of about 300 clubs in
+> America and eleven European countries, with national leagues, cups, promotion and relegation. It replaces the 48-club Career of SEASON_SPEC.md (Parts 3–12).
+> The **Quick League** (one 8-team season, SEASON_SPEC.md Part 2) is built and stays **until Career
+> is playable, then it is removed** (decided 18 Nov 2026); the
 > three leagues below are its Street, Pro and Legends.
 
 - **3 leagues** with different budgets and player quality, e.g. *Street League* (low budget),
   *Pro League*, *Legends League* (high budget).
 - Each league: **8 teams**, double round-robin (14 matchdays), then top-4 playoffs (semi-final, final).
-- Both human players can be in the same league; AI fills the other teams.
+- One human club; AI runs the other seven.
 - **Between matchdays:**
   - Injuries (chance driven by injury proneness, fatigue and the fitness coach)
   - Player development (young players with high potential improve; driven by minutes and the
@@ -215,7 +224,7 @@ generator. That means:
 - **2D rendering:** HTML Canvas (or Phaser if animation gets complex).
 - **UI screens:** React for menus, draft, tactics and league tables.
 - **Data:** players, coaches and leagues in JSON files.
-- **Saves:** browser local storage (save/load a season).
+- **Saves:** browser local storage for the Quick League; IndexedDB for Career (WORLD_SPEC.md §14).
 - **Tests:** unit tests for the match engine; the balance lab as a script.
 
 ---
@@ -227,8 +236,8 @@ Each phase must be playable and fun before starting the next.
 | Phase | What | Done when… |
 |---|---|---|
 | **1. Match engine (text only)** ✅ | Possession sim, tactics, counters, fatigue, box score. No graphics. | You can run a match in the console and tactics clearly change outcomes. Balance lab runs 1,000 games. |
-| **2. Playable match** ✅ | 2D court, commentary, timeouts, subs, speed setting. Fixed squads. | Two players enjoy a full 4-quarter match head-to-head. |
-| **3. Draft + budget + scouting** ✅ | Player pool, pricing, free and snake draft, fuzzy scouting. | Two different drafting strategies can both win. |
+| **2. Playable match** ✅ | 2D court, commentary, timeouts, subs, speed setting. Fixed squads. | A full 4-quarter match is fun to play. (It was first tested head-to-head; the hot-seat mode has since been removed.) |
+| **3. Draft + budget + scouting** ✅ | Player pool, pricing, fuzzy scouting. (The human draft was removed on 2026-11-17; the computer builds every squad, §4.) | Two different squad-building strategies can both win. |
 | **4. Coaches** | 3 coach roles with real effects. | Spending on staff is a real trade-off vs players. |
 | **5. Season and Career** | 5a Quick League ✅ (SEASON_SPEC.md Part 2). Career: slices W1–W9 of [WORLD_SPEC.md](WORLD_SPEC.md), each checked by the world lab. | A Quick League season can be played and saved; a Career runs for 20 seasons with every world-lab check green, then is playable. |
 | **6. Polish** | Sounds, better animations, more presentation. | — |
@@ -242,16 +251,19 @@ Phases 1–3 are done. Next, in this order:
    living world). Phases 4 (coaches) and 5 (season) are part of it.
 2. **Daily Clutch:** the same late-game scenario for everyone each day (seeded), using the clutch
    play-calls.
-3. **Match feel:** arcade banners for big plays ("ALLEY-OOP!"), a play-of-the-game replay, a
-   reacting crowd.
-4. **Team codes:** save a team and tactics as a code to play an asynchronous head-to-head.
-5. **Goals:** achievements, board goals per match and season.
+3. **Match feel:** arcade banners for big plays ("ALLEY-OOP!"), a play-of-the-game replay (the
+   reacting crowd is built in the 3D view).
+4. **Goals:** achievements, board goals per match and season.
+5. **Later (SCOPE.md §4):** play designer; translations.
+
+*(Team codes for asynchronous head-to-head were dropped on 18 Nov 2026: no multiplayer.)*
 
 ---
 
 ## 11. Success criteria
 
-- A match vs the AI or a friend takes **under 10 minutes** and you want to play another.
+- A match vs the AI takes **under 10 minutes** and you want to play another.
+- A full career season takes **2–4 hours** (key games live, the rest simulated).
 - In the balance lab, **no single tactic wins more than ~60%** of games between equal squads.
 - A well-drafted cheaper squad with the right tactic can beat a more expensive squad.
 - Changing tactics at a timeout **visibly changes** what happens on court within a few possessions.

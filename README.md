@@ -3,7 +3,8 @@
 A browser basketball management game: take over a club, scout the opponent, set your tactics and
 out-coach the other bench, against the computer.
 Made for young basketball fans (about 13 and up) who want to coach, and for anyone who likes
-management games. See [SPEC.md](SPEC.md) for the full design.
+management games. One player against the computer. See [SPEC.md](SPEC.md)
+for the full design and [SCOPE.md](SCOPE.md) for what is in and out.
 
 ## Play
 
@@ -24,7 +25,7 @@ Open the address it prints (usually http://localhost:5173).
 
 | Key | Action |
 |---|---|
-| `Q` | Timeout, Player 1 (home, orange) |
+| `Q` | Timeout (your team) |
 | `Space` | Pause / resume |
 
 Each team has 2 timeouts in the first half, 3 in the second and 1 per overtime. A timeout happens at
@@ -50,10 +51,13 @@ the next dead ball; both coaches may adjust during it.
 
 ## Roadmap
 
-Next up is **career mode**: a world of 126 clubs in the US and Europe with promotion and relegation,
-scouting, a draft, free agents, trades, youth development, staff and money, designed in
-[WORLD_SPEC.md](WORLD_SPEC.md). After that: a Daily Clutch challenge, arcade-style match moments
-and team codes for head-to-head play at a distance. See the roadmap in [SPEC.md](SPEC.md).
+Next up is **career mode**: a world of about 320 clubs in America and eleven European countries, with
+national leagues and cups, promotion and relegation, scouting, a draft, free agents, trades, youth
+development, staff and money, designed in [WORLD_SPEC.md](WORLD_SPEC.md). After that: a Daily
+Clutch challenge and arcade-style match moments. See the roadmap in [SPEC.md](SPEC.md).
+
+What is in and out of the game, measured against Football Manager, is in [SCOPE.md](SCOPE.md); how
+a career season plays, money and screens are in [GAME_FLOW.md](GAME_FLOW.md).
 
 ## Rights
 

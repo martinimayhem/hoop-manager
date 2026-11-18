@@ -1,13 +1,16 @@
 # Hoop Manager: World and Career Spec
 
-> The career mode: a living basketball world of about 126 clubs in the US and Europe, with
-> promotion and relegation, scouting, a draft, free agents, trades, youth development, staff,
-> facilities and money. You manage one club for as many seasons as you like, Football Manager
+> The career mode: a living basketball world of about 320 clubs in America and eleven European
+> countries, with promotion and relegation, national leagues and cups, scouting, a draft, free
+> agents, trades, youth development, staff, facilities and money. You manage one club for as many seasons as you like, Football Manager
 > style. For career mode this document replaces SEASON_SPEC.md Parts 3–12 (the 48-club Career)
-> and SPEC.md §8. The **Quick League** (SEASON_SPEC.md Part 2, built) and the friendly match stay as
-> they are. One player against the computer (SPEC.md §1).
+> and SPEC.md §8. The **Quick League** (SEASON_SPEC.md Part 2, built) stays until Career is playable
+> and is then removed (decided 18 Nov 2026); the friendly match stays. One player against the computer (SPEC.md §1).
 
-Status: design for approval. Nothing here is built yet.
+Status: design for approval. Nothing here is built yet. **Revised 18 Nov 2026** to match the scope
+decisions in [SCOPE.md](SCOPE.md) (European national leagues, dual competition, cups, contract
+clauses, training, promises, club levers, tablet) and the owner's answers on the conflicts
+(Portugal, licences, sacking default, NBA/EuroLeague-style playoffs, Final Four cups, money).
 
 ---
 
@@ -17,8 +20,10 @@ Status: design for approval. Nothing here is built yet.
    Retirements, drafts, free agency, scouting, playoffs and relegation work the way a fan expects.
 2. **Relatable.** A player can find a club in or near their own city, and a college near them.
 3. **Deep but readable.** Every system is understandable by a 13-year-old basketball fan. Depth
-   comes from systems interacting, not from rules to memorise. **No salary cap, luxury tax,
-   aprons or debt.** Money is a club budget plus yearly wages.
+   comes from systems interacting, not from rules to memorise. **Money follows the real world in
+   a simplified form** (changed 18 Nov 2026): a salary cap ("NBA-lite") for the America Big League
+   clubs, a club budget with buyouts everywhere else, and a payroll threshold for the European Big
+   League clubs ([GAME_FLOW.md](GAME_FLOW.md) §4). No debt. Every refused move explains itself.
 4. **Fair play** (SPEC.md §1): no paid random packs, no energy timers, no pay-to-win, no
    guilt-driven streaks.
 5. **The engine decides, the screens explain.** Every number the player sees (a scout range, a
@@ -26,6 +31,9 @@ Status: design for approval. Nothing here is built yet.
 6. **A healthy world over many seasons.** No rating inflation, no permanent dynasties, no club
    going broke by accident. Checked by the world lab (§13), not by hoping.
 7. **Built in slices** (§15). Each slice is playable and merged before the next one starts.
+8. **You are coach and general manager in one**, as in Football Manager (SCOPE.md §2).
+9. **A season takes 2–4 hours.** You watch the key games live and simulate the rest; every system
+   is designed so that it still works when most games are simulated.
 
 ---
 
@@ -33,67 +41,106 @@ Status: design for approval. Nothing here is built yet.
 
 ### 1.1 Competitions
 
-| Tier | US | Europe | Teams | Season |
-|---|---|---|---|---|
-| 1 | **Big League** (18 US clubs) | **Big League** (12 European clubs) | 30 | 40 games (default) + playoffs |
-| 2 | US Division 2 | Euro Division 2 | 16 + 16 | 30 games + promotion playoffs |
-| 3 | US Division 3 | Euro Division 3 | 16 + 16 | 30 games + promotion playoffs |
-| 4 | US Division 4 | Euro Division 4 | 16 + 16 | 30 games + promotion playoffs |
-| | | **Total** | **126 clubs** | |
+| Level | America | Europe | Clubs |
+|---|---|---|---|
+| Top | **Big League, America conference** (18) | **Big League, Europe conference** (12): 10 licence clubs + 2 wildcards, all of which **also play their national league** | 30 |
+| Below the top | US Division 2, 3, 4 (16 clubs each) | **National leagues in 11 countries**: 10 with 2 tiers of 12, Portugal with 1 tier of 12 | 48 + 252 |
+| Cups | **America Cup** (all 66 American clubs) | **One national cup per country** (its 24 clubs; Portugal 12) | |
+| | | **Total** | **about 318 clubs** (66 + 252) |
+
+**Countries:** Spain, Italy, France, Germany, Greece, Türkiye, Israel, Lithuania, Serbia, the
+Netherlands (2 tiers each) and **Portugal** (1 tier, added 18 Nov 2026 so a player in Portugal has
+a club near home).
 
 - **Big League** is one competition with two conferences: **America** (18) and **Europe** (12).
   Europe is part of the top league, not a tier below it.
 - **Big League schedule (40 games):** every team plays every other team once (29 games), plus 11
-  extra games against teams in its own conference. Settings allow **Short (30)**, **Standard (40)**
-  or **Full (82)**.
-- **Big League playoffs:** 16 clubs: the top 16 by record, with at least 4 from each conference.
-  Round 1 best-of-3, quarter-finals and semi-finals best-of-5, final best-of-7. (Kept short so a
-  season fits in a few evenings.)
-- **Divisions 2–4:** double round-robin (30 games); the champion is promoted, places 2–5 play a
+  extra games against teams in its own conference. Settings: **Short (30)** or **Standard (40)**.
+  *(The Full 82-game option is dropped: it breaks the 2–4 hour season and the European double
+  schedule.)*
+- **Big League playoffs, per conference, then a Final** (decided 18 Nov 2026: follow the real NBA
+  and EuroLeague):
+  - **America conference, NBA style:** places 1–6 qualify; places 7–10 play the **play-in** (7 v 8:
+    the winner is seed 7; the loser plays the winner of 9 v 10 for seed 8). Then three rounds of
+    **best-of-7**: first round, conference semi-finals, conference final.
+  - **Europe conference, EuroLeague style:** places 1–6 qualify; places 7–10 play the same play-in.
+    Then **best-of-5** quarter-finals and a **Final Four** weekend at one venue (single-game
+    semi-finals and final).
+  - **Both conferences use the real rules unchanged**, including EuroLeague's play-in for places
+    7–10 with only 12 clubs (10 of 12 go on; decided 18 Nov 2026).
+  - **Big League Final: one single game**, America champion v Europe champion, at a neutral venue
+    *(tune)*. This is the only addition to the real NBA and EuroLeague formats. Rules for the Final:
+    see §17.
+  - *Watch-out:* an American champion can play up to 28 playoff games plus the Final; a European club
+    that goes deep in everything about 85–90 games a season, as real EuroLeague clubs do.
+- **US Divisions 2–4:** double round-robin (30 games); the champion is promoted, places 2–5 play a
   single-game knockout for the second promotion spot.
+- **European national leagues:** tier 1 and tier 2 in each country, 12 clubs each, double
+  round-robin (22 games). Tier 1 ends with a **national playoff** (top 8; quarter-finals and
+  semi-finals best-of-3, final best-of-5 *(tune)*) for the national title. Tier 2: the champion is
+  promoted and places 2–5 play off for the second spot.
+- **Dual competition:** the 12 European Big League clubs play both. **Big League games are
+  midweek, national-league and cup games at the weekend**, so they play about 70 games a season
+  against about 45 for an American Big League club. Rotation, fatigue and injuries (§2.2) are what
+  make this a real choice: rest players in one competition to win the other.
+- **Cups:** single-game knockouts, drawn at random, lower-tier club at home *(tune)*, until four
+  clubs are left; then a **Final Four weekend** at one venue (semi-finals and final). Big League
+  clubs enter in the last 16. They are the giant-killing stories of the season.
+- **Key games:** derbies, top-of-the-table games, cup ties and playoffs are marked as key games.
+  "Simulate to the next key game" is how a season stays inside 2–4 hours (§3).
 
-### 1.2 Promotion and relegation
+### 1.2 Promotion, relegation, licences and wildcards
 
-Promotion and relegation stay **within a region**, so the US/Europe split of the Big League
-never changes.
+Movement stays **within a region**: America ↔ America, and inside each European country.
 
 | Between | Down | Up |
 |---|---|---|
-| Big League ↔ Division 2 | Bottom 2 US clubs, bottom 2 European clubs | Each Division 2 champion + playoff winner |
-| Division 2 ↔ 3, 3 ↔ 4 | Bottom 2 | Champion + playoff winner |
-| Division 4 | No relegation | — |
+| Big League (America) ↔ US Division 2 | Bottom 2 America clubs | Division 2 champion + playoff winner |
+| US Division 2 ↔ 3, 3 ↔ 4 | Bottom 2 | Champion + playoff winner |
+| US Division 4 | No relegation | — |
+| Big League (Europe) | **No relegation for the 10 licence clubs**, but a licence is **lost after a club's third bottom-2 finish** in the Europe conference *(counted over the last 5 seasons, tune)*. The 2 wildcards are earned again every season | The 2 best national-league seasons among clubs without a licence, Portugal included (national champions first, then national-league record) *(tune)*. A lost licence goes to that season's best wildcard club |
+| National tier 1 ↔ tier 2 (each country) | Bottom 2 (licence clubs are exempt; the next club drops instead) | Tier 2 champion + playoff winner |
+| Portugal | One tier: no promotion or relegation | — |
 
-**Parachute payments:** a relegated club keeps 50% of the tier gap in TV money the first season
-and 25% the second, so relegation hurts but doesn't destroy a club.
+**Licences (agreed 18 Nov 2026):** Spain 2, Türkiye 2, Greece 1, Italy 1, France 1, Germany 1,
+Israel 1, Lithuania 1. Serbia, the Netherlands and Portugal reach the Big League through wildcards
+(and can win a licence when one is lost).
+
+**Parachute payments:** a club relegated from a tier, or a wildcard club that drops out of the Big
+League, keeps 50% of the gap in TV money the first season and 25% the second, so dropping hurts but
+doesn't destroy a club.
 
 ### 1.3 Places, clubs and colleges
 
-- **Cities:** 126 real cities: big US metros plus European basketball cities (for example Madrid,
-  Barcelona, Istanbul, Athens, Belgrade, Kaunas, Vilnius, Milan, Bologna, Paris, Berlin, Munich,
-  London, Amsterdam, Lisbon). Bigger cities start in higher tiers, with exceptions so famous
-  basketball cities can start lower and climb.
-- **Clubs:** city name + **fictional nickname** (for example *Lisbon Navigators*). A blocklist
+- **Cities:** real cities: big American metros, and basketball cities in the eleven European countries
+  (for example Madrid, Barcelona, Málaga, Istanbul, Athens, Belgrade, Kaunas, Vilnius, Tel Aviv,
+  Milan, Bologna, Paris, Berlin, Munich, Amsterdam, Groningen, Lisbon, Porto). Bigger and more famous basketball
+  cities start higher, with exceptions so some can start lower and climb. **A big city may host two
+  clubs** (different nicknames); the smaller countries need it to fill 24 places.
+- **Clubs:** city name + **fictional nickname** (for example *Groningen Northmen*). A blocklist
   rejects any real NBA, WNBA, G League, EuroLeague, EuroCup or national-league club name.
 - **Colleges:** about 40 fictional US colleges tied to real cities and regions, so players can find
   one near them (for example *Sacramento Valley University*). Real college names are trademarks, so
   a blocklist rejects real NCAA Division I names.
-- **Every club** has: city, nickname, colours, arena (name, capacity), reputation, budget, fan base
-  size, facilities, staff, a youth set-up (§5) and history.
+- **Every club** has: city, country, nickname, colours, arena (name, capacity), reputation, budget,
+  fan base size, facilities, staff, a sponsor and a shoe/kit deal (§10.3), a youth set-up (§5) and
+  history.
 
 ### 1.4 People
 
 | Group | Count at start | Notes |
 |---|---|---|
-| Club rosters (13 each) | 1,638 | 126 × 13 |
-| Free agents | about 200 | Old, cheap, or between clubs |
+| Club rosters (13 each) | about 4,130 | 318 × 13 |
+| Free agents | about 400 | Old, cheap, or between clubs |
 | College players | about 600 | 40 colleges × 15; seniors enter the draft |
-| European academy players | about 360 | 60 European clubs × 6, aged 15–18 |
-| **Total** | **about 2,800** | |
+| European academy players | about 1,510 | 252 European clubs × 6, aged 15–18 |
+| **Total** | **about 6,650** | |
 
-New people each season: about 150 college freshmen and about 180 academy intake (draft entrants
-are existing college players). That is about 330 new names a season, so **about 6,000 unique
-names over 10 seasons**. About 180 players a season move up into club basketball (draft picks,
-undrafted signings, academy graduates), matching about 180 retirements.
+New people each season: about 150 college freshmen and an academy intake of **1–3 per European
+club** (more with a better academy) *(tune)*, about 550 new names a season, so **about 12,000 unique
+names over 10 seasons**. About 280 players a season must move up into club basketball (draft picks,
+undrafted signings, academy graduates) to match retirements; most academy players never make a
+first team, as in real life. The world lab checks that the population stays stable (§13).
 
 - **The 102 parody stars** (players.json) are the Big League's established stars at the start.
 - **Everyone else is generated** with a **nationality**: names from per-country first-name and
@@ -127,6 +174,29 @@ Career mode adds:
 **Overall rating** (one number) is shown alongside the attribute groups for quick reading; it is
 a weighted sum by position and never used by the engine.
 
+### 2.1 Morale, promises and player chats
+
+- **Morale** moves with minutes against what the player expects, results, his role and his contract,
+  and has a small, measured effect on court (SEASON_SPEC.md R12.4).
+- **Promises:** when signing, extending or calming a player you can promise **playing time**
+  (starter / rotation / bench) or a **role** (for example "first option on offence"). A kept promise
+  lifts morale; a broken one drops it hard and is remembered at contract time.
+- **Player chats:** short one-to-one conversations (2–3 choices) when something happens: unhappy
+  about minutes, wants a new contract, wants to leave. Every answer shows its likely effect.
+- **Unhappy players ask for a trade.** Nothing deeper: no team hierarchy, social groups or cohesion
+  meter (SCOPE.md §3.2).
+
+### 2.2 Injuries, fatigue and rest
+
+- **Injuries** happen between games, never inside one (the engine is not changed), with an expected
+  return (SEASON_SPEC.md R8.1–R8.2). Risk grows with minutes, fatigue and injury proneness; the
+  fitness and medical coach and the medical centre lower it.
+- **Fatigue carries over** between games. Clubs with more games (European Big League clubs, cup runs)
+  get tired.
+- **Rest:** you can mark a player **"rest this game"**. He recovers fatigue and lowers his injury
+  risk, at the cost of that game. AI clubs rest players too, mostly in the competition that matters
+  less to them.
+
 ---
 
 ## 3. Season calendar
@@ -137,16 +207,21 @@ Preseason ── Regular season ──┬── Trade deadline (≈ 60% of the s
                          Transfer window                           End of season:
                          (closes at deadline)                      awards, promotion/relegation
                                                                           │
-Offseason, in this order:                                                 ▼
+Offseason, in this order (screens and decisions per step: GAME_FLOW.md §3.7):                                                 ▼
   1. Retirements   2. Draft lottery and draft   3. Contract expiries and extensions
   4. Free agency (two weeks of game days)       5. Academy intake and college freshmen
-  6. Development jump (season-end growth/decline)   7. Board objectives   8. New season
+  6. Development jump (season-end growth/decline)   7. Board objectives, sponsor and kit offers
+  8. Wildcards and licences confirmed   9. New season
 ```
 
 - **Matchdays** are simulated in a background worker: your game is played live (or simulated, your
   choice); all other games in the world are simulated instantly.
-- **"Continue" buttons:** next matchday, next game of your team, to the trade deadline, to the end
-  of the regular season, to the end of the season.
+- **Two kinds of matchday:** Big League games midweek, national-league and cup games at the
+  weekend (§1.1). American lower divisions play at the weekend.
+- **"Continue" buttons:** next matchday, next game of your team, **next key game** (§1.1), to the
+  trade deadline, to the end of the regular season, to the end of the season.
+- **Season time:** a season of 45–70 games for your club, watching about a third of them live, takes
+  2–4 hours.
 - **Saves** happen automatically after every matchday and every offseason step (§14).
 
 ---
@@ -167,6 +242,16 @@ Offseason, in this order:                                                 ▼
 - **Retirement:** from age 33, likelier with low ability, low minutes or a serious injury; very few
   play past 40. Legends get a retirement news item and their career page stays.
 
+### 4.1 Training
+
+- **Team focus** each week: one of *shooting*, *defence*, *conditioning*, *playmaking*, *rest*.
+  It gives a small boost to that area's growth and to readiness for the next games; *rest* lowers
+  fatigue.
+- **Individual focus** per player: one attribute group to develop (for example *3-point shooting*
+  or *post defence*), or a **new position** to learn.
+- That's all. No session-by-session planner (SCOPE.md §3.2). The development coach and the
+  training centre decide how strong the effect is.
+
 ---
 
 ## 5. Youth: colleges, academies, the draft
@@ -179,17 +264,23 @@ Offseason, in this order:                                                 ▼
 
 ### 5.2 European academies (club pipeline)
 - Every European club has an academy of about 6 players aged 15–18.
-- **Yearly intake:** 2–4 new 15-year-olds per club, better with a better academy facility.
+- **Yearly intake:** 1–3 new 15-year-olds per club *(tune, see §1.4)*, more and better with a
+  better academy facility.
 - At 18 a player graduates to the first team or is released; an under-18 can be called up early if
   he's ready.
 - US clubs have no academy; they rely on the draft and free agency. That's the real-world
   difference between the regions, and it gives both a distinct way to build.
 
 ### 5.3 The draft
-- **Two rounds, 30 picks each,** Big League clubs only. Clubs in Divisions 2–4 sign undrafted
-  players as free agents.
-- **Lottery:** the 14 non-playoff Big League clubs, weighted towards the worst records (the top 4
-  picks are drawn, then the rest go in reverse order of record).
+- **America only** (decided 18 Nov 2026, as in the real world): **the 18 America Big League clubs,
+  2 rounds, 36 picks.** European clubs build through academies; all other clubs sign undrafted
+  players as free agents. Entrants: US college players and international free agents aged 19–22.
+- **Relegated clubs keep their picks** (decided 18 Nov 2026): a pick belongs to the season it was
+  earned in, so a club relegated to Division 2 still drafts. A relegated club with the #1 pick is a
+  rebuild story.
+- **Lottery:** the 10 America clubs that miss the playoffs, weighted towards the worst records (the
+  top 4 picks are drawn, then the rest go in reverse order of record).
+- **Live draft room** with an auto-pick option (GAME_FLOW.md §3.7).
 - **Picks can be traded** (up to 3 seasons ahead).
 - **Rookie contracts:** fixed wage by pick number, 3 years (first round) or 2 years (second round).
 - **Draft classes vary:** some years are deep, some weak; generational talents are rare.
@@ -213,8 +304,9 @@ Offseason, in this order:                                                 ▼
 ## 7. Contracts and free agency
 
 ### 7.1 Contracts
-- A contract is a **yearly wage** for **1–4 years**. There is no salary cap: the limit is your
-  club's wage budget (§10).
+- A contract is a **yearly wage**: **1–5 years** in the cap system (America Big League), **1–3
+  years** in the budget system, where every contract also has a **buyout fee**. The limits come
+  from the cap or the club budget (GAME_FLOW.md §4).
 - **Wage demand** comes from the player's value (ability, potential, age), reputation and the
   tier of the club he'd join. Better clubs can pay less to stars who want to win.
 - **Extensions:** in the last year of a contract you can offer an extension. The player says yes,
@@ -228,12 +320,31 @@ Offseason, in this order:                                                 ▼
   minutes, club quality and tier, hometown and nationality, and loyalty to his current club.
 - Unsigned free agents can be signed during the season too, for cheaper.
 
+### 7.3 Contract clauses
+
+Three clauses only, each explained in one line on the contract screen:
+
+| Clause | What it does |
+|---|---|
+| **Release clause** | Another club can sign the player by paying this fee; his club can't refuse. Players ask for one at smaller clubs. |
+| **Team option / player option** | On the last year only: the club (or the player) decides before the offseason whether that year happens. |
+| **Bonuses** | A one-off payment for a goal: playoffs, an award, a number of games played. Paid from the wage budget. |
+
+No buyouts, no trade kickers, no salary-matching rules (§16).
+
 ---
 
 ## 8. Trades and transfers
 
-One market for both regions: a deal moves **players, draft picks and/or money** between clubs.
-European fans know it as a transfer, US fans as a trade.
+**Two ways to get a player under contract, as in the real world** (changed 18 Nov 2026; rules in
+GAME_FLOW.md §4):
+- **Trades** (players, picks, a little cash) **only between America Big League clubs**, with
+  salary matching when over the cap.
+- **Buyouts** everywhere else: pay the player's buyout fee to his club; he still has to accept your
+  offer. America Big League clubs can buy out players from budget-system clubs; budget-system clubs
+  can't take players under contract from America Big League clubs.
+
+The rest of this section (AI plans, valuation, refusals) applies to both.
 
 - **Windows:** the offseason and the season until the **trade deadline**.
 - **Every AI club has a plan:** *contend*, *compete*, *retool* or *rebuild*, based on its roster,
@@ -263,22 +374,25 @@ European fans know it as a transfer, US fans as a trade.
 | Fitness and medical | 1 | Fewer and shorter injuries, better stamina recovery |
 | Scouts | 1–4 | More players scouted per week, narrower ranges |
 
-Staff have ratings (1–20), wages and contracts, and come from a staff market. Better staff cost
-more, which competes with player wages for the same budget.
+Staff have ratings (1–20), wages and contracts, and come from a staff market. **You hire and fire
+them** within the staff budget (outside the cap in America; part of the club budget elsewhere); firing costs the rest of the contract. Better staff
+cost more, which competes with player wages for the same budget.
 
 ---
 
 ## 10. Money and facilities
 
 ### 10.1 Budget and wages
-Money is in fictional **dollars**. Each season the board sets a **wage budget** and a **transfer
-budget** from the club's income.
+Money is in fictional **dollars**, in America and in Europe (decided 18 Nov 2026: one currency,
+no exchange rates). Quick League credits disappear with the Quick League. Each season the board
+sets your money from the club's income: a **payroll limit** under the cap for America Big League
+clubs, **one club budget** (wages, staff, buyouts) for everyone else (GAME_FLOW.md §4).
 
 | Income | Depends on |
 |---|---|
 | TV money | Tier (equal share within a tier) |
 | Ticket sales | Arena capacity × attendance × ticket price |
-| Sponsorship | Reputation and success |
+| Sponsorship and shoe/kit deal | Reputation, success, and the deal you picked (§10.3) |
 | Prize money | Final position and playoffs |
 | Sales | Players sold |
 
@@ -288,8 +402,9 @@ budget** from the club's income.
 | Facilities | Upkeep and upgrades |
 | Transfers | Fees paid |
 
-**Rough scale per tier** (to be tuned by the world lab): Big League wage budgets $60–140M,
-Division 2 $12–30M, Division 3 $3–10M, Division 4 $0.8–3M. Promotion raises income a lot, so the
+**Rough scale per tier** (to be tuned by the world lab): Big League wage budgets $60–140M
+(European Big League clubs add their national-league income), US Division 2 $12–30M, Division 3
+$3–10M, Division 4 $0.8–3M; European national tier 1 (no licence) $6–25M, tier 2 $1–5M. Promotion raises income a lot, so the
 first season up is a real challenge, as in real life.
 
 ### 10.2 Facilities
@@ -301,10 +416,21 @@ first season up is a real challenge, as in real life.
 | Medical centre | Injury risk and recovery |
 | Arena | Capacity, so ticket income |
 
-Upgrades cost money and take a season to complete. Their effect follows the **average of the last
+Upgrades are **requested from the board** (§10.3), cost money and take a season to complete. Their effect follows the **average of the last
 three seasons**, so a club can't buy excellence overnight. (Idea from ZenGM's budget system.)
 
 ---
+
+### 10.3 What you decide about the club
+
+You don't run the books: the board does. You influence the club through four choices:
+
+| Lever | How it works |
+|---|---|
+| **Sponsor** | Each summer pick one of 2–3 offers: more money with tougher targets, or less money with easy ones. Missing a target lowers next year's offers. |
+| **Shoe and kit deal** | Pick a fictional brand (a blocklist rejects real ones). Bigger brands pay more and make the club more attractive to young players and free agents. |
+| **Facilities and arena** | Ask the board for a training-centre, academy, medical-centre or arena upgrade. It says yes, not yet, or no, with the reason (money, results, its trust in you). |
+| **Staff** | Hire and fire within the staff budget (§9). |
 
 ## 11. The board and your career
 
@@ -312,7 +438,10 @@ three seasons**, so a club can't buy excellence overnight. (Idea from ZenGM's bu
   get promoted, or develop young players, based on the club's size and squad.
 - **Job security** rises and falls with results against that objective.
 - **If you're sacked**, you get offers from other clubs (often a tier lower) and your career goes on.
-  A setting **"Can't be sacked"** turns this off for relaxed play.
+  Sacking is **optional**: a **"Can't be sacked"** switch is shown when you start a career and can be
+  changed later. **Default: you can be sacked** (decided 18 Nov 2026), as in FM.
+- **Job offers and moving:** clubs that fit your reputation approach you; you can also apply for an
+  open job, in America or in any of the eleven countries.
 - **Manager reputation** grows with success and decides which clubs want you.
 - **Starting a career:** pick any club. A "climb from Division 4" start is the classic challenge.
 
@@ -322,8 +451,12 @@ three seasons**, so a club can't buy excellence overnight. (Idea from ZenGM's bu
 
 - **News feed** after every matchday: results, injuries, transfers, milestones (first
   triple-double, career highs), streaks, rumours, board comments.
+- **Press moments:** at big events only (playoffs, the trade deadline, a rivalry game, a sacking
+  rumour) a journalist asks 2–3 questions. Your answer moves player morale or board trust a little,
+  and the effect is shown. No regular press conferences, no social media feed.
 - **Awards:** player of the matchday, monthly awards, season awards (MVP, Rookie of the Year,
   Defensive Player, Most Improved, Coach of the Year), All-League teams. Per tier.
+- **Cups and national titles** count in history and in board objectives.
 - **History:** champions and promotions per season, records (single game, season, career),
   club history pages, player career pages, a **Hall of Fame**.
 
@@ -336,6 +469,9 @@ three seasons**, so a club can't buy excellence overnight. (Idea from ZenGM's bu
 | Check | Target |
 |---|---|
 | Different Big League champions in 20 seasons | At least 6; no club wins more than 5 |
+| National champions | In each country, at least 4 different champions in 20 seasons |
+| Wildcards | At least 6 different clubs hold a Big League wildcard in 20 seasons |
+| Dual competition | European Big League clubs finish a season with fatigue and injuries within the target band *(tune)*; resting is used by the AI |
 | Rating inflation | League-average overall within ±2 points of season 1 after 20 seasons |
 | Population | Active players within ±5% of the start; retirements ≈ new players |
 | Average age per tier | 25–28 |
@@ -344,7 +480,8 @@ three seasons**, so a club can't buy excellence overnight. (Idea from ZenGM's bu
 | Free agency | At least 90% of the top-100 free agents sign somewhere |
 | AI-to-AI trades | Value difference within 10% on average |
 | Exploit bot | A bot sends 1,000 lopsided trade offers; the AI accepts fewer than 2% |
-| Speed | A full season of the whole world simulates in under 30 seconds in the browser |
+| Cap and budgets | No America Big League club above the hard ceiling; at most 1/3 pay luxury tax in a season; European clubs over the threshold pay the tax; no budget-system club below zero |
+| Speed | One matchday under 1 second in the browser; a whole season fast-forwarded in under 90 seconds in the browser |
 
 Every slice must keep these checks green, or explain why a target needs to change.
 
@@ -352,21 +489,32 @@ Every slice must keep these checks green, or explain why a target needs to chang
 
 ## 14. Technical design
 
-- **Engine unchanged:** career matches use the same match engine. AI games use `simulateMatch`
-  (measured 2026-11-17: about 2.5 ms a game in Node, 400 games a second; a full season is about
-  2,100 games, so about 5 seconds in Node and roughly 10 in the browser, spread across matchdays).
+- **Engine unchanged:** career matches use the same match engine. AI games use `simulateMatch`.
+  **Measured 2026-11-18:** `npm run lab` plays 1,000 games in 6.2 s, about **160 games a second**
+  in Node (the earlier figure of 400 a second was too optimistic). A world season is about **4,700
+  games** (Big League about 670 with play-ins and playoffs, US Divisions 2–4 about 720, 21 national
+  leagues about 3,000 with playoffs, cups about 310): about 30 s in Node and about a minute in the browser when
+  fast-forwarded, about 100 games (under 1 s) per matchday. If that is too slow, the first lever is
+  a faster engine path for AI games, not a shortcut formula (SEASON_SPEC.md: every AI game uses the
+  full engine).
 - **Regional rules (built):** Europe's games use FIBA rules, a player out on his 5th foul; America's
-  NBA rules, out on his 6th (`MatchRules`, tests/rules.test.ts). Big League playoffs: NBA rules.
+  NBA rules, out on his 6th (`MatchRules`, tests/rules.test.ts). National leagues and national cups:
+  FIBA. Big League playoffs: America conference NBA, Europe conference FIBA; the Final: see §17.
+- **Tablet:** every screen works by touch at tablet size (from about 768 px wide); every keyboard
+  shortcut (timeout, pause) has an on-screen button. The 3D view must keep a usable frame rate on a
+  mid-range tablet, or fall back to 2D. Phone layouts are out (SCOPE.md).
+- **English only**, but all screen text kept in one place so translations can be added later.
 - **Background worker:** all world simulation runs in a Web Worker so the screen never freezes.
-- **Saves in IndexedDB**, not localStorage: after 10 seasons a world holds about 6,000 players with
-  career records, roughly 10 MB, beyond localStorage's typical limit. Several save slots.
+- **Saves in IndexedDB**, not localStorage: after 10 seasons a world holds about 12,000 players with
+  career records, roughly 20–25 MB, far beyond localStorage's typical limit. Several save slots.
 - **Save versioning:** every save has a format version and migrations, so updates never break an
   old career.
 - **Deterministic:** a world seed generates the world; every match stores its seed.
 - **What is stored:** full box scores for your club's games and the playoffs; for other games, the
   result plus per-player season totals. That keeps saves small.
-- **Data model (main entities):** World, Season, Competition, Club, Player, Contract, Staff,
-  College, DraftPick, Deal, NewsItem, Award, Record.
+- **Data model (main entities):** World, Season, Country, Competition (league, cup, Big League),
+  Licence, Club, Player, Contract (with clauses), Promise, Staff, Sponsor, College, DraftPick, Deal,
+  NewsItem, Award, Record.
 
 ---
 
@@ -377,57 +525,66 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 
 | Slice | What | Playable when done |
 |---|---|---|
-| **W1 Foundation** | World generator (cities, clubs, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (tiers, clubs, players) | You can create a world, save it, load it and look around |
-| **W2 One season** | Calendar, schedules for all tiers, standings, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, season summary | You can play a full season in any tier |
-| **W3 Years go by** | Aging, development, retirement, contract expiry and AI re-signing, rollover to the next season; world lab over 20 seasons | You can play season after season |
+| **W1 Foundation** | World generator (11 countries + America, cities, clubs, licences, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (competitions, clubs, players), tablet-ready layout | You can create a world, save it, load it and look around, on desktop and tablet |
+| **W2 One season** | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
+| **W3 Years go by** | Aging, development, training focus, retirement, contract expiry and AI re-signing, rollover to the next season; squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
-| **W5 Free agency** | Contracts, wage demands, extensions, free agency days | You can build through free agency |
-| **W6 Trades** | AI club plans, valuation, trade screen, "what would you want?", trade deadline, AI-to-AI deals | You can trade, and the AI is hard to exploit |
-| **W7 The club** | Staff (phase 4), facilities, money, board objectives, sacking and job offers | Money and staff are real decisions |
+| **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contracts, wage demands, extensions, contract clauses, buyouts, free agency days | You can build through free agency |
+| **W6 Trades** | AI club plans, valuation, trade screen with salary matching (America), buyout offers (everywhere), "what would you want?", deadline day, AI-to-AI deals | You can trade, and the AI is hard to exploit |
+| **W7 The club** | Staff (phase 4) with hiring and firing, facilities and board requests, money, sponsor and shoe/kit deals, board objectives, sacking and job offers | Money and staff are real decisions |
 | **W8 Scouting 2.0** | Scouts by region, narrowing ranges, shortlist | Finding hidden talent is a skill |
-| **W9 Living world** | News, awards, records, history, Hall of Fame, career pages | The world tells stories |
+| **W9 Living world** | News, press moments, awards, records, history, Hall of Fame, career pages | The world tells stories |
 
-The engagement features in SPEC.md's roadmap (Daily Clutch, match feel, team codes,
-achievements) can be slotted in between slices.
+The engagement features in SPEC.md's roadmap (Daily Clutch, match feel, achievements) can be
+slotted in between slices.
 
 ---
 
 ## 16. Out of scope (for now)
 
-- Salary cap, luxury tax, aprons, salary matching in trades (a "realistic rules" option could come
-  later).
-- Loans, cup competitions, international tournaments and national teams.
-- Online multiplayer and hot-seat: one player against the computer (SPEC.md §1).
-- Real people, real club names, real college names, real logos.
-- Player agents, press conferences, detailed medical diagnoses.
+The full list, against Football Manager, is in [SCOPE.md](SCOPE.md). In short:
 
----
+- The full NBA rulebook: cap holds, sign-and-trade, aprons other than a hard ceiling, repeater tax,
+  two-way contracts, stretch provision, trade kickers (GAME_FLOW.md §4.1). Country tax rates.
+- Trades in Europe and a European draft (as in the real world).
+- Loans and player agents.
+- Intercontinental cup, All-Star weekend, international tournaments and national teams.
+- Multiplayer of any kind: online, hot-seat, team codes. One player against the computer.
+- Pre-game and post-game team talks, touchline shouts, a data hub; regular press conferences and a
+  social media feed.
+- Team hierarchy, social groups, cohesion; a detailed medical centre.
+- Ticket prices and owner-level finance.
+- Phone layouts; languages other than English (translations later).
+- Real people, real club names, real college names, real brands, real logos.
+- **Later:** a play designer (draw your own plays).
 
 ## 17. Open questions
 
-1. **Season length default:** 40 games keeps a season to a few evenings if you play every game.
-   Is that right, or should Full (82) be the default?
-2. **Tier sizes:** 16-team lower divisions give 30-game seasons. Enough?
-3. **Draft for lower divisions:** Big League only (as above), or a combined draft where lower tiers
-   pick after the Big League?
-4. **Women's basketball:** a separate world later?
+1. **Playoff length vs the 2–4 hour season.** With real NBA rules an American champion plays up to
+   28 playoff games. Accepted as realistic for now; check in play-testing whether "simulate to the
+   next key game" keeps a season inside 2–4 hours, and add a shorter-series setting only if it
+   doesn't.
+2. **Licence-loss window:** third bottom-2 finish within 5 seasons, or ever?
+3. **Rules for the one-game Final:** NBA, FIBA, or alternate each season?
 
-Where this design differs from the approved SEASON_SPEC.md (to decide before W1):
+### Decided on 18 Nov 2026
 
-5. **The board and sacking (§11).** SEASON_SPEC.md left out the owner, attendance, fan mood and
-   firing the manager on purpose: "nothing that can feel like pressure on a young player" (13+).
-   Keep §11 with "Can't be sacked" as the default, keep it with sacking on by default, or drop it?
-6. **The Big League Finals.** SEASON_SPEC.md had America v Europe Finals between the two conference
-   champions; §1.1 here has one top-16 playoff. Which?
-7. **Relegated clubs and the draft (§5.3).** Relegation is fixed before the draft, so the worst Big
-   League clubs go down. Do they keep their lottery picks? And with the draft for the Big League
-   only, US lower-division clubs (no academies) get young players only as undrafted free agents.
-8. **Full (82) for Europe.** With 12 clubs, 53 extra conference games do not split evenly over 11
-   opponents: say how the Full schedule is built.
-9. **Money.** Wages here are in millions of dollars; prices today are 1–40 credits. One conversion
-   rule (or drop credits for career mode).
-
----
+- Default Big League length **40 games for all**; "simulate to next key game" handles the rest.
+  Short (30) stays a setting; Full (82) is dropped.
+- **Tier sizes:** US divisions 16 clubs (30 games), national tiers 12 clubs (22 games).
+- **Draft:** Big League clubs only; **relegated clubs keep their picks**.
+- **Women's basketball:** not planned.
+- **"Can't be sacked":** off by default (you can be sacked).
+- **Playoffs:** the real NBA format in the America conference and the real EuroLeague format in the
+  Europe conference (play-in 7–10 even with 12 clubs), then **one single Final game** between the
+  two champions. No third-place game.
+- **Licences:** Spain 2, Türkiye 2, Greece, Italy, France, Germany, Israel, Lithuania 1 each; lost
+  after a third bottom-2 finish.
+- **Portugal** added as an eleventh country, one tier of 12; its clubs can earn wildcards.
+- **Cups:** single games, then a Final Four weekend.
+- **Money:** dollars everywhere. Credits go with the Quick League, which is removed once Career is
+  playable.
+- Earlier: Full (82) schedule dropped; national cups in, intercontinental cup out; no hot-seat.
 
 ## 18. References (inspiration and licences)
 
@@ -436,5 +593,5 @@ Where this design differs from the approved SEASON_SPEC.md (to decide before W1)
 | [open-football](https://github.com/ZOXEXIVO/open-football) | Apache 2.0 | League schedule, table, standings, season flow, awards, news, academy, development, happiness, finance, transfers | Read the specs under `openspec/specs/core/`; ideas and wording may be adapted with credit in a NOTICE file |
 | [nba-sim](https://github.com/OorjitSethi/nba-sim) | No licence | Club plans with slow-changing direction, valuation by club plan, scouting ranges that narrow with a floor, draft classes of varying strength, free-agent decision factors, offseason order | **Ideas only.** No code or text copied |
 | [ZenGM / Basketball GM](https://basketball-gm.com) | Source-available, not open source | Facilities effect from a multi-season average, draft lottery feel | **Ideas only**, as a player of the game. No code opened or copied |
-| Football Manager 2024 | Commercial | Overall feel of the career mode, board, staff, news | Played reference only |
+| Football Manager 2024 | Commercial | Overall feel of the career mode, board, staff, news; the scope map in SCOPE.md | Played reference only |
 | Hoop Land | Commercial | Depth and readability ceiling for a basketball career | Played reference only |
