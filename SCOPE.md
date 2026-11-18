@@ -93,7 +93,7 @@ Status: **Built** = in the game today and stays · **In** = part of the design, 
 | Top league | **Big League**: America conference (18) + Europe conference (12) | In | WORLD_SPEC.md §1 |
 | Leagues with promotion and relegation | America: Divisions 2–4. Europe: **national leagues in 11 countries** (2 tiers each; Portugal 1 tier) | In | WORLD_SPEC.md §1 |
 | Countries | Spain, Italy, France, Germany, Greece, Türkiye, Israel, Lithuania, Serbia, the Netherlands, **Portugal** | In | WORLD_SPEC.md §1 |
-| Playoffs | **America conference NBA style** (play-in, best-of-7), **Europe conference EuroLeague style** (play-in, best-of-5, Final Four), then an **America v Europe Final** | In | WORLD_SPEC.md §1.1 |
+| Playoffs | **America conference NBA style** (play-in, best-of-7), **Europe conference EuroLeague style** (play-in, best-of-5, Final Four), both unchanged from the real leagues, then **one Final game, America v Europe** | In | WORLD_SPEC.md §1.1 |
 | Continental + domestic double schedule | **Dual competition:** the 12 European Big League clubs also play their national league | In | WORLD_SPEC.md §1 |
 | Entry to the top European level | **10 licences + 2 wildcards** earned each season; a licence is lost after a third bottom-2 finish | In | WORLD_SPEC.md §1.2 |
 | Domestic cups | **One national cup per European country + one America Cup**, ending in a Final Four weekend | In | WORLD_SPEC.md §1.1 |
@@ -154,8 +154,9 @@ and stay until the owner says otherwise:
 | One matchday | — | about 100 games, **under 1 s** |
 
 1. **Season time.** A European Big League club plays about 70 games (40 Big League, 22 national,
-   playoffs, cup); an American one about 45. With NBA-style best-of-7 playoffs a deep run adds up to
-   28 games (WORLD_SPEC.md §17.1). At 5–8 minutes a watched game, watching everything takes
+   playoffs, cup); an American one about 45. With real NBA best-of-7 playoffs a deep American run
+   adds up to 28 games; a European club that goes deep plays 85–90, as real EuroLeague clubs do
+   (WORLD_SPEC.md §17.1). At 5–8 minutes a watched game, watching everything takes
    6–9 hours. The 2–4 hour target only works if you watch about a third of the games live, so the
    game needs **"key game" flags** (rivals, top-of-table, cup ties, playoffs) and a
    **"simulate to the next key game"** button.

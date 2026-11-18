@@ -64,10 +64,13 @@ a club near home).
   - **Europe conference, EuroLeague style:** places 1–6 qualify; places 7–10 play the same play-in.
     Then **best-of-5** quarter-finals and a **Final Four** weekend at one venue (single-game
     semi-finals and final).
-  - **Big League Final: America champion v Europe champion, best-of-7.** Each game is played under the
-    home club's rules (NBA in America, FIBA in Europe) *(tune)*.
-  - *Watch-out:* an American champion can play up to 28 playoff games, a European one up to 92 games
-    in all competitions. See §17 (playoff length vs the 2–4 hour season).
+  - **Both conferences use the real rules unchanged**, including EuroLeague's play-in for places
+    7–10 with only 12 clubs (10 of 12 go on; decided 18 Nov 2026).
+  - **Big League Final: one single game**, America champion v Europe champion, at a neutral venue
+    *(tune)*. This is the only addition to the real NBA and EuroLeague formats. Rules for the Final:
+    see §17.
+  - *Watch-out:* an American champion can play up to 28 playoff games plus the Final; a European club
+    that goes deep in everything about 85–90 games a season, as real EuroLeague clubs do.
 - **US Divisions 2–4:** double round-robin (30 games); the champion is promoted, places 2–5 play a
   single-game knockout for the second promotion spot.
 - **European national leagues:** tier 1 and tier 2 in each country, 12 clubs each, double
@@ -482,8 +485,7 @@ Every slice must keep these checks green, or explain why a target needs to chang
   full engine).
 - **Regional rules (built):** Europe's games use FIBA rules, a player out on his 5th foul; America's
   NBA rules, out on his 6th (`MatchRules`, tests/rules.test.ts). National leagues and national cups:
-  FIBA. Big League playoffs: America conference NBA, Europe conference FIBA; the Final under the home
-  club's rules.
+  FIBA. Big League playoffs: America conference NBA, Europe conference FIBA; the Final: see §17.
 - **Tablet:** every screen works by touch at tablet size (from about 768 px wide); every keyboard
   shortcut (timeout, pause) has an on-screen button. The 3D view must keep a usable frame rate on a
   mid-range tablet, or fall back to 2D. Phone layouts are out (SCOPE.md).
@@ -510,7 +512,7 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 | Slice | What | Playable when done |
 |---|---|---|
 | **W1 Foundation** | World generator (11 countries + America, cities, clubs, licences, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (competitions, clubs, players), tablet-ready layout | You can create a world, save it, load it and look around, on desktop and tablet |
-| **W2 One season** | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
+| **W2 One season** | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
 | **W3 Years go by** | Aging, development, training focus, retirement, contract expiry and AI re-signing, rollover to the next season; squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
 | **W5 Free agency** | Contracts, wage demands, extensions, contract clauses, free agency days | You can build through free agency |
@@ -542,15 +544,12 @@ The full list, against Football Manager, is in [SCOPE.md](SCOPE.md). In short:
 
 ## 17. Open questions
 
-1. **Playoff length vs the 2–4 hour season.** NBA-style best-of-7 series mean an American champion
-   can play up to 28 playoff games, and a European Big League club that goes deep in everything up
-   to about 92 games a season. Options: shorter series as a setting (best-of-5 / best-of-3),
-   playoff games marked key games but quick to simulate, or accept longer seasons for successful
-   clubs (that is how real careers feel). Decide before W2.
-2. **Europe's play-in with 12 clubs.** EuroLeague rules send 10 of 20 clubs to play-in or playoffs;
-   with 12 clubs that is 10 of 12, so the European regular season mostly decides seeding. Accept,
-   or scale to "top 4 + play-in 5–8"?
-3. **Licence loss window:** "third bottom-2 finish" counted over the last 5 seasons, or ever?
+1. **Playoff length vs the 2–4 hour season.** With real NBA rules an American champion plays up to
+   28 playoff games. Accepted as realistic for now; check in play-testing whether "simulate to the
+   next key game" keeps a season inside 2–4 hours, and add a shorter-series setting only if it
+   doesn't.
+2. **Licence-loss window:** third bottom-2 finish within 5 seasons, or ever?
+3. **Rules for the one-game Final:** NBA, FIBA, or alternate each season?
 
 ### Decided on 18 Nov 2026
 
@@ -560,8 +559,9 @@ The full list, against Football Manager, is in [SCOPE.md](SCOPE.md). In short:
 - **Draft:** Big League clubs only; **relegated clubs keep their picks**.
 - **Women's basketball:** not planned.
 - **"Can't be sacked":** off by default (you can be sacked).
-- **Playoffs:** conference playoffs (NBA style in America, EuroLeague style in Europe), then an
-  America v Europe Final.
+- **Playoffs:** the real NBA format in the America conference and the real EuroLeague format in the
+  Europe conference (play-in 7–10 even with 12 clubs), then **one single Final game** between the
+  two champions. No third-place game.
 - **Licences:** Spain 2, Türkiye 2, Greece, Italy, France, Germany, Israel, Lithuania 1 each; lost
   after a third bottom-2 finish.
 - **Portugal** added as an eleventh country, one tier of 12; its clubs can earn wildcards.
