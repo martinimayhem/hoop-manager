@@ -36,7 +36,7 @@
 ## 2. Core game loop
 
 ```
-Take over a club (Quick League: pick a league; Career: pick any club in the world)
+Take over a club (Career: pick any club in the world; the Quick League until Career is playable)
    → Season: for each matchday
         Scout opponent (fuzzy info) → Set game plan → Play match (4 quarters, live)
         → Post-match: results, injuries, player development, morale
@@ -196,8 +196,9 @@ generator. That means:
 ## 8. Leagues and season
 
 > **Career mode is designed in [WORLD_SPEC.md](WORLD_SPEC.md)**: a world of about 300 clubs in
-> America and ten European countries, with national leagues, cups, promotion and relegation. It replaces the 48-club Career of SEASON_SPEC.md (Parts 3–12).
-> The **Quick League** (one 8-team season, SEASON_SPEC.md Part 2) is built and stays as it is; the
+> America and eleven European countries, with national leagues, cups, promotion and relegation. It replaces the 48-club Career of SEASON_SPEC.md (Parts 3–12).
+> The **Quick League** (one 8-team season, SEASON_SPEC.md Part 2) is built and stays **until Career
+> is playable, then it is removed** (decided 18 Nov 2026); the
 > three leagues below are its Street, Pro and Legends.
 
 - **3 leagues** with different budgets and player quality, e.g. *Street League* (low budget),

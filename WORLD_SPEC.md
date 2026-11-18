@@ -1,15 +1,16 @@
 # Hoop Manager: World and Career Spec
 
-> The career mode: a living basketball world of about 300 clubs in America and ten European
+> The career mode: a living basketball world of about 320 clubs in America and eleven European
 > countries, with promotion and relegation, national leagues and cups, scouting, a draft, free
 > agents, trades, youth development, staff, facilities and money. You manage one club for as many seasons as you like, Football Manager
 > style. For career mode this document replaces SEASON_SPEC.md Parts 3–12 (the 48-club Career)
-> and SPEC.md §8. The **Quick League** (SEASON_SPEC.md Part 2, built) and the friendly match stay as
-> they are. One player against the computer (SPEC.md §1).
+> and SPEC.md §8. The **Quick League** (SEASON_SPEC.md Part 2, built) stays until Career is playable
+> and is then removed (decided 18 Nov 2026); the friendly match stays. One player against the computer (SPEC.md §1).
 
 Status: design for approval. Nothing here is built yet. **Revised 18 Nov 2026** to match the scope
 decisions in [SCOPE.md](SCOPE.md) (European national leagues, dual competition, cups, contract
-clauses, training, promises, club levers, tablet).
+clauses, training, promises, club levers, tablet) and the owner's answers on the conflicts
+(Portugal, licences, sacking default, NBA/EuroLeague-style playoffs, Final Four cups, money).
 
 ---
 
@@ -41,12 +42,13 @@ clauses, training, promises, club levers, tablet).
 | Level | America | Europe | Clubs |
 |---|---|---|---|
 | Top | **Big League, America conference** (18) | **Big League, Europe conference** (12): 10 licence clubs + 2 wildcards, all of which **also play their national league** | 30 |
-| Below the top | US Division 2, 3, 4 (16 clubs each) | **National leagues in 10 countries**, 2 tiers each, 12 clubs per tier | 48 + 240 |
-| Cups | **America Cup** (all 66 American clubs) | **One national cup per country** (its 24 clubs) | |
-| | | **Total** | **about 306 clubs** (66 + 240) |
+| Below the top | US Division 2, 3, 4 (16 clubs each) | **National leagues in 11 countries**: 10 with 2 tiers of 12, Portugal with 1 tier of 12 | 48 + 252 |
+| Cups | **America Cup** (all 66 American clubs) | **One national cup per country** (its 24 clubs; Portugal 12) | |
+| | | **Total** | **about 318 clubs** (66 + 252) |
 
-**Countries:** Spain, Italy, France, Germany, Greece, Türkiye, Israel, Lithuania, Serbia and the
-Netherlands.
+**Countries:** Spain, Italy, France, Germany, Greece, Türkiye, Israel, Lithuania, Serbia, the
+Netherlands (2 tiers each) and **Portugal** (1 tier, added 18 Nov 2026 so a player in Portugal has
+a club near home).
 
 - **Big League** is one competition with two conferences: **America** (18) and **Europe** (12).
   Europe is part of the top league, not a tier below it.
@@ -54,9 +56,18 @@ Netherlands.
   extra games against teams in its own conference. Settings: **Short (30)** or **Standard (40)**.
   *(The Full 82-game option is dropped: it breaks the 2–4 hour season and the European double
   schedule.)*
-- **Big League playoffs:** 16 clubs: the top 16 by record, with at least 4 from each conference.
-  Round 1 best-of-3, quarter-finals and semi-finals best-of-5, final best-of-7. (Kept short so a
-  season fits in a few evenings.)
+- **Big League playoffs, per conference, then a Final** (decided 18 Nov 2026: follow the real NBA
+  and EuroLeague):
+  - **America conference, NBA style:** places 1–6 qualify; places 7–10 play the **play-in** (7 v 8:
+    the winner is seed 7; the loser plays the winner of 9 v 10 for seed 8). Then three rounds of
+    **best-of-7**: first round, conference semi-finals, conference final.
+  - **Europe conference, EuroLeague style:** places 1–6 qualify; places 7–10 play the same play-in.
+    Then **best-of-5** quarter-finals and a **Final Four** weekend at one venue (single-game
+    semi-finals and final).
+  - **Big League Final: America champion v Europe champion, best-of-7.** Each game is played under the
+    home club's rules (NBA in America, FIBA in Europe) *(tune)*.
+  - *Watch-out:* an American champion can play up to 28 playoff games, a European one up to 92 games
+    in all competitions. See §17 (playoff length vs the 2–4 hour season).
 - **US Divisions 2–4:** double round-robin (30 games); the champion is promoted, places 2–5 play a
   single-game knockout for the second promotion spot.
 - **European national leagues:** tier 1 and tier 2 in each country, 12 clubs each, double
@@ -67,7 +78,8 @@ Netherlands.
   midweek, national-league and cup games at the weekend**, so they play about 70 games a season
   against about 45 for an American Big League club. Rotation, fatigue and injuries (§2.2) are what
   make this a real choice: rest players in one competition to win the other.
-- **Cups:** single-game knockouts, drawn at random, lower-tier club at home *(tune)*. Big League
+- **Cups:** single-game knockouts, drawn at random, lower-tier club at home *(tune)*, until four
+  clubs are left; then a **Final Four weekend** at one venue (semi-finals and final). Big League
   clubs enter in the last 16. They are the giant-killing stories of the season.
 - **Key games:** derbies, top-of-the-table games, cup ties and playoffs are marked as key games.
   "Simulate to the next key game" is how a season stays inside 2–4 hours (§3).
@@ -81,11 +93,13 @@ Movement stays **within a region**: America ↔ America, and inside each Europea
 | Big League (America) ↔ US Division 2 | Bottom 2 America clubs | Division 2 champion + playoff winner |
 | US Division 2 ↔ 3, 3 ↔ 4 | Bottom 2 | Champion + playoff winner |
 | US Division 4 | No relegation | — |
-| Big League (Europe) | **No relegation for the 10 licence clubs.** The 2 wildcards are earned again every season | The 2 best national-league seasons among clubs without a licence (national champions first, then national-league record) *(tune)* |
+| Big League (Europe) | **No relegation for the 10 licence clubs**, but a licence is **lost after a club's third bottom-2 finish** in the Europe conference *(counted over the last 5 seasons, tune)*. The 2 wildcards are earned again every season | The 2 best national-league seasons among clubs without a licence, Portugal included (national champions first, then national-league record) *(tune)*. A lost licence goes to that season's best wildcard club |
 | National tier 1 ↔ tier 2 (each country) | Bottom 2 (licence clubs are exempt; the next club drops instead) | Tier 2 champion + playoff winner |
+| Portugal | One tier: no promotion or relegation | — |
 
-**Licences (proposal, tune):** Spain 2, Türkiye 2, Greece 1, Italy 1, France 1, Germany 1,
-Israel 1, Lithuania 1. Serbia and the Netherlands reach the Big League through wildcards.
+**Licences (agreed 18 Nov 2026):** Spain 2, Türkiye 2, Greece 1, Italy 1, France 1, Germany 1,
+Israel 1, Lithuania 1. Serbia, the Netherlands and Portugal reach the Big League through wildcards
+(and can win a licence when one is lost).
 
 **Parachute payments:** a club relegated from a tier, or a wildcard club that drops out of the Big
 League, keeps 50% of the gap in TV money the first season and 25% the second, so dropping hurts but
@@ -93,9 +107,9 @@ doesn't destroy a club.
 
 ### 1.3 Places, clubs and colleges
 
-- **Cities:** real cities: big American metros, and basketball cities in the ten European countries
+- **Cities:** real cities: big American metros, and basketball cities in the eleven European countries
   (for example Madrid, Barcelona, Málaga, Istanbul, Athens, Belgrade, Kaunas, Vilnius, Tel Aviv,
-  Milan, Bologna, Paris, Berlin, Munich, Amsterdam, Groningen). Bigger and more famous basketball
+  Milan, Bologna, Paris, Berlin, Munich, Amsterdam, Groningen, Lisbon, Porto). Bigger and more famous basketball
   cities start higher, with exceptions so some can start lower and climb. **A big city may host two
   clubs** (different nicknames); the smaller countries need it to fill 24 places.
 - **Clubs:** city name + **fictional nickname** (for example *Groningen Northmen*). A blocklist
@@ -111,15 +125,15 @@ doesn't destroy a club.
 
 | Group | Count at start | Notes |
 |---|---|---|
-| Club rosters (13 each) | about 3,980 | 306 × 13 |
+| Club rosters (13 each) | about 4,130 | 318 × 13 |
 | Free agents | about 400 | Old, cheap, or between clubs |
 | College players | about 600 | 40 colleges × 15; seniors enter the draft |
-| European academy players | about 1,440 | 240 European clubs × 6, aged 15–18 |
-| **Total** | **about 6,400** | |
+| European academy players | about 1,510 | 252 European clubs × 6, aged 15–18 |
+| **Total** | **about 6,650** | |
 
 New people each season: about 150 college freshmen and an academy intake of **1–3 per European
 club** (more with a better academy) *(tune)*, about 550 new names a season, so **about 12,000 unique
-names over 10 seasons**. About 270 players a season must move up into club basketball (draft picks,
+names over 10 seasons**. About 280 players a season must move up into club basketball (draft picks,
 undrafted signings, academy graduates) to match retirements; most academy players never make a
 first team, as in real life. The world lab checks that the population stays stable (§13).
 
@@ -254,8 +268,11 @@ Offseason, in this order:                                                 ▼
 
 ### 5.3 The draft
 - **Two rounds, 30 picks each,** Big League clubs only (the 12 European ones of that season
-  included). All other clubs sign undrafted players as free agents.
-- **Lottery:** the 14 non-playoff Big League clubs, weighted towards the worst records (the top 4
+  included). All other clubs sign undrafted players as free agents (decided 18 Nov 2026).
+- **Relegated clubs keep their picks** (decided 18 Nov 2026): a pick belongs to the season it was
+  earned in, so an American club relegated to Division 2, or a European club that loses its
+  wildcard, still drafts. A relegated club with the #1 pick is a rebuild story.
+- **Lottery:** the 14 Big League clubs that miss the playoffs (10 in America, 4 in Europe), weighted towards the worst records (the top 4
   picks are drawn, then the rest go in reverse order of record).
 - **Picks can be traded** (up to 3 seasons ahead).
 - **Rookie contracts:** fixed wage by pick number, 3 years (first round) or 2 years (second round).
@@ -351,7 +368,8 @@ cost more, which competes with player wages for the same budget.
 ## 10. Money and facilities
 
 ### 10.1 Budget and wages
-Money is in fictional **dollars**. Each season the board sets a **wage budget** and a **transfer
+Money is in fictional **dollars**, in America and in Europe (decided 18 Nov 2026: one currency,
+no exchange rates). Quick League credits disappear with the Quick League. Each season the board sets a **wage budget** and a **transfer
 budget** from the club's income.
 
 | Income | Depends on |
@@ -405,9 +423,9 @@ You don't run the books: the board does. You influence the club through four cho
 - **Job security** rises and falls with results against that objective.
 - **If you're sacked**, you get offers from other clubs (often a tier lower) and your career goes on.
   Sacking is **optional**: a **"Can't be sacked"** switch is shown when you start a career and can be
-  changed later.
+  changed later. **Default: you can be sacked** (decided 18 Nov 2026), as in FM.
 - **Job offers and moving:** clubs that fit your reputation approach you; you can also apply for an
-  open job, in America or in any of the ten countries.
+  open job, in America or in any of the eleven countries.
 - **Manager reputation** grows with success and decides which clubs want you.
 - **Starting a career:** pick any club. A "climb from Division 4" start is the classic challenge.
 
@@ -456,15 +474,16 @@ Every slice must keep these checks green, or explain why a target needs to chang
 
 - **Engine unchanged:** career matches use the same match engine. AI games use `simulateMatch`.
   **Measured 2026-11-18:** `npm run lab` plays 1,000 games in 6.2 s, about **160 games a second**
-  in Node (the earlier figure of 400 a second was too optimistic). A world season is about **4,500
-  games** (Big League about 650, US Divisions 2–4 about 720, 20 national leagues about 2,850 with
-  playoffs, cups about 300): about 30 s in Node and about a minute in the browser when
+  in Node (the earlier figure of 400 a second was too optimistic). A world season is about **4,700
+  games** (Big League about 670 with play-ins and playoffs, US Divisions 2–4 about 720, 21 national
+  leagues about 3,000 with playoffs, cups about 310): about 30 s in Node and about a minute in the browser when
   fast-forwarded, about 100 games (under 1 s) per matchday. If that is too slow, the first lever is
   a faster engine path for AI games, not a shortcut formula (SEASON_SPEC.md: every AI game uses the
   full engine).
 - **Regional rules (built):** Europe's games use FIBA rules, a player out on his 5th foul; America's
   NBA rules, out on his 6th (`MatchRules`, tests/rules.test.ts). National leagues and national cups:
-  FIBA. Big League playoffs: NBA rules.
+  FIBA. Big League playoffs: America conference NBA, Europe conference FIBA; the Final under the home
+  club's rules.
 - **Tablet:** every screen works by touch at tablet size (from about 768 px wide); every keyboard
   shortcut (timeout, pause) has an on-screen button. The 3D view must keep a usable frame rate on a
   mid-range tablet, or fall back to 2D. Phone layouts are out (SCOPE.md).
@@ -490,8 +509,8 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 
 | Slice | What | Playable when done |
 |---|---|---|
-| **W1 Foundation** | World generator (10 countries + America, cities, clubs, licences, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (competitions, clubs, players), tablet-ready layout | You can create a world, save it, load it and look around, on desktop and tablet |
-| **W2 One season** | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups, standings, key games, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
+| **W1 Foundation** | World generator (11 countries + America, cities, clubs, licences, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (competitions, clubs, players), tablet-ready layout | You can create a world, save it, load it and look around, on desktop and tablet |
+| **W2 One season** | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
 | **W3 Years go by** | Aging, development, training focus, retirement, contract expiry and AI re-signing, rollover to the next season; squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
 | **W5 Free agency** | Contracts, wage demands, extensions, contract clauses, free agency days | You can build through free agency |
@@ -523,31 +542,33 @@ The full list, against Football Manager, is in [SCOPE.md](SCOPE.md). In short:
 
 ## 17. Open questions
 
-1. **Season length default:** 40 Big League games plus, for European clubs, 22 national-league
-   games. Keep Standard (40) as the default, or make Short (30) the default for European clubs?
-2. **Tier sizes:** 16-team US divisions (30 games) and 12-team national tiers (22 games). Right?
-3. **Draft for lower divisions:** Big League only (as above), or a combined draft where lower tiers
-   pick after the Big League?
-4. **Women's basketball:** a separate world later?
-5. **"Can't be sacked": on or off by default** when a career starts? (Decided: sacking is optional.
-   SEASON_SPEC.md left firing out so nothing feels like pressure on a young player.)
-6. **The Big League Finals.** SEASON_SPEC.md had America v Europe Finals between the two conference
-   champions; §1.1 here has one top-16 playoff. Which?
-7. **Relegated clubs and the draft (§5.3).** Relegation is fixed before the draft, so the worst
-   American Big League clubs go down. Do they keep their lottery picks? And a European club that
-   loses its wildcard?
-8. **Money.** Wages here are in millions of dollars; prices today are 1–40 credits. One conversion
-   rule (or drop credits for career mode).
-9. **Licences:** is the proposal in §1.2 right (Spain 2, Türkiye 2, one each for Greece, Italy,
-   France, Germany, Israel, Lithuania)? Can a licence ever be lost (for example after three bottom
-   finishes)?
-10. **Portugal and the UK.** They are not among the ten countries, so Lisbon and London (in the
-    earlier city list) are no longer in the world. Add Portugal as an eleventh country (one tier)?
-11. **Cup format:** single games throughout, or a two-legged semi-final and a Final Four weekend?
-12. **Currency in Europe:** keep dollars everywhere for simplicity, or euros in Europe?
+1. **Playoff length vs the 2–4 hour season.** NBA-style best-of-7 series mean an American champion
+   can play up to 28 playoff games, and a European Big League club that goes deep in everything up
+   to about 92 games a season. Options: shorter series as a setting (best-of-5 / best-of-3),
+   playoff games marked key games but quick to simulate, or accept longer seasons for successful
+   clubs (that is how real careers feel). Decide before W2.
+2. **Europe's play-in with 12 clubs.** EuroLeague rules send 10 of 20 clubs to play-in or playoffs;
+   with 12 clubs that is 10 of 12, so the European regular season mostly decides seeding. Accept,
+   or scale to "top 4 + play-in 5–8"?
+3. **Licence loss window:** "third bottom-2 finish" counted over the last 5 seasons, or ever?
 
-Resolved on 18 Nov 2026 (SCOPE.md): the Full (82) schedule for Europe (dropped); cup competitions
-(national cups in, intercontinental out); hot-seat (out).
+### Decided on 18 Nov 2026
+
+- Default Big League length **40 games for all**; "simulate to next key game" handles the rest.
+  Short (30) stays a setting; Full (82) is dropped.
+- **Tier sizes:** US divisions 16 clubs (30 games), national tiers 12 clubs (22 games).
+- **Draft:** Big League clubs only; **relegated clubs keep their picks**.
+- **Women's basketball:** not planned.
+- **"Can't be sacked":** off by default (you can be sacked).
+- **Playoffs:** conference playoffs (NBA style in America, EuroLeague style in Europe), then an
+  America v Europe Final.
+- **Licences:** Spain 2, Türkiye 2, Greece, Italy, France, Germany, Israel, Lithuania 1 each; lost
+  after a third bottom-2 finish.
+- **Portugal** added as an eleventh country, one tier of 12; its clubs can earn wildcards.
+- **Cups:** single games, then a Final Four weekend.
+- **Money:** dollars everywhere. Credits go with the Quick League, which is removed once Career is
+  playable.
+- Earlier: Full (82) schedule dropped; national cups in, intercontinental cup out; no hot-seat.
 
 ## 18. References (inspiration and licences)
 

@@ -51,7 +51,7 @@ the next dead ball; both coaches may adjust during it.
 
 ## Roadmap
 
-Next up is **career mode**: a world of about 300 clubs in America and ten European countries, with
+Next up is **career mode**: a world of about 320 clubs in America and eleven European countries, with
 national leagues and cups, promotion and relegation, scouting, a draft, free agents, trades, youth
 development, staff and money, designed in [WORLD_SPEC.md](WORLD_SPEC.md). After that: a Daily
 Clutch challenge and arcade-style match moments. See the roadmap in [SPEC.md](SPEC.md).

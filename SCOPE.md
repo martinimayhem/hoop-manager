@@ -26,7 +26,7 @@ it without a manual.
 |---|---|
 | Who are you? | **Head coach and general manager in one** (FM model): tactics *and* draft, trades, contracts. |
 | How long is a season? | A full season, playoffs included, takes **2–4 hours**: watch the key games live, simulate the rest. |
-| Your career | **Full manager career:** reputation, job offers, move to other clubs and levels. **Sacking is optional** (a setting). |
+| Your career | **Full manager career:** reputation, job offers, move to other clubs and levels. **Sacking is optional** (a setting; default: you can be sacked). |
 | Players | **One player against the computer. No multiplayer of any kind:** no hot-seat, no online play, no team codes. |
 | Platform | **Desktop and tablet browser.** Phone is out. |
 | Language | **English** at launch. Text kept in one place so translations can follow. |
@@ -91,11 +91,12 @@ Status: **Built** = in the game today and stays · **In** = part of the design, 
 | FM feature | Hoop Manager | Status | Where |
 |---|---|---|---|
 | Top league | **Big League**: America conference (18) + Europe conference (12) | In | WORLD_SPEC.md §1 |
-| Leagues with promotion and relegation | America: Divisions 2–4. Europe: **national leagues in 10 countries, 2 tiers each** | In | WORLD_SPEC.md §1 |
-| Countries | Spain, Italy, France, Germany, Greece, Türkiye, Israel, Lithuania, Serbia, the Netherlands | In | WORLD_SPEC.md §1 |
+| Leagues with promotion and relegation | America: Divisions 2–4. Europe: **national leagues in 11 countries** (2 tiers each; Portugal 1 tier) | In | WORLD_SPEC.md §1 |
+| Countries | Spain, Italy, France, Germany, Greece, Türkiye, Israel, Lithuania, Serbia, the Netherlands, **Portugal** | In | WORLD_SPEC.md §1 |
+| Playoffs | **America conference NBA style** (play-in, best-of-7), **Europe conference EuroLeague style** (play-in, best-of-5, Final Four), then an **America v Europe Final** | In | WORLD_SPEC.md §1.1 |
 | Continental + domestic double schedule | **Dual competition:** the 12 European Big League clubs also play their national league | In | WORLD_SPEC.md §1 |
-| Entry to the top European level | **10 fixed licences + 2 wildcards** earned each season | In | WORLD_SPEC.md §1.2 |
-| Domestic cups | **One national cup per European country + one America Cup** | In | WORLD_SPEC.md §1.1 |
+| Entry to the top European level | **10 licences + 2 wildcards** earned each season; a licence is lost after a third bottom-2 finish | In | WORLD_SPEC.md §1.2 |
+| Domestic cups | **One national cup per European country + one America Cup**, ending in a Final Four weekend | In | WORLD_SPEC.md §1.1 |
 | Club names | Real city + fictional nickname | In | WORLD_SPEC.md §1.3 |
 | Intercontinental cup, All-Star weekend | — | Out | |
 | National teams, international management | — | Out | |
@@ -114,7 +115,7 @@ Status: **Built** = in the game today and stays · **In** = part of the design, 
 | FM feature | Hoop Manager | Status |
 |---|---|---|
 | Career | Career mode (WORLD_SPEC.md) | In |
-| Quick start | Quick League and Friendly match | Built |
+| Quick start | Friendly match stays. **Quick League is removed once Career is playable** | Built |
 | Network / hot-seat multiplayer | — | Out |
 | Pre-game database editor | — | Out *(not discussed; assumed)* |
 | Touch (tablet) | Every screen works by touch; every keyboard shortcut has a button | In |
@@ -145,15 +146,16 @@ and stay until the owner says otherwise:
 
 | | Before (WORLD_SPEC 17 Nov) | After this scope |
 |---|---|---|
-| Clubs | 126 | **about 306** (66 America + 240 Europe) |
-| People at the start | about 2,800 | **about 6,400** |
-| Games per season, whole world | about 2,100 | **about 4,500** |
+| Clubs | 126 | **about 318** (66 America + 252 Europe) |
+| People at the start | about 2,800 | **about 6,650** |
+| Games per season, whole world | about 2,100 | **about 4,700** |
 | Engine speed (Node, measured) | "400 games/s" (assumed) | **about 160 games/s** (`npm run lab`, 1,000 games in 6.2 s) |
 | Fast-forward a whole season | under 30 s | **about 30 s in Node, about 1 minute in the browser** |
 | One matchday | — | about 100 games, **under 1 s** |
 
 1. **Season time.** A European Big League club plays about 70 games (40 Big League, 22 national,
-   playoffs, cup); an American one about 45. At 5–8 minutes a watched game, watching everything takes
+   playoffs, cup); an American one about 45. With NBA-style best-of-7 playoffs a deep run adds up to
+   28 games (WORLD_SPEC.md §17.1). At 5–8 minutes a watched game, watching everything takes
    6–9 hours. The 2–4 hour target only works if you watch about a third of the games live, so the
    game needs **"key game" flags** (rivals, top-of-table, cup ties, playoffs) and a
    **"simulate to the next key game"** button.
@@ -161,7 +163,7 @@ and stay until the owner says otherwise:
    It is dropped.
 3. **Cities.** Lithuania, Israel, Serbia and the Netherlands don't have 24 basketball cities each.
    Big cities may host two clubs (two different nicknames).
-4. **Population.** With 240 academies, the youth intake per club must be lower than first planned or
+4. **Population.** With 252 academies, the youth intake per club must be lower than first planned or
    the world overfills; the world lab checks it.
-5. **Portugal and the UK** have no league in the 10 countries, so Lisbon and London (in the earlier
-   city list) drop out. Open question in WORLD_SPEC.md §17.
+5. **Portugal** was added as an eleventh country (one tier) so Lisbon and Porto have clubs. The UK
+   is not in the world, so London drops out.
