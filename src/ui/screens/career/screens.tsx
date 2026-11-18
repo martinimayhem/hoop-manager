@@ -7,7 +7,7 @@ import { money } from '../../../game/world/money';
 import { EUROPE_COUNTRIES } from '../../../game/world/places';
 import { ageOf, clubById, competitionById, competitionsOf, leagueOf, moneySummary, ordinal, standings, strength, whereIs } from '../../../game/world/query';
 import { REGION_NAME, type Competition, type World, type WorldClub } from '../../../game/world/types';
-import { Badge, cameThrough, contractEnd, country, isMine, MoraleDot, mid, overallRange, PayrollBar, potentialRange, ratingTone, showRange } from './parts';
+import { Badge, cameThrough, contractEnd, country, isMine, MoraleFace, CareerPortrait, Stars, playerStars, mid, overallRange, PayrollBar, potentialRange, ratingTone, showRange } from './parts';
 import { SquadControls, SquadTable, TAB_NOTE, useSquadView, type SquadTab } from './SquadView';
 
 export type View = { kind: 'squad' } | { kind: 'player'; id: string } | { kind: 'competitions' } | { kind: 'competition'; id: string } | { kind: 'club'; id: string };
@@ -104,6 +104,7 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
   const club = wp.club ? clubById(w, wp.club) : undefined;
   const r = overallRange(w, wp);
   const pot = potentialRange(w, wp);
+  const stars = playerStars(w, wp);
   const k = wp.contract;
   const cap = club?.moneySystem === 'cap';
   const origin = wp.origin.kind === 'academy' ? 'Academy graduate' : wp.origin.kind === 'college' ? 'College' : wp.origin.kind === 'star' ? 'Established star' : 'International';
@@ -111,6 +112,7 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
     <div className="cr-page">
       <BackLink nav={nav} label="Back" />
       <section className="cr-card cr-player-head">
+        <CareerPortrait w={w} wp={wp} size={132} />
         <div className="cr-player-id">
           <div className="cr-player-name">
             <h1>{wp.p.name}</h1>
@@ -123,7 +125,7 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
           </span>
           <div className="cr-chips">
             <span className="cr-chip">
-              <MoraleDot m={wp.morale} />
+              <MoraleFace m={wp.morale} size={18} label />
             </span>
             {club ? (
               <button className="cr-chip link" onClick={() => nav.go({ kind: 'club', id: club.id })}>
@@ -135,21 +137,22 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
             <span className="cr-chip">Hometown: {wp.hometown}</span>
           </div>
         </div>
-        <div className="cr-player-nums">
+        <div className="cr-player-stars">
           <div>
-            <span className="cr-label">Overall</span>
-            <span className="cr-huge" style={{ color: ratingTone(mid(r)) }}>
-              {showRange(r)}
+            <span className="cr-label">Ability</span>
+            <Stars n={stars.ability} kind="ability" size={20} />
+            <span className="cr-star-num">
+              OVR <b style={{ color: ratingTone(mid(r)) }}>{showRange(r)}</b> <small>{mine ? 'exact' : 'scout estimate'}</small>
             </span>
-            <span className="cr-sub">{mine ? 'exact' : 'scout estimate'}</span>
           </div>
           <div>
             <span className="cr-label">Potential</span>
-            <span className="cr-huge" style={{ color: 'var(--warn)' }}>
-              {showRange(pot)}
+            <Stars n={stars.potential} kind="potential" size={20} />
+            <span className="cr-star-num">
+              Range <b style={{ color: 'var(--cr-blue)' }}>{showRange(pot)}</b> <small>{mine ? 'staff estimate' : 'scout estimate'}</small>
             </span>
-            <span className="cr-sub">scout estimate</span>
           </div>
+          <span className="cr-sub">Stars compare him with {stars.scale.label}.</span>
         </div>
       </section>
 

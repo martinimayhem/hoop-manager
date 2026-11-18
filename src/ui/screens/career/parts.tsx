@@ -1,14 +1,15 @@
 // Career screens' shared parts: the club badge, ratings (exact for your own players, a scout's range
 // for everyone else, as in the rest of the game), the payroll bar (GAME_FLOW §4.4) and small helpers.
 
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import { HEAD_VIEWBOX, portraitUrl, type Kit } from '../../looks';
 import { composite } from '../../../engine/ratings';
 import { hashUnit } from '../../../game/pricing';
 import { DEFAULT_SCOUT_ACCURACY, scoutRating, type Range } from '../../../game/scouting';
 import { MIN_CONTRACT, THRESHOLD_MIN_AGE, money } from '../../../game/world/money';
 import { COUNTRY_CODE3, COUNTRY_NAME } from '../../../game/world/places';
-import { ageOf, clubById, moneySummary, type MoneySummary } from '../../../game/world/query';
-import type { Morale, World, WorldClub, WorldPlayer } from '../../../game/world/types';
+import { ageOf, clubById, moneySummary, starScale, toStars, type MoneySummary, type StarScale } from '../../../game/world/query';
+import { MORALES, type Morale, type World, type WorldClub, type WorldPlayer } from '../../../game/world/types';
 
 export const country = (code: string) => COUNTRY_NAME[code] ?? code;
 export const code3 = (code: string) => COUNTRY_CODE3[code] ?? code;
@@ -58,13 +59,100 @@ export function ratingTone(v: number): string {
   return v >= 80 ? 'var(--good)' : v >= 65 ? 'var(--cr-blue)' : v >= 50 ? 'var(--warn)' : 'var(--cr-red)';
 }
 
-export const MORALE_TONE: Record<Morale, string> = { superb: 'var(--good)', good: 'var(--good)', okay: 'var(--warn)', low: 'var(--cr-red)', 'very low': 'var(--bad)' };
+export const moraleName = (m: Morale) => m[0].toUpperCase() + m.slice(1);
 
-export function MoraleDot({ m }: { m: Morale }) {
+// ---------------------------------------------------------------------------
+// Morale faces (GAME_FLOW §6.5): five faces that differ in mouth shape and colour (and the colours
+// in lightness), so they read without colour vision. Each has a text label for screen readers.
+
+const FACE: Record<Morale, { fill: string; mouth: string; open?: boolean; brows?: string }> = {
+  superb: { fill: '#2fbf6a', mouth: 'M6 11.2 Q10 17.5 14 11.2 Z', open: true },
+  good: { fill: '#a3e07c', mouth: 'M6.5 12 Q10 15.2 13.5 12' },
+  okay: { fill: '#ffd34d', mouth: 'M6.5 13.2 H13.5' },
+  low: { fill: '#ff9f43', mouth: 'M6.5 14.4 Q10 11.8 13.5 14.4' },
+  'very low': { fill: '#e8484f', mouth: 'M6 15.5 Q10 10.5 14 15.5', brows: 'M5.6 5.6 L8.6 7.2 M14.4 5.6 L11.4 7.2' },
+};
+
+export function MoraleFace({ m, size = 20, label = false }: { m: Morale; size?: number; label?: boolean }) {
+  const f = FACE[m];
   return (
-    <span className="cr-morale">
-      <span className="cr-dot" style={{ background: MORALE_TONE[m] }} />
-      {m[0].toUpperCase() + m.slice(1)}
+    <span className="cr-face">
+      <svg width={size} height={size} viewBox="0 0 20 20" role="img" aria-label={`Morale: ${m}`}>
+        <circle cx="10" cy="10" r="9.3" fill={f.fill} />
+        <circle cx="7" cy="8.2" r="1.3" fill="#151a26" />
+        <circle cx="13" cy="8.2" r="1.3" fill="#151a26" />
+        {f.brows && <path d={f.brows} stroke="#151a26" strokeWidth="1.3" strokeLinecap="round" />}
+        <path d={f.mouth} fill={f.open ? '#151a26' : 'none'} stroke="#151a26" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {label && <span>{moraleName(m)}</span>}
+    </span>
+  );
+}
+
+/** The legend under a table: every face with its name. */
+export function MoraleLegend() {
+  return (
+    <span className="cr-face-legend">
+      Morale:
+      {MORALES.slice()
+        .reverse()
+        .map((m) => (
+          <MoraleFace key={m} m={m} size={16} label />
+        ))}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stars (GAME_FLOW §6.5): 0.5–5 in half stars, against the league the club plays in. Ability gold,
+// potential blue (the two differ in lightness too).
+
+export type StarKind = 'ability' | 'potential';
+const STAR_FILL: Record<StarKind, string> = { ability: '#ffc83d', potential: '#4c8ef7' };
+const STAR_PATH = 'M6 0.6 L7.6 4.1 L11.4 4.5 L8.55 7.05 L9.35 10.8 L6 8.9 L2.65 10.8 L3.45 7.05 L0.6 4.5 L4.4 4.1 Z';
+
+/** Five stars drawn 12 units wide with 2 between them (68 × 12), scaled to `size` px high. */
+export function Stars({ n, kind, size = 12 }: { n: number; kind: StarKind; size?: number }) {
+  const id = useId();
+  const x = (i: number) => i * 14;
+  return (
+    <svg className="cr-stars" width={(size * 68) / 12} height={size} viewBox="0 0 68 12" role="img" aria-label={`${kind === 'ability' ? 'Ability' : 'Potential'}: ${n} of 5 stars`}>
+      <defs>
+        <clipPath id={id}>
+          <rect x="0" y="0" width={x(Math.floor(n)) + (n % 1 ? 6 : 0)} height="12" />
+        </clipPath>
+      </defs>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <path key={`e${i}`} d={STAR_PATH} transform={`translate(${x(i)} 0)`} fill="#2c3a58" />
+      ))}
+      <g clipPath={`url(#${id})`}>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <path key={`f${i}`} d={STAR_PATH} transform={`translate(${x(i)} 0)`} fill={STAR_FILL[kind]} />
+        ))}
+      </g>
+    </svg>
+  );
+}
+
+/** A player's ability and potential stars, against his club's league (other clubs': your scouts' estimate). */
+export function playerStars(w: World, wp: WorldPlayer): { ability: number; potential: number; scale: StarScale } {
+  const scale = starScale(w, wp.club ?? w.human?.club ?? w.clubs[0].id);
+  return { ability: toStars(mid(overallRange(w, wp)), scale), potential: Math.max(toStars(mid(overallRange(w, wp)), scale), toStars(mid(potentialRange(w, wp)), scale)), scale };
+}
+
+// ---------------------------------------------------------------------------
+// Portraits (GAME_FLOW §6.5): the game's facesjs faces (../../looks.ts), drawn from the player's id,
+// so nothing is saved; in his club's colours. Small: the head; large: head and shoulders.
+
+export function CareerPortrait({ w, wp, size = 32 }: { w: World; wp: WorldPlayer; size?: number }) {
+  const club = wp.club ? clubById(w, wp.club) : undefined;
+  const kit: Kit = club ? { fill: club.colours[0], text: readableOn(club.colours[0]) } : { fill: '#8f99a8', text: '#121722' };
+  const bust = size >= 80;
+  const width = Math.round(bust ? (size * 2) / 3 : (size * HEAD_VIEWBOX.w) / HEAD_VIEWBOX.h);
+  const src = portraitUrl(wp.p, kit, bust ? { crop: 'bust', number: wp.p.number } : { crop: 'head' });
+  return (
+    <span className="cr-portrait" style={{ width, height: size }}>
+      <img src={src} alt="" loading="lazy" draggable={false} />
     </span>
   );
 }

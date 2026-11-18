@@ -104,6 +104,48 @@ export function thresholdFigure(w: World, club: WorldClub): { counted: number; a
   return { counted, anchors };
 }
 
+// ---------------------------------------------------------------------------
+// Stars (GAME_FLOW §6.5): ability and potential as 0.5–5 half stars, compared with the league the
+// club plays in. Big League clubs (both conferences, one league) are compared with the whole Big
+// League, also the Europe clubs that play their national league too (owner's answer, 18 Nov 2026).
+
+export interface StarScale {
+  /** "the Big League", "US Division 4", "the Spanish League 2". */
+  label: string;
+  mean: number;
+  sd: number;
+}
+const scales = new WeakMap<World, Map<string, StarScale>>();
+
+/** The scale a club's players are measured on: its league's first-team overalls. */
+export function starScale(w: World, clubId: string): StarScale {
+  const big = inBigLeague(w, clubId);
+  const comps = big ? w.competitions.filter((c) => c.kind === 'bigLeague') : [leagueOf(w, clubId)].filter(Boolean);
+  const key = big ? 'big-league' : (comps[0]?.id ?? 'world');
+  let byKey = scales.get(w);
+  if (!byKey) scales.set(w, (byKey = new Map()));
+  let s = byKey.get(key);
+  if (!s) {
+    const clubIds = comps.length ? comps.flatMap((c) => c.clubs) : w.clubs.map((c) => c.id);
+    const ovrs = clubIds.flatMap((id) => clubById(w, id)!.roster.map((pid) => overall(w.players[pid])));
+    const mean = ovrs.reduce((a, b) => a + b, 0) / ovrs.length;
+    const sd = Math.sqrt(ovrs.reduce((a, b) => a + (b - mean) ** 2, 0) / ovrs.length) || 1;
+    const label = big ? 'the Big League' : comps[0] ? comps[0].name : 'all clubs';
+    s = { label, mean, sd };
+    byKey.set(key, s);
+  }
+  return s;
+}
+
+/**
+ * A rating as half stars on a scale: a league's average first-team player is about 2.5–3 stars, one
+ * standard deviation better one star more; 0.5 to 5.
+ */
+export function toStars(value: number, s: StarScale): number {
+  const stars = 2.75 + (value - s.mean) / s.sd;
+  return Math.max(0.5, Math.min(5, Math.round(stars * 2) / 2));
+}
+
 export type MoneySummary =
   | { system: 'cap'; payroll: number; next: number; space: number; floor: number; cap: number; tax: number; ceiling: number; midLevel: number }
   | { system: 'budget'; budget: number; committed: number; next: number; room: number; threshold: { counted: number; limit: number; anchors: WorldPlayer[] } | null };

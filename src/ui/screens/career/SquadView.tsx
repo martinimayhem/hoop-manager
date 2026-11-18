@@ -9,7 +9,8 @@ import { money } from '../../../game/world/money';
 import { academy, ageOf, devSquad, squad } from '../../../game/world/query';
 import { MORALES, type World, type WorldClub, type WorldPlayer } from '../../../game/world/types';
 import { useSort, type SortValue } from '../../components/sortable';
-import { cameThrough, code3, contractEnd, country, isMine, mid, MoraleDot, overallRange, potentialRange, ratingTone } from './parts';
+import { cameThrough, CareerPortrait, code3, contractEnd, country, isMine, mid, MoraleFace, MoraleLegend, overallRange, playerStars, potentialRange, ratingTone, Stars, type StarKind } from './parts';
+import { starScale } from '../../../game/world/query';
 
 export type SquadTab = 'first' | 'dev' | 'academy';
 export type SquadViewId = 'overview' | 'attributes' | 'profile';
@@ -138,6 +139,10 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
         return mid(overallRange(w, wp));
       case 'pot':
         return mid(potentialRange(w, wp));
+      case 'abil*':
+        return playerStars(w, wp).ability * 100 + mid(overallRange(w, wp));
+      case 'pot*':
+        return playerStars(w, wp).potential * 100 + mid(potentialRange(w, wp));
       case 'morale':
         return MORALES.indexOf(wp.morale);
       case 'end':
@@ -170,16 +175,18 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
       <RangeNum r={overallRange(w, wp)} />
     </td>
   );
-  const pot = (wp: WorldPlayer) => {
-    const r = potentialRange(w, wp);
-    return (
-      <td className="cr-ovr">
-        <span className="cr-num-cell nowrap" style={{ color: 'var(--warn)' }}>
-          {r.lo}–{r.hi}
-        </span>
-      </td>
-    );
-  };
+  const face = (wp: WorldPlayer) => (
+    <td className="cr-portrait-cell" aria-hidden="true">
+      <CareerPortrait w={w} wp={wp} size={34} />
+    </td>
+  );
+  const star = (wp: WorldPlayer, kind: StarKind) => (
+    <td className="cr-star-cell">
+      <Stars n={playerStars(w, wp)[kind]} kind={kind} size={11} />
+    </td>
+  );
+  const scale = starScale(w, club.id);
+  const starKey = <>Stars compare with {scale.label}: ability <b className="cr-ab">gold</b>, potential <b className="cr-po">blue</b> (estimates). </>;
 
   let head: ReactNode;
   let body: (wp: WorldPlayer) => ReactNode;
@@ -187,14 +194,14 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
   if (view === 'overview') {
     head = (
       <>
+        {th('face', '', { plain: true })}
         {th('pos', 'Pos')}
         {th('name', 'Player', { left: true })}
         {th('age', 'Age')}
         {th('nat', 'Nat', { tip: 'Nationality' })}
-        {th('ht', 'Ht', { tip: 'Height' })}
-        {th('ovr', 'OVR', { tip: 'Overall: exact for your players, a scout estimate for others' })}
-        {th('pot', 'Pot', { tip: 'Potential: always a range (a staff estimate)' })}
-        {th('morale', 'Morale', { left: true })}
+        {th('abil*', 'Ability', { left: true, tip: 'Ability stars' })}
+        {th('pot*', 'Potential', { left: true, tip: 'Potential stars' })}
+        {th('morale', 'Mor.', { tip: 'Morale' })}
         {th('end', 'Ends', { tip: 'The summer the contract ends' })}
         {th('wage', 'Wage', { tip: 'Per season' })}
         {cap ? th('last', 'Yrs left', { tip: 'Years left on the contract' }) : th('last', 'Buyout', { tip: 'The fee another club pays to release him' })}
@@ -204,15 +211,15 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
       const k = wp.contract;
       return (
         <>
+          {face(wp)}
           {pos(wp)}
           {name(wp)}
           <td>{ageOf(w, wp)}</td>
           <td className="muted">{code3(wp.nationality)}</td>
-          <td>{wp.p.heightCm}</td>
-          {ovr(wp)}
-          {pot(wp)}
-          <td className="left">
-            <MoraleDot m={wp.morale} />
+          {star(wp, 'ability')}
+          {star(wp, 'potential')}
+          <td className="cr-face-cell">
+            <MoraleFace m={wp.morale} />
           </td>
           <td className="muted">{k ? contractEnd(w, k.years) : '—'}</td>
           <td>{k ? money(k.wage) : '—'}</td>
@@ -220,7 +227,11 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
         </>
       );
     };
-    key = <>Ht height in cm · Pot potential (a staff estimate) · Ends the summer the contract ends{cap ? ' · Yrs left on the contract' : ' · Buyout the fee to release him'}.</>;
+    key = (
+      <>
+        {starKey}Ends the summer the contract ends{cap ? ' · Yrs left on the contract' : ' · Buyout the fee to release him'}. <MoraleLegend />
+      </>
+    );
   } else if (view === 'attributes') {
     head = (
       <>
@@ -246,6 +257,7 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
   } else {
     head = (
       <>
+        {th('face', '', { plain: true })}
         {th('pos', 'Pos')}
         {th('name', 'Player', { left: true })}
         {th('age', 'Age')}
@@ -254,11 +266,12 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
         {th('arch', 'Archetype', { left: true })}
         {th('origin', 'Origin', { left: true, tip: 'College or academy' })}
         {th('home', 'Hometown', { left: true })}
-        {th('pot', 'Pot', { tip: 'Potential: always a range (a staff estimate)' })}
+        {th('pot*', 'Potential', { left: true, tip: 'Potential stars' })}
       </>
     );
     body = (wp) => (
       <>
+        {face(wp)}
         {pos(wp)}
         {name(wp)}
         <td>{ageOf(w, wp)}</td>
@@ -267,10 +280,14 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
         <td className="left wrap">{wp.p.archetype}</td>
         <td className="left wrap muted">{cameThrough(w, wp)}</td>
         <td className="left wrap muted">{wp.hometown}</td>
-        {pot(wp)}
+        {star(wp, 'potential')}
       </>
     );
-    key = <>Ht height in cm · Wt weight in kg · Pot potential (a staff estimate).</>;
+    key = (
+      <>
+        {starKey}Ht height in cm · Wt weight in kg.
+      </>
+    );
   }
 
   return (

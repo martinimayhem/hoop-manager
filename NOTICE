@@ -10,3 +10,15 @@ Used in SEASON_SPEC.md: the requirement + WHEN/THEN scenario format, and ideas f
 schedule, table, standings, season, simulation, awards, news, player development, player happiness
 and transfer market specifications, scaled down to 8-team, 14-matchday basketball leagues. The
 text in SEASON_SPEC.md is our own; no open-football code is included.
+
+---
+
+This project uses faces.js for player portraits:
+
+  faces.js (https://github.com/zengm-games/facesjs), npm package "facesjs"
+  Copyright Jeremy Scheff
+  Licensed under the Apache License, Version 2.0
+  (http://www.apache.org/licenses/LICENSE-2.0; a copy is in licenses/facesjs-LICENSE.txt)
+
+Used unmodified as a library: every player's cartoon portrait is drawn by faces.js from settings
+generated from the player's id (src/ui/looks.ts), in the game's tables, player pages and match screens.
