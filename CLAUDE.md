@@ -10,6 +10,18 @@ How a career season plays (phases, Continue stops, money in America and Europe, 
 [GAME_FLOW.md](GAME_FLOW.md). Each career slice is built from its slice brief in `briefs/` and the
 approved mockups.
 
+## Screens: never scroll, always sharp
+
+GAME_FLOW.md §6.1a has two hard rules for every screen, old and new; follow them without exception:
+
+1. **Nothing ever scrolls** (page, menus, sidebar, dropdowns, pop-ups, tables) at 1366×768,
+   1920×1080, 1024×768 and 768×1024. Long lists are filtered and paged, never scrolled. If a screen
+   doesn't fit, redesign the layout (compact rows, tabs, panels); if that needs a design decision,
+   stop and ask. Run the no-scroll sweep before reporting any screen work.
+2. **Everything is sharp:** bundled Inter and Barlow Condensed fonts, one SVG icon set (Lucide), no
+   emoji or text symbols as icons, no bitmap images for interface parts, canvases at
+   `devicePixelRatio`, no CSS transform/zoom scaling, body text at least 14 px.
+
 ## Design decisions are not made here
 
 SCOPE.md, GAME_FLOW.md and WORLD_SPEC.md are the design. The owner makes design decisions in the
