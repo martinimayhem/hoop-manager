@@ -7,7 +7,21 @@ In, Built, Later and Out. Don't build anything marked Out or Later, and don't ad
 isn't on that list, without asking first. One player against the computer: no multiplayer code.
 Screens must work on desktop and tablet (touch); every keyboard shortcut needs an on-screen button.
 How a career season plays (phases, Continue stops, money in America and Europe, screen map) is in
-[GAME_FLOW.md](GAME_FLOW.md). Each career slice is built from its slice brief and approved mockups.
+[GAME_FLOW.md](GAME_FLOW.md). Each career slice is built from its slice brief in `briefs/` and the
+approved mockups.
+
+## Design decisions are not made here
+
+SCOPE.md, GAME_FLOW.md and WORLD_SPEC.md are the design. The owner makes design decisions in the
+design chat, and they reach the repository through those files. While building:
+
+- **Never change a design decision** in those files, and never record a new one there ("decided
+  2026-…"). You may fix a typo or mark a slice ✅ when it is merged.
+- **When a design question comes up** (the brief is unclear, two documents disagree, or a choice
+  isn't covered), stop and ask the owner. Don't decide it with the owner in this session and build
+  on it: the answer goes into the design files first.
+- **Build only what the slice brief says.** Something extra that seems useful goes in your report
+  as a suggestion, not into the code.
 
 ## DEFENDERS ALWAYS TRY
 

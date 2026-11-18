@@ -7,8 +7,8 @@
 > *(tune)* are starting values for the world lab, not promises.
 >
 > **For Claude Code:** this page is the reference for every career slice. Each slice also gets a
-> one-page *slice brief* (exact scope + "done when" checks) and, for screens, the approved
-> mockups. Build what the brief says; if this page and a brief disagree, ask.
+> one-page *slice brief* in `briefs/` (exact scope + "done when" checks) and, for screens, the
+> approved mockups. Build what the brief says; if this page and a brief disagree, ask.
 
 ---
 
