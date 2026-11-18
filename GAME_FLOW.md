@@ -273,9 +273,12 @@ free agency days, season review, offseason checklist.
 
 ### 6.3 Mockups
 
-Before a screen is built, the owner approves a clickable mockup. The first set: **Home/Inbox,
-Squad, Player page, Game plan, Transfers, Schedule/Competitions**. Approved mockups are linked from
-the slice brief that builds them.
+Before a screen is built, the owner approves a clickable mockup. The first set, **round 1, not yet
+approved**: Home/Inbox, Squad, Player page, Game plan, Transfers (both money systems), Schedule and
+Competitions, on the design canvas
+[Hoop Manager – core screens](https://claude.ai/artifact/Ybpp3qbdbnEXn4ynUu295A) (private to the
+owner; screenshots go into the slice brief, because Claude Code can't open it). Approved mockups
+are linked from the slice brief that builds them.
 
 ---
 
