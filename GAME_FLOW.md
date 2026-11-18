@@ -253,6 +253,33 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
   money summary and the **Continue** button, always visible.
 - **Tablet:** everything works by touch from about 768 px wide; no hover-only information.
 
+### 6.1a Two hard rules for every screen (decided 18 Nov 2026)
+
+**1. Nothing ever scrolls.**
+- Every screen, menu, sidebar, dropdown, pop-up and table fits **whole** in the window at these
+  sizes: **laptop 1366 × 768** (about 1366 × 650 of page once the browser's own bars are counted),
+  **desktop 1920 × 1080**, **tablet 1024 × 768** (landscape) and **768 × 1024** (portrait).
+- A list that can be longer than the space (free agents, player search, the transfer market,
+  history, news) is **filtered and split into pages** ("1–20 of 412", previous / next). It never
+  scrolls.
+- If a screen doesn't fit, the screen is wrong: make rows more compact, move detail to a tab, a
+  second panel or the player page. Never solve it with a scroll bar, and never by shrinking text
+  below the minimum sizes below. If it can't be done without a design change, stop and ask.
+- Checked automatically: a "no-scroll sweep" opens every screen at the four sizes and fails if the
+  page or any element in it can scroll.
+
+**2. Everything is sharp.**
+- **Fonts are bundled with the game**, not left to the computer: **Inter** for text and **Barlow
+  Condensed** for headings and big numbers (both free, open-licence fonts, e.g. via Fontsource).
+  No falling back to Arial Narrow or system fonts as the look.
+- **Icons are vector (SVG) from one icon set** (Lucide, ISC licence). No emoji and no text symbols
+  (▶ ⏸ ★ ✓) as icons, no PNG or JPG for interface parts.
+- **Canvases are drawn at the screen's pixel density** (`devicePixelRatio`), so the court and any
+  chart are sharp on high-resolution screens.
+- **No CSS `transform`/`zoom` to resize** screens or text (it blurs); lay out at real sizes.
+- **Minimum sizes:** body text 14 px, labels 12 px, tap targets 44 px.
+- The look follows the approved mockups (§6.3).
+
 ### 6.2 Screen map
 
 | Sidebar | Screens |
