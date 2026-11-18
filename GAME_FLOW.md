@@ -288,17 +288,38 @@ First team / Dev squad / Academy tabs. Decided 18 Nov 2026.
 
 | View | Columns |
 |---|---|
-| **Overview** (default) | Pos, Player, Age, Nat, Height, OVR, **Potential (a range)**, Morale, Contract end, Wage, Buyout (budget clubs) or Years left (cap clubs) |
+| **Overview** (default) | Portrait, Pos, Player, Age, Nat, **Ability ★**, **Potential ★**, **Morale face**, Contract end, Wage, Buyout (budget clubs) or Years left (cap clubs) |
 | **Attributes** | Pos, Player, OVR, then all 11 ratings with short headers: SPD, STA, MID, 3PT, FT, LAY, DNK, PAS, DRI, REB, IQ, colour-coded as on the player page |
-| **Profile** | Pos, Player, Age, Height, Weight, Archetype, Origin (college or academy), Hometown, Potential |
+| **Profile** | Portrait, Pos, Player, Age, Height, Weight, Archetype, Origin (college or academy), Hometown, Potential ★ |
 
-- Every column sorts. Other clubs' players show **scout ranges**, as everywhere else. Potential is
-  always a range, also for your own players (it is your staff's estimate).
+- Every column sorts. Other clubs' players show **scout ranges** for numbers, as everywhere else.
+  Stars are always your staff's estimate (§6.5).
 - **Personality stays on the player page only**, not in a table.
 - Each view fits **768 px** without sideways scrolling.
 - The chosen view is remembered on this device.
 - **From W2:** a fourth view, **Season stats** (games, minutes, points, rebounds, assists, shooting
   percentages), once matches are played.
+
+### 6.5 Showing players: stars, morale faces, portraits
+
+Decided 18 Nov 2026 (owner, with Football Manager screens as reference for the *idea*, not the look).
+
+- **Ability and potential are stars**, 0.5 to 5 in half stars, in every table and on the player page.
+  - Stars compare the player with **the league the club plays in** (a 4-star player in US Division 4
+    is a key player there, not in the Big League). The player page says which league.
+  - **Ability** stars come from his overall; **potential** stars from his staff-estimated ceiling, so
+    they are an estimate for your own players too. Other clubs' players: the estimate of your scouts.
+  - Two colours that differ in lightness too: ability gold, potential blue.
+  - The **numbers stay** where you need them: OVR in the Attributes view and on the player page next
+    to the stars; the potential range on the player page.
+- **Morale is a face, not a word:** five faces (superb, good, okay, low, very low) that differ in
+  **mouth shape and colour**, so they read without colour vision. Each has a text label for screen
+  readers, and the table's legend names them (nothing hover-only).
+- **Portraits:** every player has a cartoon face, drawn with **faces.js** (Apache-2.0, an open-source
+  library made for basketball management games). The face is **generated from the player's id**, so it
+  never changes and nothing extra is saved. Shown small in every table, large on the player page and
+  in the inbox. The licence notice goes in the repository. (Real photos are out: the players are
+  fictional or parodies.)
 
 ---
 
