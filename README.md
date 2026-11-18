@@ -56,7 +56,8 @@ national leagues and cups, promotion and relegation, scouting, a draft, free age
 development, staff and money, designed in [WORLD_SPEC.md](WORLD_SPEC.md). After that: a Daily
 Clutch challenge and arcade-style match moments. See the roadmap in [SPEC.md](SPEC.md).
 
-What is in and out of the game, measured against Football Manager, is in [SCOPE.md](SCOPE.md).
+What is in and out of the game, measured against Football Manager, is in [SCOPE.md](SCOPE.md); how
+a career season plays, money and screens are in [GAME_FLOW.md](GAME_FLOW.md).
 
 ## Rights
 

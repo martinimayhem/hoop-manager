@@ -6,6 +6,8 @@ Hoop Manager is a simplified Football Manager for basketball. [SCOPE.md](SCOPE.m
 In, Built, Later and Out. Don't build anything marked Out or Later, and don't add a feature that
 isn't on that list, without asking first. One player against the computer: no multiplayer code.
 Screens must work on desktop and tablet (touch); every keyboard shortcut needs an on-screen button.
+How a career season plays (phases, Continue stops, money in America and Europe, screen map) is in
+[GAME_FLOW.md](GAME_FLOW.md). Each career slice is built from its slice brief and approved mockups.
 
 ## DEFENDERS ALWAYS TRY
 

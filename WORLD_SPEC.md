@@ -20,8 +20,10 @@ clauses, training, promises, club levers, tablet) and the owner's answers on the
    Retirements, drafts, free agency, scouting, playoffs and relegation work the way a fan expects.
 2. **Relatable.** A player can find a club in or near their own city, and a college near them.
 3. **Deep but readable.** Every system is understandable by a 13-year-old basketball fan. Depth
-   comes from systems interacting, not from rules to memorise. **No salary cap, luxury tax,
-   aprons or debt.** Money is a club budget plus yearly wages.
+   comes from systems interacting, not from rules to memorise. **Money follows the real world in
+   a simplified form** (changed 18 Nov 2026): a salary cap ("NBA-lite") for the America Big League
+   clubs, a club budget with buyouts everywhere else, and a payroll threshold for the European Big
+   League clubs ([GAME_FLOW.md](GAME_FLOW.md) §4). No debt. Every refused move explains itself.
 4. **Fair play** (SPEC.md §1): no paid random packs, no energy timers, no pay-to-win, no
    guilt-driven streaks.
 5. **The engine decides, the screens explain.** Every number the player sees (a scout range, a
@@ -205,7 +207,7 @@ Preseason ── Regular season ──┬── Trade deadline (≈ 60% of the s
                          Transfer window                           End of season:
                          (closes at deadline)                      awards, promotion/relegation
                                                                           │
-Offseason, in this order:                                                 ▼
+Offseason, in this order (screens and decisions per step: GAME_FLOW.md §3.7):                                                 ▼
   1. Retirements   2. Draft lottery and draft   3. Contract expiries and extensions
   4. Free agency (two weeks of game days)       5. Academy intake and college freshmen
   6. Development jump (season-end growth/decline)   7. Board objectives, sponsor and kit offers
@@ -270,13 +272,15 @@ Offseason, in this order:                                                 ▼
   difference between the regions, and it gives both a distinct way to build.
 
 ### 5.3 The draft
-- **Two rounds, 30 picks each,** Big League clubs only (the 12 European ones of that season
-  included). All other clubs sign undrafted players as free agents (decided 18 Nov 2026).
+- **America only** (decided 18 Nov 2026, as in the real world): **the 18 America Big League clubs,
+  2 rounds, 36 picks.** European clubs build through academies; all other clubs sign undrafted
+  players as free agents. Entrants: US college players and international free agents aged 19–22.
 - **Relegated clubs keep their picks** (decided 18 Nov 2026): a pick belongs to the season it was
-  earned in, so an American club relegated to Division 2, or a European club that loses its
-  wildcard, still drafts. A relegated club with the #1 pick is a rebuild story.
-- **Lottery:** the 14 Big League clubs that miss the playoffs (10 in America, 4 in Europe), weighted towards the worst records (the top 4
-  picks are drawn, then the rest go in reverse order of record).
+  earned in, so a club relegated to Division 2 still drafts. A relegated club with the #1 pick is a
+  rebuild story.
+- **Lottery:** the 10 America clubs that miss the playoffs, weighted towards the worst records (the
+  top 4 picks are drawn, then the rest go in reverse order of record).
+- **Live draft room** with an auto-pick option (GAME_FLOW.md §3.7).
 - **Picks can be traded** (up to 3 seasons ahead).
 - **Rookie contracts:** fixed wage by pick number, 3 years (first round) or 2 years (second round).
 - **Draft classes vary:** some years are deep, some weak; generational talents are rare.
@@ -300,8 +304,9 @@ Offseason, in this order:                                                 ▼
 ## 7. Contracts and free agency
 
 ### 7.1 Contracts
-- A contract is a **yearly wage** for **1–4 years**. There is no salary cap: the limit is your
-  club's wage budget (§10).
+- A contract is a **yearly wage**: **1–5 years** in the cap system (America Big League), **1–3
+  years** in the budget system, where every contract also has a **buyout fee**. The limits come
+  from the cap or the club budget (GAME_FLOW.md §4).
 - **Wage demand** comes from the player's value (ability, potential, age), reputation and the
   tier of the club he'd join. Better clubs can pay less to stars who want to win.
 - **Extensions:** in the last year of a contract you can offer an extension. The player says yes,
@@ -331,8 +336,15 @@ No buyouts, no trade kickers, no salary-matching rules (§16).
 
 ## 8. Trades and transfers
 
-One market for both regions: a deal moves **players, draft picks and/or money** between clubs.
-European fans know it as a transfer, US fans as a trade.
+**Two ways to get a player under contract, as in the real world** (changed 18 Nov 2026; rules in
+GAME_FLOW.md §4):
+- **Trades** (players, picks, a little cash) **only between America Big League clubs**, with
+  salary matching when over the cap.
+- **Buyouts** everywhere else: pay the player's buyout fee to his club; he still has to accept your
+  offer. America Big League clubs can buy out players from budget-system clubs; budget-system clubs
+  can't take players under contract from America Big League clubs.
+
+The rest of this section (AI plans, valuation, refusals) applies to both.
 
 - **Windows:** the offseason and the season until the **trade deadline**.
 - **Every AI club has a plan:** *contend*, *compete*, *retool* or *rebuild*, based on its roster,
@@ -363,7 +375,7 @@ European fans know it as a transfer, US fans as a trade.
 | Scouts | 1–4 | More players scouted per week, narrower ranges |
 
 Staff have ratings (1–20), wages and contracts, and come from a staff market. **You hire and fire
-them** within the staff part of the wage budget; firing costs the rest of the contract. Better staff
+them** within the staff budget (outside the cap in America; part of the club budget elsewhere); firing costs the rest of the contract. Better staff
 cost more, which competes with player wages for the same budget.
 
 ---
@@ -372,8 +384,9 @@ cost more, which competes with player wages for the same budget.
 
 ### 10.1 Budget and wages
 Money is in fictional **dollars**, in America and in Europe (decided 18 Nov 2026: one currency,
-no exchange rates). Quick League credits disappear with the Quick League. Each season the board sets a **wage budget** and a **transfer
-budget** from the club's income.
+no exchange rates). Quick League credits disappear with the Quick League. Each season the board
+sets your money from the club's income: a **payroll limit** under the cap for America Big League
+clubs, **one club budget** (wages, staff, buyouts) for everyone else (GAME_FLOW.md §4).
 
 | Income | Depends on |
 |---|---|
@@ -467,6 +480,7 @@ You don't run the books: the board does. You influence the club through four cho
 | Free agency | At least 90% of the top-100 free agents sign somewhere |
 | AI-to-AI trades | Value difference within 10% on average |
 | Exploit bot | A bot sends 1,000 lopsided trade offers; the AI accepts fewer than 2% |
+| Cap and budgets | No America Big League club above the hard ceiling; at most 1/3 pay luxury tax in a season; European clubs over the threshold pay the tax; no budget-system club below zero |
 | Speed | One matchday under 1 second in the browser; a whole season fast-forwarded in under 90 seconds in the browser |
 
 Every slice must keep these checks green, or explain why a target needs to change.
@@ -515,8 +529,8 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 | **W2 One season** | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
 | **W3 Years go by** | Aging, development, training focus, retirement, contract expiry and AI re-signing, rollover to the next season; squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
-| **W5 Free agency** | Contracts, wage demands, extensions, contract clauses, free agency days | You can build through free agency |
-| **W6 Trades** | AI club plans, valuation, trade screen, "what would you want?", trade deadline, AI-to-AI deals | You can trade, and the AI is hard to exploit |
+| **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contracts, wage demands, extensions, contract clauses, buyouts, free agency days | You can build through free agency |
+| **W6 Trades** | AI club plans, valuation, trade screen with salary matching (America), buyout offers (everywhere), "what would you want?", deadline day, AI-to-AI deals | You can trade, and the AI is hard to exploit |
 | **W7 The club** | Staff (phase 4) with hiring and firing, facilities and board requests, money, sponsor and shoe/kit deals, board objectives, sacking and job offers | Money and staff are real decisions |
 | **W8 Scouting 2.0** | Scouts by region, narrowing ranges, shortlist | Finding hidden talent is a skill |
 | **W9 Living world** | News, press moments, awards, records, history, Hall of Fame, career pages | The world tells stories |
@@ -530,7 +544,9 @@ slotted in between slices.
 
 The full list, against Football Manager, is in [SCOPE.md](SCOPE.md). In short:
 
-- Salary cap, luxury tax, aprons, salary matching in trades; buyouts and trade kickers.
+- The full NBA rulebook: cap holds, sign-and-trade, aprons other than a hard ceiling, repeater tax,
+  two-way contracts, stretch provision, trade kickers (GAME_FLOW.md §4.1). Country tax rates.
+- Trades in Europe and a European draft (as in the real world).
 - Loans and player agents.
 - Intercontinental cup, All-Star weekend, international tournaments and national teams.
 - Multiplayer of any kind: online, hot-seat, team codes. One player against the computer.

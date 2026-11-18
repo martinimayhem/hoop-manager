@@ -28,8 +28,8 @@
 - Multiplayer of any kind (online, hot-seat, team codes)
 - Phone layout (tablets are in scope)
 - Real player names, photos, team logos or league branding (see §8)
-- A salary cap (contracts, trades and multi-season careers are designed in
-  [WORLD_SPEC.md](WORLD_SPEC.md))
+- The full NBA rulebook (contracts, a simplified cap, trades and multi-season careers are designed
+  in [WORLD_SPEC.md](WORLD_SPEC.md) and [GAME_FLOW.md](GAME_FLOW.md))
 
 ---
 

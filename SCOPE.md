@@ -31,6 +31,8 @@ it without a manual.
 | Platform | **Desktop and tablet browser.** Phone is out. |
 | Language | **English** at launch. Text kept in one place so translations can follow. |
 | Fair play | Unchanged (SPEC.md §1): no paid random packs, energy timers, guilt-driven streaks or pay-to-win. |
+| How a season plays | Preseason → season → deadline day → playoffs → season review → offseason checklist; Continue stops only for real decisions ([GAME_FLOW.md](GAME_FLOW.md)) |
+| Screens | Modern dark, sporty; left sidebar (collapses on tablet); FM-style inbox as home; clickable mockups approved before building ([GAME_FLOW.md](GAME_FLOW.md) §6) |
 
 ---
 
@@ -71,9 +73,12 @@ Status: **Built** = in the game today and stays · **In** = part of the design, 
 |---|---|---|---|
 | Scouting with uncertain ratings | Ranges that narrow with scouting, never to zero; scouts by region; shortlist | In | WORLD_SPEC.md §6 |
 | Youth intake | European club academies, US colleges, a two-round draft with lottery | In | WORLD_SPEC.md §5 |
-| Contracts and free agency | Yearly wage, 1–4 years, free agency days | In | WORLD_SPEC.md §7 |
+| Contracts and free agency | Yearly wage (1–5 years America, 1–3 Europe), free agency days | In | WORLD_SPEC.md §7 |
+| Salary rules | **America Big League: salary cap "NBA-lite"** (cap, tax, hard ceiling, Bird rights, minimums, mid-level, trade matching). **Everyone else: club budget + buyouts.** **Europe Big League: payroll threshold** with 3 anchor players and under-23s excluded | In | GAME_FLOW.md §4 |
+| Development squad | Up to 5 players per club besides the 13-man first team | In | GAME_FLOW.md §5 |
 | Contract clauses | **Release clause, team or player option on the last year, simple bonuses** | In | WORLD_SPEC.md §7.3 |
-| Transfers | One market for trades and transfers; AI clubs with plans; readable refusals | In | WORLD_SPEC.md §8 |
+| Transfers | **Trades only between America Big League clubs; buyouts everywhere else**; AI clubs with plans; readable refusals | In | WORLD_SPEC.md §8 |
+| Draft | **America only** (18 clubs, 2 rounds), live draft room | In | GAME_FLOW.md §5.2 |
 | Loans | — | Out | |
 | Agents | — | Out | |
 
@@ -81,7 +86,8 @@ Status: **Built** = in the game today and stays · **In** = part of the design, 
 
 | FM feature | Hoop Manager | Status | Where |
 |---|---|---|---|
-| Board, budgets, objectives | Board sets wage and transfer budgets and a season objective; you don't run the books | In | WORLD_SPEC.md §10–11 |
+| Board, budgets, objectives | Board meeting each preseason: objective and money (payroll limit or club budget); you can push back once | In | GAME_FLOW.md §3.1 |
+| Squad assessment | Assistant coach rates your team against the league | In | GAME_FLOW.md §3.1 |
 | Manager influence on the club | **Sponsor choice, shoe/kit deal (fictional brands), facility and arena requests, hiring and firing staff** | In | WORLD_SPEC.md §9, §10.3 |
 | Staff | Assistant, development coach, fitness/medical, scouts | In | WORLD_SPEC.md §9 |
 | Ticket prices, owner-level finance, building an arena yourself | — | Out | |
