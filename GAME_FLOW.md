@@ -258,7 +258,7 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 | Sidebar | Screens |
 |---|---|
 | **Home** | **Inbox** (news and decisions, with action buttons), next game card, mini table, objective and job security |
-| **Squad** | First team (sortable table: position, overall, morale, fitness, contract), dev squad, academy, **player page** (attributes in 5 groups with scout ranges, personality, history, contract, promises, "talk to him") |
+| **Squad** | First team, dev squad, academy, each a sortable table with three **views** (§6.4), **player page** (attributes in 5 groups with scout ranges, personality, history, contract, promises, "talk to him") |
 | **Tactics** | **Game plan** (starting five, rotation, offence, defence, tempo, intensity, key matchup), **training** (team focus, individual focus) |
 | **Schedule** | Calendar of all your competitions, results, key games marked |
 | **Competitions** | Tables, play-in and playoff brackets, cups, league stats, awards, history |
@@ -279,6 +279,26 @@ Competitions, on the design canvas
 [Hoop Manager – core screens](https://claude.ai/artifact/Ybpp3qbdbnEXn4ynUu295A) (private to the
 owner; screenshots go into the slice brief, because Claude Code can't open it). Approved mockups
 are linked from the slice brief that builds them.
+
+
+### 6.4 Squad table views
+
+Every squad table (your club's and other clubs') has a **view switch** above it, next to the
+First team / Dev squad / Academy tabs. Decided 18 Nov 2026.
+
+| View | Columns |
+|---|---|
+| **Overview** (default) | Pos, Player, Age, Nat, Height, OVR, **Potential (a range)**, Morale, Contract end, Wage, Buyout (budget clubs) or Years left (cap clubs) |
+| **Attributes** | Pos, Player, OVR, then all 11 ratings with short headers: SPD, STA, MID, 3PT, FT, LAY, DNK, PAS, DRI, REB, IQ, colour-coded as on the player page |
+| **Profile** | Pos, Player, Age, Height, Weight, Archetype, Origin (college or academy), Hometown, Potential |
+
+- Every column sorts. Other clubs' players show **scout ranges**, as everywhere else. Potential is
+  always a range, also for your own players (it is your staff's estimate).
+- **Personality stays on the player page only**, not in a table.
+- Each view fits **768 px** without sideways scrolling.
+- The chosen view is remembered on this device.
+- **From W2:** a fourth view, **Season stats** (games, minutes, points, rebounds, assists, shooting
+  percentages), once matches are played.
 
 ---
 
