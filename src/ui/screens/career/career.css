@@ -377,7 +377,7 @@
   padding: 10px 16px;
   border-radius: 7px;
   color: var(--cr-soft);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -397,7 +397,7 @@
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--cr-soft);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 .cr .cr-pills button.on {
@@ -425,6 +425,7 @@
 }
 .cr .cr-chip.link {
   min-height: 44px;
+  font-size: 14px;
   color: var(--cr-blue);
   border: 1px solid var(--line);
 }
@@ -648,7 +649,7 @@
   grid-template-columns: 130px 1fr 52px;
   align-items: center;
   gap: 4px 10px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cr-soft);
 }
 .cr-attr b {
@@ -685,7 +686,7 @@
   grid-template-columns: auto 1fr;
   gap: 10px 16px;
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 .cr-facts dt {
   color: var(--muted);
@@ -1134,7 +1135,7 @@
 }
 .cr-star-num {
   grid-column: 2;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cr-dim);
 }
 .cr-star-num b {
@@ -1628,4 +1629,11 @@
 .cr .cr-replace {
   display: grid;
   gap: 4px;
+}
+
+.cr .sort-touch {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: var(--panel-2);
 }

@@ -8,7 +8,7 @@
 // (GAME_FLOW §6.1a), so the laptop check uses 1366 x 650; desktop 1920 x 1080, tablet 1024 x 768 and
 // 768 x 1024 as they are. Exit code 1 if any screen scrolls.
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { createServer } from 'vite';
@@ -41,7 +41,29 @@ function scrollers() {
     const clipped = /(hidden|clip)/.test(cs.overflowY) && el.clientHeight > 40 && el.scrollHeight > el.clientHeight + 4 && el.querySelector('*');
     if (clipped && !el.closest('canvas, svg, .court-box')) out.push(`clipped ${name(el.parentElement)} > ${name(el)} y ${el.scrollHeight}/${el.clientHeight}`);
   }
-  // Rule 2's minimum sizes: no visible text under 12 px (labels; body text is 14 px).
+  // Rule 2's minimum sizes (GAME_FLOW §6.1a): no visible text under 12 px, and 14 px for anything read
+  // as content, table cells included. 12–13 px only for column headers, labels and captions: a table
+  // header (th), a <label>, <small>, <dt>, a caption, a tag or count badge, or one of the game's label
+  // and caption classes below (section kickers, tile labels, legends, hints). A button's own text is
+  // content (14 px); only a caption inside it (its <small>) may be smaller.
+  const LABEL = [
+    'th, thead, caption, figcaption, legend, label, small, dt, .small, .lbl, .tag, .count, .group-row, .form-dot',
+    // Kickers, field labels and tile labels.
+    '.mm-kicker, .mm-label, .mm-level, .cr-label, .cr-key, .cr-chip, .cr-tag, .cr-count, .cr-ab, .cr-po, .cr-face-legend, .cr-legend',
+    '.cr-bar-labels, .cr-top-comps, .cr-sub, .cr-note, .cr-attr-what, .cr-saved, .tile-l, .gc-tile-l, .brk-cmp-label, .brk-why-label',
+    '.brk-choice-label, .brk-key-label, .hub-next-label, .hub-side-where, .res-final, .res-sub, .lt-sub, .lt-head, .lt-rank, .lt-empty',
+    '.card-star-head, .card-star-team, .ov-star-head, .ov-star-team, .ov-coach-head, .tp-head, .team-panel h3, .pbp-time, .pbp-more',
+    '.feed .t, .shirt-no, .pl-pos, .cp-standing, .cp-tag, .ql-slot-no, .pcard-meta, .pcard-section, .pcard-status, .pcard-tile span',
+    '.pcard-note, .pending, .sort-mark, .cr-badge, .shot-zones .muted',
+    // Captions and hints: a line explaining what is around it.
+    '.blurb, .swap-hint, .brk-talk-sub, .brk-talk-hint, .ghost',
+  ].join(', ');
+  const isLabel = (el) => {
+    const lab = el.closest(LABEL);
+    if (!lab) return false;
+    const btn = el.closest('button');
+    return !btn || (lab !== btn && btn.contains(lab));
+  };
   const small = new Map();
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let t = walker.nextNode(); t; t = walker.nextNode()) {
@@ -49,10 +71,50 @@ function scrollers() {
     const el = t.parentElement;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
+    if (el.closest('canvas, svg, kbd')) continue;
     const size = parseFloat(getComputedStyle(el).fontSize);
     if (size < 11.9) small.set(`${name(el)} ${size}px`, t.textContent.trim().slice(0, 24));
+    else if (size < 13.9 && !isLabel(el)) small.set(`content ${name(el)} ${size}px`, t.textContent.trim().slice(0, 24));
   }
   for (const [k, v] of small) out.push(`text ${k} "${v}"`);
+  // Nothing drawn over text (GAME_FLOW §6.1a "nothing is cut off"): content that spills out of its
+  // box without a scroll bar lands on top of other text. Each piece of visible text must be the top
+  // thing at its middle, unless a pop-up is open over it.
+  const covered = new Map();
+  const popup = (el) => el && el.closest('.overlay, [role="dialog"], [role="alertdialog"], .sort-pop-back, .brk, .argue-bar, .mm-flash');
+  const walker2 = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let t = walker2.nextNode(); t; t = walker2.nextNode()) {
+    if (!t.textContent.trim()) continue;
+    const el = t.parentElement;
+    if (el.closest('canvas, svg, option, select, .court-box, [aria-hidden="true"]')) continue;
+    const range = document.createRange();
+    range.selectNodeContents(t);
+    for (const full of range.getClientRects()) {
+      // Only the part that shows: boxes that hide their overflow (text cut short with "…") clip it.
+      let r = { left: full.left, top: full.top, right: full.right, bottom: full.bottom };
+      for (let a = el; a && a !== document.body; a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+        const b = a.getBoundingClientRect();
+        r = { left: Math.max(r.left, b.left), top: Math.max(r.top, b.top), right: Math.min(r.right, b.right), bottom: Math.min(r.bottom, b.bottom) };
+      }
+      if (r.right - r.left < 4 || r.bottom - r.top < 4) continue;
+      const x = (r.left + r.right) / 2;
+      const y = (r.top + r.bottom) / 2;
+      if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || hit === el || el.contains(hit) || hit.contains(el)) continue;
+      // A pop-up over the screen covers it on purpose.
+      if (popup(hit) && !popup(el)) continue;
+      // Clipped by its own box (one-line text cut short with "…"): the parent box is what is hit.
+      if (hit.contains(el.parentElement)) continue;
+      covered.set(`${name(el)} under ${name(hit)}`, t.textContent.trim().slice(0, 24));
+      break;
+    }
+  }
+  for (const [k, v] of covered) out.push(`covered ${k} "${v}"`);
+  // A native dropdown only when all its options fit without scrolling: 12 or fewer (GAME_FLOW §6.1a).
+  for (const s of document.querySelectorAll('select')) if (s.options.length > 12) out.push(`dropdown with ${s.options.length} options: "${s.options[0]?.text.slice(0, 24)}"`);
   return out;
 }
 
@@ -114,6 +176,11 @@ const journeys = {
     for (const tab of [/Starting five/, /Key matchup/, /Scouting:/, /likely plan/]) {
       await page.getByRole('tab', { name: tab }).click();
       await check(`friendly: game plan · ${tab.source.replace(/[\\:]/g, '')}`);
+      if (tab.source === 'Key matchup') {
+        // With a stopper picked, all three dropdowns show (theirs and ours: each a whole squad).
+        await page.locator('.key-matchup select').first().selectOption('assign');
+        await check('friendly: game plan · Key matchup (stopper)');
+      }
     }
     await page.getByRole('tab', { name: /Tactics/ }).click();
     await page.locator('button.primary').last().click();
@@ -126,6 +193,35 @@ const journeys = {
       await page.locator('.brk').waitFor({ timeout: 30000 }).catch(() => {});
       if (await page.locator('.brk').count()) await check('match: timeout');
     }
+  },
+  // The match's pop-ups (GAME_FLOW §6.1a): the clutch call (offence and defence) and arguing a call.
+  // Opened on the live match through its dev handle, at the moment the match would open them.
+  async matchCalls(page, check) {
+    await page.goto(base);
+    await button(page, /Friendly match/).click();
+    await page.waitForTimeout(300);
+    await page.locator('button.primary').last().click();
+    await page.waitForFunction(() => window.__liveMatch, null, { timeout: 15000 });
+    await page.waitForTimeout(1500);
+    for (const role of ['offence', 'defence']) {
+      await page.evaluate((role) => {
+        const m = window.__liveMatch;
+        m.clutch = { offence: 0, pending: [role], calls: {} };
+        m.phase = 'clutch';
+        m.version++;
+      }, role);
+      await page.locator('.clutch').waitFor({ timeout: 5000 });
+      await check(`match: clutch call (${role})`);
+    }
+    await page.evaluate(() => {
+      const m = window.__liveMatch;
+      m.clutch = null;
+      m.argue = { side: 0, until: m.time + 9999 };
+      m.phase = 'argue';
+      m.version++;
+    });
+    await page.locator('.argue-bar').waitFor({ timeout: 5000 });
+    await check('match: argue the call');
   },
   async match3d(page, check) {
     await page.goto(`${base}?view=3d`);
@@ -192,6 +288,16 @@ const journeys = {
       }
     }
     await page.getByRole('tab', { name: /First team/ }).click();
+    // Touch screens: the Sort pop-up, on the view with the most columns. Escape closes only it.
+    await page.getByRole('radio', { name: 'Attributes' }).click();
+    if (await page.locator('.sort-touch').first().isVisible()) {
+      await page.locator('.sort-touch').first().click();
+      await page.locator('.sort-pop').waitFor();
+      await check('pop-up: sort (squad attributes, touch)');
+      await page.keyboard.press('Escape');
+      await page.locator('.sort-pop').waitFor({ state: 'detached' });
+      if (!(await page.locator('.cr-table').count())) throw new Error('Escape on the Sort pop-up left the squad');
+    }
     await page.getByRole('radio', { name: 'Overview' }).click();
     await page.locator('.cr-table .cr-name').first().click();
     await check('career: player page (yours)');
@@ -248,6 +354,7 @@ try {
   await server.close();
 }
 
+if (arg('json', null)) writeFileSync(arg('json'), JSON.stringify(results, null, 1));
 const failing = results.filter((r) => r.problems.length);
 const names = [...new Set(results.map((r) => r.name))];
 console.log(`No-scroll sweep: ${names.length} screens × ${SIZES.length} sizes = ${results.length} checks, ${failing.length} failing.\n`);

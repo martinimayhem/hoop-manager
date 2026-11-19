@@ -14,7 +14,7 @@ import { createDraft, currentTurn, GROUPS, groupCounts, isComplete, MIN_PER_GROU
 import { journeymen, playerPool, type PoolPlayer } from '../pool';
 import { MIN_PRICE } from '../pricing';
 import { DEFAULT_SCOUT_ACCURACY } from '../scouting';
-import { LEAGUES, leaguePool, type LeagueId } from './leagues';
+import { LEAGUES, leaguePool, type LeagueId, type Region } from './leagues';
 import { doubleRoundRobin, type Fixture, type Schedule } from './schedule';
 import { standings, type GameRecord, type PlayerLineRecord, type TableRow } from './standings';
 
@@ -46,6 +46,8 @@ export interface QuickLeague {
   kind: 'quick';
   seed: number;
   league: LeagueId;
+  /** America or Europe: where its clubs are from (older saves have none; their clubs are in `teams`). */
+  region?: Region;
   teams: LeagueTeam[];
   /** The player's own name, as manager of his club (older saves have none). */
   manager?: string;
@@ -71,15 +73,15 @@ function abbrFor(name: string): string {
 }
 
 /** The league's clubs from its list, `count` of them, all run by the computer. */
-function aiTeams(league: LeagueId, count: number): LeagueTeam[] {
-  return LEAGUES[league].teams.slice(0, count).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
+function aiTeams(league: LeagueId, count: number, region: Region): LeagueTeam[] {
+  return LEAGUES[league].teams[region].slice(0, count).map((t) => ({ id: `ai-${t.abbr.toLowerCase()}`, name: t.name, abbr: t.abbr, human: null }));
 }
 
 /**
  * A league before its draft: these clubs, the league's pool and budget, and a seeded first-round
  * order. Every pick is the computer's (finishDraft); the player never drafts.
  */
-export function beginLeague(league: LeagueId, teams: LeagueTeam[], seed: number): QuickLeague {
+export function beginLeague(league: LeagueId, teams: LeagueTeam[], seed: number, region: Region = 'america'): QuickLeague {
   const rng = createRng(mix(seed, 1));
   const order = teams.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) {
@@ -87,16 +89,16 @@ export function beginLeague(league: LeagueId, teams: LeagueTeam[], seed: number)
     [order[i], order[j]] = [order[j], order[i]];
   }
   const d = createDraft('snake', leaguePool(league), teams.map((t) => ({ name: t.name, abbr: t.abbr, controller: 'ai' as const })), LEAGUES[league].budget, order);
-  return { kind: 'quick', seed, league, teams, draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] };
+  return { kind: 'quick', seed, league, region, teams, draft: saveDraft(d), phase: 'draft', schedule: [], matchday: 0, records: [] };
 }
 
 /**
  * A new league with the player's own club, `name`, beside seven of the league's clubs; every squad,
  * his too, put together by the computer, the season ready to start. `manager`: his own name.
  */
-export function createQuickLeague(league: LeagueId, name: string, seed: number, manager?: string): QuickLeague {
+export function createQuickLeague(league: LeagueId, name: string, seed: number, manager?: string, region: Region = 'america'): QuickLeague {
   const mine: LeagueTeam = { id: 'you-1', name, abbr: abbrFor(name), human: 0 };
-  const q = finishDraft(beginLeague(league, [mine, ...aiTeams(league, TEAMS - 1)], seed));
+  const q = finishDraft(beginLeague(league, [mine, ...aiTeams(league, TEAMS - 1, region)], seed, region));
   return manager ? { ...q, manager } : q;
 }
 
@@ -175,8 +177,8 @@ function aiTurn(q: QuickLeague): QuickLeague {
  * A new league: all eight clubs, their squads put together by the computer (the same draft rules,
  * every pick the AI's), the season ready to start. The player then takes over one of them.
  */
-export function createLeague(league: LeagueId, seed: number): QuickLeague {
-  return finishDraft(beginLeague(league, aiTeams(league, TEAMS), seed));
+export function createLeague(league: LeagueId, seed: number, region: Region = 'america'): QuickLeague {
+  return finishDraft(beginLeague(league, aiTeams(league, TEAMS, region), seed, region));
 }
 
 /** The player takes over a club (its squad as it is), with his own name as manager. */

@@ -51,7 +51,7 @@ button.primary {
 }
 button.small {
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 button.active {
   background: #3a4a70;
@@ -260,7 +260,7 @@ tr.taken {
   grid-template-columns: 110px 1fr 40px;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: 14px;
 }
 .handover {
   max-width: 560px;
@@ -450,7 +450,7 @@ kbd {
   grid-template-columns: auto 1fr auto;
   gap: 2px 6px;
   align-items: center;
-  font-size: 12px;
+  font-size: 14px;
 }
 .pl .portrait {
   grid-row: span 2;
@@ -482,7 +482,7 @@ kbd {
 }
 .feed {
   overflow: auto;
-  font-size: 13px;
+  font-size: 14px;
   min-height: 120px;
 }
 .feed div {
@@ -552,7 +552,7 @@ kbd {
   padding: 8px 10px;
   border-radius: 6px;
   background: var(--panel-2);
-  font-size: 13px;
+  font-size: 14px;
   display: grid;
   gap: 2px;
 }
@@ -566,7 +566,7 @@ kbd {
   margin: 6px 0 0;
   padding-left: 18px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 details summary {
   cursor: pointer;
@@ -637,7 +637,7 @@ tr.starter td {
 .tactics-bar {
   display: grid;
   gap: 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .tactics-bar select {
   width: 100%;
@@ -660,7 +660,7 @@ tr.starter td {
 }
 .mins {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .prep > .panel {
@@ -681,7 +681,7 @@ tr.starter td {
   border-radius: 4px;
   padding: 0 4px;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 14px;
   color: #10141c;
 }
 .rating.muted {
@@ -916,7 +916,7 @@ tr.picked-row td {
 }
 .brk-quarters {
   width: auto;
-  font-size: 13px;
+  font-size: 14px;
 }
 .brk-quarters th,
 .brk-quarters td {
@@ -984,7 +984,7 @@ tr.picked-row td {
   grid-template-columns: 92px 1fr 92px;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .brk-cmp-v {
   font-variant-numeric: tabular-nums;
@@ -1030,7 +1030,7 @@ tr.picked-row td {
   padding: 2px 4px 4px;
 }
 .brk-table {
-  font-size: 12.5px;
+  font-size: 14px;
 }
 .brk-table th,
 .brk-table td {
@@ -1042,7 +1042,7 @@ tr.picked-row td {
 }
 .brk-table .rating {
   padding: 0 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .brk-name {
   max-width: 140px;
@@ -1060,7 +1060,7 @@ tr.picked-row td {
 }
 button.tiny {
   padding: 0 4px;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 16px;
   margin-left: 2px;
 }
@@ -1110,7 +1110,7 @@ button.tiny {
 }
 button.chip {
   padding: 3px 10px;
-  font-size: 13px;
+  font-size: 14px;
   border-radius: 14px;
 }
 button.chip.active {
@@ -1192,7 +1192,7 @@ th.sorted {
 .dr-table .range {
   min-width: 44px;
   padding: 0 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .dr-who {
   max-width: 260px;
@@ -1235,7 +1235,7 @@ th.sorted {
 .dr-ratings .range,
 .dr-attrs .range {
   min-width: 44px;
-  font-size: 12px;
+  font-size: 14px;
   padding: 0 4px;
 }
 .dr-squad {
@@ -1243,7 +1243,7 @@ th.sorted {
 }
 .dr-squad .brk-table .range {
   min-width: 44px;
-  font-size: 12px;
+  font-size: 14px;
   padding: 0 4px;
 }
 .dr-budget {
@@ -1332,7 +1332,7 @@ th.sorted {
 .pbp-older {
   margin-top: 3px;
   padding-left: 14px;
-  font-size: 12.5px;
+  font-size: 14px;
   color: #aab6cc;
 }
 .pbp-older > div {
@@ -1365,7 +1365,7 @@ th.sorted {
   border: 1px solid #22344a;
   border-radius: 6px;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: 14px;
   box-shadow: 0 12px 30px #000c;
 }
 .pbp-log > div {
@@ -1383,7 +1383,7 @@ th.sorted {
 /* ---- Bench rows: one line each, so the panel fits without scrolling ---- */
 .pl.compact {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  font-size: 12px;
+  font-size: 14px;
 }
 .pl.compact .portrait {
   grid-row: auto;
@@ -1563,7 +1563,7 @@ th.sorted {
 }
 .ov-coach-text {
   margin-top: 0.2cqw;
-  font-size: max(12px, 1.15cqw);
+  font-size: max(14px, 1.15cqw);
   line-height: 1.3;
   color: #e8edf7;
 }
@@ -1743,7 +1743,7 @@ th.sorted {
   line-height: 1.1;
 }
 .lt-team {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--team);
   white-space: nowrap;
 }
@@ -2041,7 +2041,7 @@ select:focus {
 .brk-table .range {
   min-width: 44px;
   padding: 0 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* ---- Player card (key player at a break; the court's player of the game is its twin) ---- */
@@ -2239,7 +2239,7 @@ select:focus {
   width: 30px;
   text-align: right;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 14px;
   letter-spacing: -1px;
 }
 .pl.compact {
@@ -2251,7 +2251,7 @@ select:focus {
 }
 .pl.compact .fouls {
   width: 18px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .pl.compact .pl-sub {
   justify-content: flex-end;
@@ -2273,7 +2273,7 @@ select:focus {
   border-radius: 8px;
   box-shadow: 0 10px 28px #000c;
   padding: 10px 12px 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: #d6deec;
 }
 .pcard-head {
@@ -2343,7 +2343,7 @@ select:focus {
   color: #8d9ab5;
 }
 .pcard-tile .rating {
-  font-size: 12px;
+  font-size: 14px;
   padding: 0 3px;
   color: #000;
 }
@@ -2351,7 +2351,7 @@ select:focus {
   display: flex;
   justify-content: space-between;
   margin-top: 5px;
-  font-size: 12px;
+  font-size: 14px;
   color: #8d9ab5;
 }
 .pcard-shooting b {
@@ -2371,7 +2371,7 @@ select:focus {
   grid-template-columns: 92px 1fr 24px;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .pcard-rating b {
   text-align: right;
@@ -2488,7 +2488,7 @@ table.scout-table.eq .wide {
 }
 table.scout-table.eq .range {
   padding: 0 3px;
-  font-size: 12px;
+  font-size: 14px;
 }
 table.eq th {
   padding-left: 3px;
@@ -2499,7 +2499,7 @@ table.scout-table.eq .wide {
   width: 27%;
 }
 table.scout-table.eq .stars {
-  font-size: 12px;
+  font-size: 14px;
   letter-spacing: -0.05em;
 }
 .brk-roster table.eq .wide {
@@ -2728,7 +2728,7 @@ table.scout-table.eq .stars {
 }
 .res-lines {
   width: auto;
-  font-size: 12.5px;
+  font-size: 14px;
 }
 .res-lines th,
 .res-lines td {
@@ -2738,7 +2738,7 @@ table.scout-table.eq .stars {
   background: none;
 }
 .res-verdict {
-  font-size: 13px;
+  font-size: 14px;
 }
 .res-main {
   display: grid;
@@ -2917,6 +2917,9 @@ table.scout-table.eq .stars {
   padding-bottom: 1px;
   font-size: 12.5px;
 }
+.shot-compact .shot-zones table td {
+  font-size: 14px;
+}
 .shot-compact .shot-zones .muted {
   font-size: 12px !important;
 }
@@ -3053,7 +3056,7 @@ table.scout-table.eq .stars {
 }
 .hub-side-rec {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 .hub-vs {
   display: grid;
@@ -3363,7 +3366,8 @@ table.scout-table.eq .stars {
 .cp {
   height: calc(100vh - 32px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* The top bar's spacer, the title, the clubs. */
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
 }
 .cp-bar {
@@ -3463,7 +3467,7 @@ table.scout-table.eq .stars {
 }
 .cp-side {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto auto;
   gap: 10px;
   min-height: 0;
 }
@@ -4019,7 +4023,7 @@ small {
   margin: 4px 0 6px;
 }
 .tp-tabs button {
-  font-size: 13px;
+  font-size: 14px;
   padding: 4px 6px;
 }
 .tp-tabs button.on {
@@ -4307,4 +4311,255 @@ small {
   .ov-star {
     display: none;
   }
+}
+
+/* Quick League: America or Europe, next to the panel title. */
+.mm-new-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mm-new-head h3 { margin: 0; }
+
+
+/* Sorting on touch screens (GAME_FLOW §6.1a): a 44 px Sort button above each sortable table opens the
+   sort choices; with a mouse it is hidden and the column headers sort. */
+.sort-touch {
+  display: none;
+}
+@media (pointer: coarse) {
+  .sort-touch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    font-size: 14px;
+    align-self: flex-start;
+    flex: none;
+  }
+}
+.sort-touch-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+.sort-pop-back {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: #000a;
+  padding: 16px;
+}
+.sort-pop {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.sort-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sort-pop-head h3 {
+  margin: 0;
+}
+.sort-pop-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+.sort-pop-cols button,
+.sort-pop-reset {
+  min-height: 44px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.sort-pop-cols button.on {
+  border-color: var(--accent);
+  color: #fff;
+}
+.sort-pop-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brk-roster-head .sort-touch {
+  margin-left: auto;
+}
+
+
+.rot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+
+/* The club picker: the squad pages when it doesn't fit; narrow screens list the clubs in one column. */
+.cp-roster td {
+  height: 28px;
+}
+.cp-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+}
+.cp-pager button {
+  min-width: 36px;
+  min-height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (pointer: coarse) {
+  .cp-roster td {
+    height: 44px;
+  }
+  .cp-pager button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (max-width: 900px) {
+  .cp-main {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .cp-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: minmax(0, 1fr);
+    align-content: stretch;
+    gap: 8px;
+  }
+  .cp-club {
+    padding: 8px 12px;
+    gap: 4px;
+  }
+  .cp-club small {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cp-roster .muted.small {
+    display: none;
+  }
+}
+
+/* The hub on a narrow screen (768 portrait): a narrower right column, so the table keeps its width. */
+@media (max-width: 900px) {
+  .hub .hub-main {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+  .hub-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* When the top bar is short of room, the text on its right gives way first (cut short with "…"), so
+   the path to the screen stays readable. */
+.tb-right {
+  flex-shrink: 6;
+}
+.tb-right > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Pop-ups open below the top bar, which stays in view (Back always there: GAME_FLOW §6.1b). */
+body:has(.tb) .overlay {
+  top: 52px;
+}
+
+/* The break screen's tab row: on a short screen the roster's hint and Sort button sit on its right. */
+.brk-views-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brk-views-slot {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.brk-views-slot:empty {
+  display: none;
+}
+
+/* Under a narrow court (768 portrait): the four main team stats in two columns, and the leaders by
+   rating and points only. The rest is in the box score; nothing is squeezed on top of each other. */
+.match-info {
+  container-type: inline-size;
+}
+@container (max-width: 520px) {
+  .gc-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .gc-tile:nth-child(n + 5) {
+    display: none;
+  }
+  .lt-body {
+    --cols: minmax(0, 1fr) 44px 44px !important;
+  }
+  .lt-head > :nth-child(2),
+  .lt-head > :nth-child(3),
+  .lt-head > :nth-child(n + 6),
+  .lt-row > :nth-child(2),
+  .lt-row > :nth-child(3),
+  .lt-row > :nth-child(n + 6) {
+    display: none;
+  }
+}
+
+/* The assistant's word: over the court's corner, or under a small court (where the corner is too
+   small for 14 px text) in the stats strip. */
+.gc-coach {
+  display: none;
+  padding: 6px 10px;
+  border-left: 4px solid;
+  border-radius: 6px;
+  background: #0f1827;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.gc-coach b {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-right: 6px;
+}
+@container (max-width: 520px) {
+  .ov-coach {
+    display: none;
+  }
+  .gc-coach {
+    display: block;
+  }
+}
+@container (max-width: 520px) {
+  .lt-body {
+    grid-template-rows: auto repeat(3, minmax(0, 1fr));
+  }
+  .lt-row:nth-child(n + 5),
+  .lt-sub {
+    display: none;
+  }
+}
+.cp-roster-box {
+  min-height: 0;
+  overflow: hidden;
+}
+.overlay:has(> .clutch) {
+  padding: 12px;
 }

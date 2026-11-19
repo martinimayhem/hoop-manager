@@ -121,7 +121,7 @@ function Screens() {
               friendly.current = { setup, teams: quickTeams(setup) };
               nav.go({ s: 'friendly', step: 'prep' });
             }}
-            onLeague={(league) => nav.go({ s: 'quick-new', league })}
+            onLeague={(league, region) => nav.go({ s: 'quick-new', league, region })}
             onLoad={() => nav.go({ s: 'saves' })}
             onContinue={(league, slot) => openLeague(league, slot)}
             onCareerNew={() => nav.go({ s: 'career-new' })}
@@ -138,7 +138,7 @@ function Screens() {
     case 'quick-new':
       return (
         <div className="app">
-          <ClubPicker key={r.league} league={r.league} onStart={(league, slot) => openLeague(league, slot, true)} />
+          <ClubPicker key={`${r.league}-${r.region}`} league={r.league} region={r.region} onStart={(league, slot) => openLeague(league, slot, true)} />
         </div>
       );
     case 'quick': {

@@ -39,6 +39,7 @@ export function TeamTable({ t, colour, side, head = true }: { t: TeamBox; colour
           <span className="box-score">{t.score}</span>
         </div>
       )}
+      {sorter.sortButton}
       <table className="brk-table eq">
         <thead>
           <tr>

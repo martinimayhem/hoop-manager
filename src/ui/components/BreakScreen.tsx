@@ -15,6 +15,8 @@ import type { LiveMatch } from '../match/controller';
 import { EnergyBar, RatingBadge } from './common';
 import { Portrait, ShirtNumber } from './Portrait';
 import { useSort } from './sortable';
+import { useMedia } from './useMedia';
+import { createPortal } from 'react-dom';
 import { NextIcon, CheckIcon, CrossIcon, Icon } from '../icons';
 
 const other = (s: Side): Side => (s === 0 ? 1 : 0);
@@ -77,8 +79,9 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   const roster = (side: Side) => (
-    <Roster key={side} m={m} side={side} plan={side === editing ? drafts[side] : livePlan(side)} onChange={side === editing ? (p) => setDrafts((d) => ({ ...d, [side]: p })) : undefined} />
+    <Roster key={side} slot={slot} m={m} side={side} plan={side === editing ? drafts[side] : livePlan(side)} onChange={side === editing ? (p) => setDrafts((d) => ({ ...d, [side]: p })) : undefined} />
   );
 
   return (
@@ -95,12 +98,16 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
             ))}
           </div>
         )}
-        <div className="brk-views" role="tablist">
-          {views.map(([v, label]) => (
-            <button key={v} role="tab" aria-selected={view === v} className={`${view === v ? 'on' : ''} ${v === 'talk' && talkPending ? 'due' : ''}`} onClick={() => setView(v)}>
-              {label}
-            </button>
-          ))}
+        <div className="brk-views-row">
+          <div className="brk-views" role="tablist">
+            {views.map(([v, label]) => (
+              <button key={v} role="tab" aria-selected={view === v} className={`${view === v ? 'on' : ''} ${v === 'talk' && talkPending ? 'due' : ''}`} onClick={() => setView(v)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* On a short screen the roster's hint and Sort button go here, beside the tabs. */}
+          <div className="brk-views-slot" ref={setSlot} />
         </div>
 
         {view === 'talk' && editing !== null && <TeamTalk m={m} side={editing} onSaid={() => redraw((n) => n + 1)} />}
@@ -273,7 +280,9 @@ const rate = (made: number, att: number) => (att > 0 ? made / att : 0);
  * One side's players: on court first, then the bench in sub order. With `onChange` it is the coach's
  * own team: click a player on court and one on the bench to swap them, arrows set the sub order.
  */
-function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: GamePlan; onChange?: (p: GamePlan) => void }) {
+function Roster({ m, side, plan, onChange, slot }: { m: LiveMatch; side: Side; plan: GamePlan; onChange?: (p: GamePlan) => void; slot?: HTMLElement | null }) {
+  // A short screen: no banner over the table, its hint and Sort button sit beside the tabs instead.
+  const short = useMedia('(max-height: 800px)');
   const t = m.s.teams[side];
   const byId = new Map(t.team.players.map((p) => [p.id, p]));
   const bench = [...plan.bench, ...t.team.players.map((p) => p.id).filter((id) => !plan.starters.includes(id) && !plan.bench.includes(id))];
@@ -394,14 +403,24 @@ function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: G
     );
   };
 
+  const hint = onChange ? (picked ? `${byId.get(picked)?.name} picked: now click who swaps with him.` : 'Click a player on court, then one on the bench, to swap.') : 'Their players';
   return (
     <div className="brk-roster" style={{ ['--team' as string]: side === 0 ? 'var(--home)' : 'var(--away)' }}>
-      <div className="brk-roster-head">
-        <b>{t.team.name}</b>
-        <span className="muted small">
-          {onChange ? (picked ? `${byId.get(picked)?.name} picked: now click who swaps with him.` : 'Click a player on court, then one on the bench, to swap.') : 'Their players'}
-        </span>
-      </div>
+      {short && slot ? (
+        createPortal(
+          <>
+            <span className="muted small">{hint}</span>
+            {sorter.sortButton}
+          </>,
+          slot,
+        )
+      ) : (
+        <div className="brk-roster-head">
+          <b>{t.team.name}</b>
+          <span className="muted small">{hint}</span>
+          {sorter.sortButton}
+        </div>
+      )}
       <table className="brk-table eq">
         <thead>
           <tr>
@@ -417,7 +436,7 @@ function Roster({ m, side, plan, onChange }: { m: LiveMatch; side: Side; plan: G
             {sorter.th('3p', '3P', { tip: 'Three-pointers made/attempted' })}
             {sorter.th('pf', 'PF', { tip: 'Personal fouls (6 = out); T = a technical' })}
             {sorter.th('energy', <Icon name="battery" />, { tip: 'Energy: tired players play worse' })}
-            {onChange && sorter.th('sub', 'Sub', { tip: 'Sub order: who comes off the bench first', plain: true, width: 74 })}
+            {onChange && sorter.th('sub', 'Sub', { tip: 'Sub order: who comes off the bench first', plain: true, width: 116 })}
           </tr>
         </thead>
         <tbody>

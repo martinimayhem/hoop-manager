@@ -197,6 +197,7 @@ export function LeagueHub({
 
           <section className="panel hub-table">
             <h3>Table</h3>
+            {sorter.sortButton}
             <table className="eq standings">
               <thead>
                 <tr>

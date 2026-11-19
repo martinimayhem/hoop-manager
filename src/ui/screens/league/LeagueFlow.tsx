@@ -23,7 +23,7 @@ import { browserStorage } from './storage';
 import { WarningIcon } from '../../icons';
 import { useNav } from '../../nav';
 import type { Crumb } from '../../components/TopBar';
-import { LEAGUES } from '../../../game/league/leagues';
+import { leagueName } from '../../../game/league/leagues';
 
 interface Game {
   game: number;
@@ -105,7 +105,7 @@ export function LeagueFlow({ initial, slot, step, onSaved }: { initial: QuickLea
   };
   // Back to the hub: the screen before the game plan, or (opened by its address) the hub itself.
   const toHub = () => (nav.canBack ? nav.back() : to('hub', true));
-  const name = LEAGUES[league.league].name;
+  const name = leagueName(league.league, league.region);
   const hubCrumb: Crumb = { label: name, route: { s: 'quick', slot, step: 'hub' } };
   const here = (label: string): Crumb[] => [hubCrumb, { label, route: { s: 'quick', slot, step } }];
 

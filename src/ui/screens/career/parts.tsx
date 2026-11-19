@@ -2,7 +2,7 @@
 // for everyone else, as in the rest of the game), the payroll bar (GAME_FLOW §4.4) and small helpers.
 
 import { Angry, Frown, Laugh, Meh, Smile, Star, StarHalf, type LucideIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from 'react';
 import { NextIcon, PrevIcon } from '../../icons';
 import { HEAD_VIEWBOX, portraitUrl, type Kit } from '../../looks';
 import { composite } from '../../../engine/ratings';
@@ -330,8 +330,11 @@ export function cameThrough(w: World, wp: WorldPlayer): string {
 
 const MIN_ROWS = 3;
 
-/** How many of `total` rows to show, and which page; `rowSelector` finds one row to measure. */
-export function useFitRows(total: number, rowSelector: string, resetKey: unknown = null) {
+/**
+ * How many of `total` rows to show, and which page; `rowSelector` finds one row to measure. `box`: a
+ * panel of fixed height that holds the list (its overflow is measured instead of the page's).
+ */
+export function useFitRows(total: number, rowSelector: string, resetKey: unknown = null, box?: RefObject<HTMLElement | null>) {
   const [size, setSize] = useState(total);
   const [page, setPage] = useState(0);
   // A new list, a new window size: try all rows again.
@@ -353,7 +356,8 @@ export function useFitRows(total: number, rowSelector: string, resetKey: unknown
   }, []);
   useLayoutEffect(() => {
     const de = document.scrollingElement ?? document.documentElement;
-    const over = de.scrollHeight - window.innerHeight;
+    const b = box?.current;
+    const over = b ? b.scrollHeight - b.clientHeight : de.scrollHeight - window.innerHeight;
     if (over <= 0 || size <= MIN_ROWS) return;
     const row = document.querySelector(rowSelector)?.getBoundingClientRect().height || 40;
     setSize((s) => Math.max(MIN_ROWS, Math.min(s, total) - Math.max(1, Math.ceil(over / row))));

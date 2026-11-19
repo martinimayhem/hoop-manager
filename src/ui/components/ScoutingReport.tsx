@@ -42,6 +42,7 @@ export function ScoutingReport({ opponent, us, side, scout, section = 'all' }: {
     <div className="scout-report">
       {section !== 'tendencies' && (<>
       <div className="muted small">Ranges are your scout's estimates: famous players are easy to read, unknowns could surprise you.</div>
+      {sorter.sortButton}
       <div>
         <table className="brk-table scout-table eq">
           <thead>

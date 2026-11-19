@@ -5,7 +5,7 @@
 // guard that is asked before anything leaves it.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { LeagueId } from '../game/league/leagues';
+import type { LeagueId, Region } from '../game/league/leagues';
 
 /** A career screen (the sidebar sections and what opens from them). */
 export type CareerView = { kind: 'squad' } | { kind: 'player'; id: string } | { kind: 'competitions' } | { kind: 'competition'; id: string } | { kind: 'club'; id: string };
@@ -13,7 +13,7 @@ export type CareerView = { kind: 'squad' } | { kind: 'player'; id: string } | { 
 export type Route =
   | { s: 'menu' }
   | { s: 'saves' }
-  | { s: 'quick-new'; league: LeagueId }
+  | { s: 'quick-new'; league: LeagueId; region: Region }
   | { s: 'quick'; slot: number; step: 'hub' | 'prep' | 'match' | 'result' }
   | { s: 'friendly'; step: 'prep' | 'match' | 'result' }
   | { s: 'career-new' }
@@ -28,7 +28,7 @@ export function toPath(r: Route): string {
     case 'saves':
       return '/saves';
     case 'quick-new':
-      return `/quick/new/${r.league}`;
+      return `/quick/new/${r.league}/${r.region}`;
     case 'quick':
       return `/quick/${r.slot}/${r.step}`;
     case 'friendly':
@@ -47,7 +47,7 @@ export function fromPath(path: string): Route {
   const p = path.replace(/^#/, '').split('/').filter(Boolean).map(decodeURIComponent);
   const slot = (x: string | undefined) => (x !== undefined && /^\d+$/.test(x) ? Number(x) : null);
   if (p[0] === 'saves') return { s: 'saves' };
-  if (p[0] === 'quick' && p[1] === 'new' && LEAGUE_IDS.includes(p[2] as LeagueId)) return { s: 'quick-new', league: p[2] as LeagueId };
+  if (p[0] === 'quick' && p[1] === 'new' && LEAGUE_IDS.includes(p[2] as LeagueId)) return { s: 'quick-new', league: p[2] as LeagueId, region: p[3] === 'europe' ? 'europe' : 'america' };
   if (p[0] === 'quick' && slot(p[1]) !== null) {
     const step = (['hub', 'prep', 'match', 'result'] as const).find((x) => x === p[2]) ?? 'hub';
     return { s: 'quick', slot: slot(p[1])!, step };

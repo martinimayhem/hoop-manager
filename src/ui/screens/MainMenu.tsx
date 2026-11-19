@@ -9,7 +9,7 @@ import { careerStore } from './career/store';
 import { useNav } from '../nav';
 import type { Speed } from '../match/controller';
 import type { Setup } from '../App';
-import { LEAGUES, type LeagueId } from '../../game/league/leagues';
+import { LEAGUES, REGIONS, REGION_NAME, type LeagueId, type Region } from '../../game/league/leagues';
 import type { QuickLeague } from '../../game/league/quickLeague';
 import { listSlots, summarise } from '../../game/league/saves';
 import { browserStorage } from './league/storage';
@@ -19,6 +19,16 @@ import { NextIcon } from '../icons';
 export const VIEW_3D_KEY = 'hm.view3d';
 /** And the match speed. */
 export const SPEED_KEY = 'hm.speed';
+
+/** Where the last Quick League was started: America or Europe (their clubs never share a league). */
+export const REGION_KEY = 'hm.region';
+function lastRegion(): Region {
+  try {
+    return localStorage.getItem(REGION_KEY) === 'europe' ? 'europe' : 'america';
+  } catch {
+    return 'america';
+  }
+}
 
 /** The view to start with: ?view=3d or ?view=2d in the address, else the last one used, else 2D. */
 function startView(): Setup['view'] {
@@ -62,7 +72,7 @@ export function MainMenu({
   /** A friendly: the ready-made squads, no league. */
   onFriendly: (setup: Setup) => void;
   /** A new game in this league: on to choosing the club. */
-  onLeague: (league: LeagueId) => void;
+  onLeague: (league: LeagueId, region: Region) => void;
   onLoad: () => void;
   onContinue: (league: QuickLeague, slot: number) => void;
   /** A new career: create the world, choose the club. */
@@ -71,6 +81,11 @@ export function MainMenu({
 }) {
   const [speed, setSpeedState] = useState<Speed>(lastSpeed);
   const [view, setViewState] = useState<Setup['view']>(startView);
+  const [region, setRegionState] = useState<Region>(lastRegion);
+  const setRegion = (r: Region) => {
+    setRegionState(r);
+    remember(REGION_KEY, r);
+  };
   const setSpeed = (s: Speed) => {
     setSpeedState(s);
     remember(SPEED_KEY, s);
@@ -182,12 +197,21 @@ export function MainMenu({
       </div>
       <div className="mm-col">
       <section className="panel mm-new">
-        <h3>New game · choose where to start</h3>
+        <div className="mm-new-head">
+          <h3>New game · choose where to start</h3>
+          <span className="hub-seg" role="group" aria-label="Region">
+            {REGIONS.map((r) => (
+              <button key={r} className={region === r ? 'on' : ''} onClick={() => setRegion(r)} title={`Clubs from ${REGION_NAME[r]} only`}>
+                {REGION_NAME[r]}
+              </button>
+            ))}
+          </span>
+        </div>
         <div className="mm-leagues">
           {LEAGUE_IDS.slice()
             .reverse()
             .map((id) => (
-              <button key={id} className="mm-league" onClick={() => onLeague(id)}>
+              <button key={id} className="mm-league" onClick={() => onLeague(id, region)}>
                 <span className="mm-level">{LEVEL[id]}</span>
                 <b>{LEAGUES[id].name}</b>
                 <small>{LEAGUES[id].blurb}</small>

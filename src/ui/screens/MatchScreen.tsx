@@ -345,7 +345,7 @@ export function MatchScreen({
           <CourtOverlays m={m} humanSides={humanSides} />
           {showFeed && !roomy && (
             <div className="feeds">
-              <Gamecast m={m} />
+              <Gamecast m={m} humanSides={humanSides} />
             </div>
           )}
         </div>
@@ -429,7 +429,7 @@ export function MatchScreen({
         </div>
         {/* Below the court, where there is room: team stats, game leaders and the assistant, always in view. */}
         <div className="match-info" ref={infoRef}>
-          {roomy && <Gamecast m={m} />}
+          {roomy && <Gamecast m={m} humanSides={humanSides} />}
         </div>
       </div>
       <TeamPanel m={m} side={1} view={m.view[1]} human={controllers[1] === 'human'} />

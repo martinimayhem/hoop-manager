@@ -112,6 +112,7 @@ export function ShotChart({ events, side, name, compact = false }: { events: Tim
         <Lines />
       </svg>
       <div className="shot-zones">
+      {sorter.sortButton}
       <table className="eq" style={{ maxWidth: 360 }}>
         <thead>
           <tr>
@@ -134,7 +135,7 @@ export function ShotChart({ events, side, name, compact = false }: { events: Tim
           ))}
         </tbody>
       </table>
-      <div className="muted" style={{ fontSize: 12 }}>
+      <div className="muted small">
         Squares are 1 m. <span className="swatch" style={{ background: 'var(--good)' }} /> 1.2+ points a shot <span className="swatch" style={{ background: 'var(--warn)' }} /> 0.9–1.2{' '}
         <span className="swatch" style={{ background: 'var(--bad)' }} /> under 0.9; fainter means fewer shots.
       </div>

@@ -3,7 +3,7 @@
 // shot chart a tab away, and beside it the player of the game and the two teams side by side (on a
 // narrower screen those are a tab too).
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { buildBoxScore, playerRating } from '../../engine/stats';
 import type { LiveMatch } from '../match/controller';
 import { TeamTable } from '../components/BoxScoreTable';
@@ -11,6 +11,7 @@ import { TeamCompare } from '../components/BreakScreen';
 import { Portrait } from '../components/Portrait';
 import { ShotChart } from '../components/ShotChart';
 import { NextIcon } from '../icons';
+import { useMedia } from '../components/useMedia';
 import { TopBar, type Crumb } from '../components/TopBar';
 
 /** `onContinue`: in a league, the way on (instead of a rematch). */
@@ -164,14 +165,3 @@ export function ResultScreen({ match, onRematch, onLeave, onContinue, crumbs }: 
   );
 }
 
-/** Whether a media query matches (kept up to date). */
-function useMedia(query: string): boolean {
-  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const on = () => setNarrow(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, [query]);
-  return narrow;
-}

@@ -17,6 +17,7 @@ import {
   VolumeX,
   X,
   ArrowDown,
+  ArrowDownUp,
   ArrowLeftRight,
   ArrowUp,
   Ban,
@@ -96,6 +97,7 @@ export const CheckIcon = ui(Check);
 export const CrossIcon = ui(X);
 export const SortDownIcon = ui(ChevronDown);
 export const SortUpIcon = ui(ChevronUp);
+export const SortIcon = ui(ArrowDownUp);
 export const PlayIcon = ui(Play);
 export const PauseIcon = ui(Pause);
 export const HighlightsIcon = ui(Sparkles);

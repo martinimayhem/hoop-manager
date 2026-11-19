@@ -199,10 +199,13 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side, section
       {rotation && (<>
       <div>
         <h3 className="rot-title">{live ? 'Players on court' : 'Starting five'} &amp; bench</h3>
+        <div className="rot-head">
         <div className={`swap-hint ${picked ? 'active' : ''}`}>
           {picked
             ? `${pickedName} selected: now click a ${pickedOnCourt ? 'bench player to bring in' : 'player on court to take off'}.`
             : 'To swap: pick a player on court, then a bench player. Tired players and players in foul trouble are swapped automatically, in sub order.'}
+        </div>
+        {sorter.sortButton}
         </div>
         <div>
           <table className="brk-table eq">
@@ -216,7 +219,7 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side, section
                 {live && sorter.th('min', 'Min', { tip: 'Minutes played' })}
                 {live && sorter.th('fouls', 'Fouls', { tip: 'Personal fouls (6 = out)' })}
                 {live && sorter.th('pts', 'Pts', { tip: 'Points' })}
-                {sorter.th('sub', 'Sub', { tip: 'Sub order: who comes off the bench first', plain: true, width: 84 })}
+                {sorter.th('sub', 'Sub', { tip: 'Sub order: who comes off the bench first', plain: true, width: 116 })}
               </tr>
             </thead>
             <tbody>

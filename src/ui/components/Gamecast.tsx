@@ -148,10 +148,19 @@ function Tile({ value, label, hot }: { value: string; label: string; hot?: boole
 // ---------------------------------------------------------------------------
 // Under the court
 
-/** The strip of team comparisons and the two leader tables. */
-export function Gamecast({ m }: { m: LiveMatch }) {
+/**
+ * The strip of team comparisons and the two leader tables. Under a small court the assistant's latest
+ * word is here too (the court's corner has no room for it).
+ */
+export function Gamecast({ m, humanSides = [] }: { m: LiveMatch; humanSides?: Side[] }) {
+  const tip = humanSides.flatMap((sd) => m.liveTips(sd)).sort((a, b) => b.id - a.id)[0];
   return (
     <div className="gamecast">
+      {tip && (
+        <div className="gc-coach" style={{ borderLeftColor: colourOf(tip.side) }}>
+          <b>Assistant coach</b> {tip.text}
+        </div>
+      )}
       <TeamTiles m={m} />
       <LeaderTable m={m} />
     </div>

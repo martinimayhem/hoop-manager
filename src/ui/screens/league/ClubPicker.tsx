@@ -2,17 +2,18 @@
 // squads already (put together by the computer); each card says how strong it is, what kind of team
 // it is and who its best players are, and the chosen club's whole squad is beside them.
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { composite } from '../../../engine/ratings';
 import type { Team } from '../../../engine/types';
-import { LEAGUES, type LeagueId } from '../../../game/league/leagues';
+import { leagueName, type LeagueId, type Region } from '../../../game/league/leagues';
 import { createLeague, takeOver, teamOf, type QuickLeague } from '../../../game/league/quickLeague';
 import { listSlots, summarise } from '../../../game/league/saves';
 import { Rating } from '../../components/common';
 import { browserStorage } from './storage';
 import { TopBar } from '../../components/TopBar';
 import { useConfirm } from '../../components/Confirm';
-import { NextIcon } from '../../icons';
+import { NextIcon, PrevIcon } from '../../icons';
+import { useFitRows } from '../career/parts';
 
 interface Club {
   index: number;
@@ -59,9 +60,9 @@ function clubsOf(q: QuickLeague): Club[] {
   });
 }
 
-export function ClubPicker({ league, onStart }: { league: LeagueId; onStart: (q: QuickLeague, slot: number) => void }) {
+export function ClubPicker({ league, region, onStart }: { league: LeagueId; region: Region; onStart: (q: QuickLeague, slot: number) => void }) {
   // A new league each time the screen opens: new squads, a new schedule.
-  const [q] = useState(() => createLeague(league, Date.now() >>> 0));
+  const [q] = useState(() => createLeague(league, Date.now() >>> 0, region));
   const clubs = useMemo(() => clubsOf(q), [q]);
   const [pick, setPick] = useState(() => clubs.find((c) => c.rank === 4)?.index ?? 0);
   const [manager, setManager] = useState('');
@@ -72,6 +73,9 @@ export function ClubPicker({ league, onStart }: { league: LeagueId; onStart: (q:
   const chosen = clubs[pick];
   const roster = [...chosen.team.players].sort((a, b) => composite(b).overall - composite(a).overall);
   const st = standing(chosen.rank);
+  // The squad pages when the panel is too short for all of it (GAME_FLOW §6.1a: nothing scrolls).
+  const side = useRef<HTMLDivElement>(null);
+  const fit = useFitRows(roster.length, '.cp-roster tbody tr', pick, side);
 
   const confirm = useConfirm();
   const start = () => {
@@ -85,11 +89,11 @@ export function ClubPicker({ league, onStart }: { league: LeagueId; onStart: (q:
 
   return (
     <div className="cp">
-      <TopBar crumbs={[{ label: 'New Quick League', route: { s: 'menu' } }, { label: LEAGUES[league].name, route: { s: 'quick-new', league } }]} />
+      <TopBar crumbs={[{ label: 'New Quick League', route: { s: 'menu' } }, { label: leagueName(league, region), route: { s: 'quick-new', league, region } }]} />
       {confirm.dialog}
       <header className="cp-bar">
         <div>
-          <h1>{LEAGUES[league].name}</h1>
+          <h1>{leagueName(league, region)}</h1>
           <span className="muted small">Choose the club you will manage. 14 matchdays against the other seven.</span>
         </div>
       </header>
@@ -131,6 +135,7 @@ export function ClubPicker({ league, onStart }: { league: LeagueId; onStart: (q:
               {chosen.rank === 1 ? 'The strongest squad in the league' : `${chosen.rank}${['th', 'st', 'nd', 'rd'][chosen.rank] ?? 'th'} strongest squad of 8`}
             </span>
           </div>
+          <div className="cp-roster-box" ref={side}>
           <table className="eq cp-roster">
             <thead>
               <tr>
@@ -143,7 +148,7 @@ export function ClubPicker({ league, onStart }: { league: LeagueId; onStart: (q:
               </tr>
             </thead>
             <tbody>
-              {roster.map((p) => (
+              {roster.slice(fit.from, fit.to).map((p) => (
                 <tr key={p.id}>
                   <td className="left">
                     {p.name} <span className="muted small">{p.archetype}</span>
@@ -157,6 +162,20 @@ export function ClubPicker({ league, onStart }: { league: LeagueId; onStart: (q:
               ))}
             </tbody>
           </table>
+          </div>
+          {fit.paged && (
+            <div className="cp-pager" role="navigation" aria-label="Pages">
+              <button disabled={fit.page === 0} onClick={() => fit.setPage(fit.page - 1)} aria-label="Previous players">
+                <PrevIcon />
+              </button>
+              <span>
+                {fit.from + 1}–{fit.to} of {roster.length}
+              </span>
+              <button disabled={fit.page >= fit.pages - 1} onClick={() => fit.setPage(fit.page + 1)} aria-label="Next players">
+                <NextIcon />
+              </button>
+            </div>
+          )}
           <label className="cp-name">
             <span>Your name (manager)</span>
             <input value={manager} maxLength={24} placeholder="optional" onChange={(e) => setManager(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && start()} />

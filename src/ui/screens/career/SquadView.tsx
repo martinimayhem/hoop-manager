@@ -120,7 +120,7 @@ function RangeNum({ r }: { r: Range }) {
 
 export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: WorldClub; tab: SquadTab; view: SquadViewId; onPlayer: (id: string) => void }) {
   const cap = club.moneySystem === 'cap';
-  const { sorted, th } = useSort<WorldPlayer>((wp, key): SortValue => {
+  const { sorted, th, sortButton } = useSort<WorldPlayer>((wp, key): SortValue => {
     if (key.startsWith('a:')) return mid(attrRange(w, wp, key.slice(2) as AttrKey));
     switch (key) {
       case 'pos':
@@ -299,6 +299,7 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
 
   return (
     <>
+      {sortButton}
       <div className={`cr-card cr-table-wrap view-${view}`}>
         <table className="cr-table">
           <thead>
