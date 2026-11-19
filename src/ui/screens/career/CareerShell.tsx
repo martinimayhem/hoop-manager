@@ -1,40 +1,62 @@
-// The career shell (GAME_FLOW §6.1, §6.1b; slice brief W1 §6): the top bar shared by every screen (Back,
-// the main menu, the path to this screen; here also your club and its money) and a sidebar with only the
-// sections that work. Which screen is open comes from the page address (nav.tsx), so the browser's back,
-// Escape and a reload all work. Continue appears when the season does (slice W2).
+// The career shell (GAME_FLOW §6.1, §6.1b; slice briefs W1 §6, W2a §4): the top bar shared by every
+// screen (Back, the main menu, the path to this screen; here also your club, the date, the money and
+// Continue) and a sidebar with only the sections that work: Home, Squad, Tactics, Schedule,
+// Competitions, Club. Which screen is open comes from the page address (nav.tsx), so the browser's
+// back, Escape and a reload all work.
 
-import { Shield, Trophy, Users, type LucideIcon } from 'lucide-react';
+import { CalendarDays, ClipboardList, FastForward, LayoutDashboard, Shield, Trophy, Users, type LucideIcon } from 'lucide-react';
 import { useEffect } from 'react';
-import { clubById, competitionById, competitionsOf, leagueOf, moneySummary, positionIn } from '../../../game/world/query';
-import { writeWorld } from '../../../game/world/saves';
+import type { GamePlan } from '../../../engine/types';
+import { shortDate } from '../../../game/season/calendar';
+import { compName, humanGameToday, placeIn, playOf } from '../../../game/season/play';
+import { clubById, competitionById, competitionsOf, leagueOf, moneySummary } from '../../../game/world/query';
 import type { World } from '../../../game/world/types';
 import { TopBar, type Crumb } from '../../components/TopBar';
+import { NextIcon } from '../../icons';
 import { useNav, type Route } from '../../nav';
 import { Badge, moneyLine } from './parts';
 import { ClubPage, CompetitionsScreen, CompetitionTable, PlayerPage, SquadScreen, type Nav, type View } from './screens';
-import { careerStore } from './store';
+import { GameScreen, HomeScreen, ScheduleScreen, TacticsScreen } from './season';
 import './career.css';
-type Item = 'squad' | 'competitions' | 'club';
+
+type Item = 'home' | 'squad' | 'tactics' | 'schedule' | 'competitions' | 'club';
 
 /** Lucide icons (GAME_FLOW §6.1a: one SVG icon set). Only sections that work are shown (§6.1b). */
 const ITEMS: { id: Item; label: string; icon: LucideIcon }[] = [
+  { id: 'home', label: 'Home', icon: LayoutDashboard },
   { id: 'squad', label: 'Squad', icon: Users },
+  { id: 'tactics', label: 'Tactics', icon: ClipboardList },
+  { id: 'schedule', label: 'Schedule', icon: CalendarDays },
   { id: 'competitions', label: 'Competitions', icon: Trophy },
   { id: 'club', label: 'Club', icon: Shield },
 ];
 
 /** Which sidebar section a screen belongs to. */
 function itemOf(w: World, v: View): Item {
-  if (v.kind === 'squad') return 'squad';
-  if (v.kind === 'club' && v.id === w.human?.club) return 'club';
-  if (v.kind === 'player') return w.players[v.id]?.club === w.human?.club ? 'squad' : 'competitions';
-  return 'competitions';
+  switch (v.kind) {
+    case 'home':
+    case 'squad':
+    case 'tactics':
+    case 'schedule':
+      return v.kind;
+    case 'club':
+      return v.id === w.human?.club ? 'club' : 'competitions';
+    case 'player':
+      return w.players[v.id]?.club === w.human?.club ? 'squad' : 'competitions';
+    case 'game': {
+      const g = w.play?.games[Number(v.id)];
+      return g && w.human && (g.home === w.human.club || g.away === w.human.club) ? 'schedule' : 'competitions';
+    }
+    default:
+      return 'competitions';
+  }
 }
 
 /** The path to a screen, every part leading to its own screen. */
-function crumbsOf(w: World, slot: number, v: View): Crumb[] {
+export function crumbsOf(w: World, slot: number, v: View): Crumb[] {
   const at = (view: View): Route => ({ s: 'career', slot, view });
   const comps: Crumb = { label: 'Competitions', route: at({ kind: 'competitions' }) };
+  const home: Crumb = { label: 'Home', route: at({ kind: 'home' }) };
   const clubTrail = (clubId: string): Crumb[] => {
     const club = clubById(w, clubId);
     if (!club) return [comps];
@@ -43,8 +65,14 @@ function crumbsOf(w: World, slot: number, v: View): Crumb[] {
     return [comps, { label: league.name, route: at({ kind: 'competition', id: league.id }) }, { label: club.name, route: at({ kind: 'club', id: clubId }) }];
   };
   switch (v.kind) {
+    case 'home':
+      return [home];
     case 'squad':
       return [{ label: 'Squad', route: at(v) }];
+    case 'tactics':
+      return [{ label: 'Tactics', route: at(v) }];
+    case 'schedule':
+      return [{ label: 'Schedule', route: at(v) }];
     case 'competitions':
       return [comps];
     case 'competition':
@@ -55,10 +83,37 @@ function crumbsOf(w: World, slot: number, v: View): Crumb[] {
       const wp = w.players[v.id];
       return [...(wp?.club ? clubTrail(wp.club) : [comps]), { label: wp?.p.name ?? '?', route: at(v) }];
     }
+    case 'game': {
+      const g = w.play?.games[Number(v.id)];
+      const label = g ? `${clubById(w, g.home)?.abbr ?? '?'} v ${clubById(w, g.away)?.abbr ?? '?'}` : 'Game';
+      const mine = g && w.human && (g.home === w.human.club || g.away === w.human.club);
+      return [mine ? { label: 'Schedule', route: at({ kind: 'schedule' }) } : comps, ...(g && !mine ? [{ label: compName(w, g.comp), route: at({ kind: 'competitions' }) }] : []), { label, route: at(v) }];
+    }
+    case 'prep':
+      return [home, { label: 'Game day', route: at(v) }];
+    case 'match':
+      return [home, { label: 'Match', route: at(v) }];
+    case 'result':
+      return [home, { label: 'Result', route: at(v) }];
+    case 'review':
+      return [home, { label: 'Season review', route: at(v) }];
   }
 }
 
-export function CareerShell({ world, slot, view }: { world: World; slot: number; view: View }) {
+export interface ShellActions {
+  /** Continue (GAME_FLOW §3.3); on your game day it opens match preparation. */
+  onContinue: () => void;
+  /** Simulate to the end of the regular season (asks first). */
+  onSimToEnd: () => void;
+  onPlan: (p: GamePlan) => void;
+  onPrepare: () => void;
+  /** Saves and goes to the main menu. */
+  onMenu: () => void;
+  /** Days are being played (Continue is busy). */
+  busy: boolean;
+}
+
+export function CareerShell({ world, slot, view, actions }: { world: World; slot: number; view: View; actions: ShellActions }) {
   const app = useNav();
   const mine = clubById(world, world.human!.club)!;
   // A new screen starts at its top.
@@ -70,36 +125,49 @@ export function CareerShell({ world, slot, view }: { world: World; slot: number;
   const nav: Nav = {
     go: (v) => app.go({ s: 'career', slot, view: v }),
   };
-  const open = (item: Item) => app.go({ s: 'career', slot, view: item === 'squad' ? { kind: 'squad' } : item === 'competitions' ? { kind: 'competitions' } : { kind: 'club', id: mine.id } });
-  // Leaving a career saves it first, and says so (GAME_FLOW §6.1b).
-  const toMenu = async () => {
-    const ok = await writeWorld(careerStore, slot, world);
-    app.setFlash(ok ? `Your career is saved (career slot ${slot + 1}).` : `Your career could not be saved just now; it was last saved in career slot ${slot + 1}.`);
-    app.menu();
-  };
+  const open = (item: Item) => app.go({ s: 'career', slot, view: item === 'club' ? { kind: 'club', id: mine.id } : { kind: item } });
 
   const comps = competitionsOf(world, mine.id);
   const m = moneyLine(moneySummary(world, mine));
   const active = itemOf(world, view);
+  const p = playOf(world);
+  const today = humanGameToday(world);
+  // Continue only while it does something (GAME_FLOW §6.1b): hidden once the regular season is over.
+  const canContinue = p.phase !== 'review';
 
   return (
     <div className="cr">
       <TopBar
         crumbs={crumbsOf(world, slot, view)}
-        onMenu={() => void toMenu()}
+        onMenu={actions.onMenu}
         right={
           <>
             <div className="cr-top-club">
               <Badge club={mine} size={34} />
               <div>
                 <span className="cr-top-name">{mine.name}</span>
-                <span className="cr-top-comps">{comps.map((c) => `${c.name} ${positionIn(world, c, mine.id)}`).join(' · ')}</span>
+                <span className="cr-top-comps">{comps.map((c) => `${c.name} ${placeIn(world, c.id, mine.id)}`).join(' · ')}</span>
               </div>
             </div>
             <div className="cr-top-money">
               <span className="cr-label">{m.label}</span>
               <span className={`cr-big ${m.warn ? 'warn' : ''}`}>{m.value}</span>
             </div>
+            <div className="cr-top-date">
+              <span className="cr-label">{p.phase === 'before' ? 'Preseason' : 'Today'}</span>
+              <span className="cr-date">{p.phase === 'before' ? shortDate(world.season, 0).replace(/^\w+ /, 'to ') : shortDate(world.season, p.day)}</span>
+            </div>
+            {canContinue && (
+              <>
+                <button className="cr-sim-end" onClick={actions.onSimToEnd} disabled={actions.busy} title="Simulate to the end of the regular season" aria-label="Simulate to the end of the regular season">
+                  <FastForward size={18} aria-hidden="true" />
+                  <span className="cr-sim-end-label">To season end</span>
+                </button>
+                <button className="primary cr-continue-top" onClick={actions.onContinue} disabled={actions.busy}>
+                  {today ? 'Game day' : 'Continue'} <NextIcon />
+                </button>
+              </>
+            )}
           </>
         }
       />
@@ -115,11 +183,15 @@ export function CareerShell({ world, slot, view }: { world: World; slot: number;
         </nav>
 
         <main className="cr-main">
+          {view.kind === 'home' && <HomeScreen w={world} nav={nav} onPrepare={actions.onPrepare} />}
           {view.kind === 'squad' && <SquadScreen w={world} club={mine} nav={nav} />}
+          {view.kind === 'tactics' && <TacticsScreen w={world} onPlan={actions.onPlan} />}
+          {view.kind === 'schedule' && <ScheduleScreen w={world} nav={nav} />}
           {view.kind === 'player' && <PlayerPage key={view.id} w={world} id={view.id} nav={nav} />}
           {view.kind === 'competitions' && <CompetitionsScreen w={world} nav={nav} />}
           {view.kind === 'competition' && <CompetitionTable key={view.id} w={world} id={view.id} nav={nav} />}
           {view.kind === 'club' && <ClubPage key={view.id} w={world} id={view.id} nav={nav} />}
+          {view.kind === 'game' && <GameScreen key={view.id} w={world} id={view.id} nav={nav} />}
         </main>
       </div>
     </div>

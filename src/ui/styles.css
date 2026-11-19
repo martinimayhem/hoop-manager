@@ -4563,3 +4563,36 @@ body:has(.tb) .overlay {
 .overlay:has(> .clutch) {
   padding: 12px;
 }
+
+/* The plan's option cards: 44 px only on touch; compact with a mouse (GAME_FLOW §6.1a), so the game
+   plan fits 1366 x 650 even when the assistant has a lot to say. */
+@media (pointer: fine) {
+  .plan-editor .cards button.card {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+}
+
+/* The game plan's tab row: on a short screen the rotation's hint and Sort button sit on its right. */
+.prep-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.prep-tabs-row h1 {
+  margin: 0 8px 0 0;
+}
+.prep-tabs-row .brk-views-slot .rot-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.prep-tabs-row .brk-views-slot .swap-hint {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+.brk-table tr.sits-out td {
+  opacity: 0.75;
+}

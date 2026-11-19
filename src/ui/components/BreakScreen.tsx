@@ -6,7 +6,7 @@ import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { composite } from '../../engine/ratings';
 import { playerRating } from '../../engine/stats';
-import { AGGRESSIONS, DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type Player, type PlayerStats, type Side } from '../../engine/types';
+import { AGGRESSIONS, DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type MatchState, type Player, type PlayerStats, type Side } from '../../engine/types';
 import { suggestPlan } from '../../game/ai';
 import type { Controller } from '../../game/draft';
 import { TALKS } from '../../game/teamTalk';
@@ -233,7 +233,7 @@ function KeyPlayer({ m, side }: { m: LiveMatch; side: Side }) {
 }
 
 /** The two teams side by side: each row a stat, with a bar that leans to whoever is ahead on it. */
-export function TeamCompare({ m }: { m: LiveMatch }) {
+export function TeamCompare({ m }: { m: { s: MatchState } }) {
   const tot = ([0, 1] as const).map((side) => {
     const t = m.s.teams[side];
     const sum = (k: keyof PlayerStats) => Object.values(t.players).reduce((a, p) => a + p.stats[k], 0);

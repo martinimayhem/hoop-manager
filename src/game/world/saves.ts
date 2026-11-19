@@ -4,11 +4,12 @@
 // is upgraded step by step, a newer one (from a later version of the game) is not loaded, a broken one is reported and never crashes the game. The store is passed in, so the
 // tests use one in memory.
 
+import { startSeason } from '../season/play';
 import { clubById, competitionsOf } from './query';
 import { REGION_NAME, type World } from './types';
 
-/** The career save format this version of the game writes (W1 version 2 started again at 1). */
-export const WORLD_FORMAT = 1;
+/** The career save format this version of the game writes (W1 version 2 started again at 1; 2: the season, slice W2a). */
+export const WORLD_FORMAT = 2;
 export const WORLD_SLOTS = 3;
 
 /** Where the bytes go: IndexedDB in the browser, a Map in tests. */
@@ -39,8 +40,11 @@ export type WorldSlot =
   | { slot: number; status: 'ok'; savedAt: string; summary: WorldSummary; data: World }
   | { slot: number; status: 'newer' | 'broken'; message: string };
 
-/** Upgrades by the format they start from: MIGRATIONS[1] turns a format-1 save into format 2. None yet. */
-const MIGRATIONS: Record<number, (file: WorldFile) => WorldFile> = {};
+/** Upgrades by the format they start from: MIGRATIONS[1] turns a format-1 save into format 2. */
+const MIGRATIONS: Record<number, (file: WorldFile) => WorldFile> = {
+  // W1 careers get their season: the schedule, the day before the first.
+  1: (f) => ({ ...f, format: 2, data: startSeason(f.data) }),
+};
 
 export function summariseWorld(w: World): WorldSummary {
   const club = w.human ? clubById(w, w.human.club) : undefined;

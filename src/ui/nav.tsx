@@ -8,7 +8,24 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { LeagueId, Region } from '../game/league/leagues';
 
 /** A career screen (the sidebar sections and what opens from them). */
-export type CareerView = { kind: 'squad' } | { kind: 'player'; id: string } | { kind: 'competitions' } | { kind: 'competition'; id: string } | { kind: 'club'; id: string };
+export type CareerView =
+  | { kind: 'home' }
+  | { kind: 'squad' }
+  | { kind: 'tactics' }
+  | { kind: 'schedule' }
+  | { kind: 'player'; id: string }
+  | { kind: 'competitions' }
+  | { kind: 'competition'; id: string }
+  | { kind: 'club'; id: string }
+  /** A game's box score. */
+  | { kind: 'game'; id: string }
+  /** Full-screen moments of your game day, and the season review (slice W2a). */
+  | { kind: 'prep' }
+  | { kind: 'match' }
+  | { kind: 'result' }
+  | { kind: 'review' };
+
+const CAREER_KINDS = ['home', 'squad', 'tactics', 'schedule', 'competitions', 'prep', 'match', 'result', 'review'] as const;
 
 export type Route =
   | { s: 'menu' }
@@ -37,7 +54,7 @@ export function toPath(r: Route): string {
       return '/career/new';
     case 'career': {
       const v = r.view;
-      const tail = v.kind === 'player' || v.kind === 'competition' || v.kind === 'club' ? `${v.kind}/${encodeURIComponent(v.id)}` : v.kind;
+      const tail = v.kind === 'player' || v.kind === 'competition' || v.kind === 'club' || v.kind === 'game' ? `${v.kind}/${encodeURIComponent(v.id)}` : v.kind;
       return `/career/${r.slot}/${tail}`;
     }
   }
@@ -57,8 +74,9 @@ export function fromPath(path: string): Route {
   if (p[0] === 'career' && slot(p[1]) !== null) {
     const kind = p[2];
     const id = p[3];
+    const simple = CAREER_KINDS.find((k) => k === kind);
     const view: CareerView =
-      kind === 'player' && id ? { kind, id } : kind === 'competition' && id ? { kind, id } : kind === 'club' && id ? { kind, id } : kind === 'competitions' ? { kind } : { kind: 'squad' };
+      (kind === 'player' || kind === 'competition' || kind === 'club' || kind === 'game') && id ? { kind, id } : simple ? { kind: simple } : { kind: 'home' };
     return { s: 'career', slot: slot(p[1])!, view };
   }
   return { s: 'menu' };

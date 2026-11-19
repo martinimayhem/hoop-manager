@@ -6,7 +6,7 @@ import { describe as commentate, namesFor, type Names } from '../../engine/comme
 import { callTimeout, canCallTimeout, createMatch, setGamePlan, stepPossession } from '../../engine/match';
 import { composite } from '../../engine/ratings';
 import { emit, other } from '../../engine/state';
-import type { DefenceCall, DefenceScheme, GamePlan, MatchState, OffenceCall, PlayerGameState, PlayerStats, PossessionCalls, Side, Team, TeamExtras, TimedEvent, Transition } from '../../engine/types';
+import type { DefenceCall, DefenceScheme, GamePlan, MatchRules, MatchState, OffenceCall, PlayerGameState, PlayerStats, PossessionCalls, Side, Team, TeamExtras, TimedEvent, Transition } from '../../engine/types';
 import { playerRating } from '../../engine/stats';
 import { aiCall, asksForCall, isClutch } from '../../game/clutch';
 import { aiTalk, giveTalk, type Talk } from '../../game/teamTalk';
@@ -352,8 +352,9 @@ export class LiveMatch {
   /** Engine events up to this index have been (or will be, via the animation) published. */
   private publishedThrough = 0;
 
-  constructor(home: Team, away: Team, plans: [GamePlan, GamePlan], seed: number, controllers: [Controller, Controller], speed: Speed) {
-    this.s = createMatch(home, away, plans[0], plans[1], seed);
+  /** `rules`: the competition's (a career game; absent: the NBA's). */
+  constructor(home: Team, away: Team, plans: [GamePlan, GamePlan], seed: number, controllers: [Controller, Controller], speed: Speed, rules?: MatchRules) {
+    this.s = createMatch(home, away, plans[0], plans[1], seed, rules);
     this.s.humanCoach = [controllers[0] === 'human', controllers[1] === 'human'];
     this.starters = [[...plans[0].starters], [...plans[1].starters]];
     this.names = namesFor(this.s);

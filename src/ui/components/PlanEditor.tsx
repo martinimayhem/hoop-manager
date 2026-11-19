@@ -2,6 +2,7 @@
 // Used before the match (starting five) and during timeouts/breaks (the five on court now).
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { composite } from '../../engine/ratings';
 import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, AGGRESSIONS, type GamePlan, type KeyMatchup, type Side, type Team } from '../../engine/types';
 import { suggestPlan } from '../../game/ai';
@@ -21,6 +22,10 @@ interface Props {
   side?: Side;
   /** Live numbers during a match. */
   live?: TeamView;
+  /** How many dress for a game (a career's 13-man squad: 12); the last of the sub order sit out. */
+  dressed?: number;
+  /** On a short screen: where the rotation's hint and Sort button go (beside the tabs). */
+  slot?: HTMLElement | null;
 }
 
 const COLUMNS = [
@@ -33,7 +38,7 @@ const COLUMNS = [
   { key: 'rebounding', label: 'Boards', tip: 'Rebounding' },
 ] as const;
 
-export function PlanEditor({ team, opponent, plan, onChange, live, side, section = 'all' }: Props & { /** Which part to show: the tactics, the rotation (starting five, bench, key matchup), or both. */ section?: 'tactics' | 'rotation' | 'matchup' | 'all' }) {
+export function PlanEditor({ team, opponent, plan, onChange, live, side, dressed, slot, section = 'all' }: Props & { /** Which part to show: the tactics, the rotation (starting five, bench, key matchup), or both. */ section?: 'tactics' | 'rotation' | 'matchup' | 'all' }) {
   // Which choice the explanation box describes: the one picked last.
   const [focus, setFocus] = useState<Focus>('offence');
   const byId = new Map(team.players.map((p) => [p.id, p]));
@@ -89,7 +94,7 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side, section
   const pickedName = picked ? byId.get(picked)?.name : null;
   const pickedOnCourt = picked ? plan.starters.includes(picked) : false;
 
-  const row = (id: string, onCourt: boolean, benchIndex = 0) => {
+  const row = (id: string, onCourt: boolean, benchIndex = 0, sitsOut = false) => {
     const p = byId.get(id)!;
     const c = composite(p);
     const lv = live?.players[id];
@@ -97,7 +102,7 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side, section
     return (
       <tr
         key={id}
-        className={`clickable ${out ? 'taken' : ''} ${onCourt ? 'starter' : ''} ${picked === id ? 'selected picked-row' : ''}`}
+        className={`clickable ${sitsOut ? 'sits-out' : ''} ${out ? 'taken' : ''} ${onCourt ? 'starter' : ''} ${picked === id ? 'selected picked-row' : ''}`}
         onClick={() => pickPlayer(id)}
         title={out ? 'Fouled out' : 'Click to swap'}
       >
@@ -108,6 +113,11 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side, section
             <span className="brk-name" title={p.archetype}>
               {p.name}
             </span>
+            {sitsOut && (
+              <span className="tag" title={`Last in the sub order: not in the ${dressed} who dress`}>
+                Sits out
+              </span>
+            )}
           </span>
         </td>
         <td className="left">{p.position}</td>
@@ -199,14 +209,19 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side, section
       {rotation && (<>
       <div>
         <h3 className="rot-title">{live ? 'Players on court' : 'Starting five'} &amp; bench</h3>
+        {(() => {
+          const head = (
         <div className="rot-head">
-        <div className={`swap-hint ${picked ? 'active' : ''}`}>
+        {(!slot || picked) && <div className={`swap-hint ${picked ? 'active' : ''}`}>
           {picked
             ? `${pickedName} selected: now click a ${pickedOnCourt ? 'bench player to bring in' : 'player on court to take off'}.`
             : 'To swap: pick a player on court, then a bench player. Tired players and players in foul trouble are swapped automatically, in sub order.'}
-        </div>
+        </div>}
         {sorter.sortButton}
         </div>
+          );
+          return slot ? createPortal(head, slot) : head;
+        })()}
         <div>
           <table className="brk-table eq">
             <thead>
@@ -223,14 +238,17 @@ export function PlanEditor({ team, opponent, plan, onChange, live, side, section
               </tr>
             </thead>
             <tbody>
-              <tr className="group-row">
-                <td colSpan={COLUMNS.length + (live ? 8 : 4)}>{live ? 'ON COURT' : 'STARTERS'}</td>
-              </tr>
+              {!dressed && (
+                <tr className="group-row">
+                  <td colSpan={COLUMNS.length + (live ? 8 : 4)}>{live ? 'ON COURT' : 'STARTERS'}</td>
+                </tr>
+              )}
               {sorter.sorted(plan.starters).map((id) => row(id, true))}
               <tr className="group-row">
                 <td colSpan={COLUMNS.length + (live ? 8 : 4)}>BENCH</td>
               </tr>
-              {sorter.sorted(bench).map((id) => row(id, false, bench.indexOf(id)))}
+              {sorter.sorted(dressed ? bench.slice(0, dressed - 5) : bench).map((id) => row(id, false, bench.indexOf(id)))}
+              {dressed && bench.slice(dressed - 5).map((id) => row(id, false, bench.indexOf(id), true))}
             </tbody>
           </table>
         </div>

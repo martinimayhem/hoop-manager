@@ -47,7 +47,7 @@ function scrollers() {
   // and caption classes below (section kickers, tile labels, legends, hints). A button's own text is
   // content (14 px); only a caption inside it (its <small>) may be smaller.
   const LABEL = [
-    'th, thead, caption, figcaption, legend, label, small, dt, .small, .lbl, .tag, .count, .group-row, .form-dot',
+    'th, thead, caption, figcaption, legend, label, small, dt, .small, .lbl, .tag, .count, .group-row, .form-dot, .cr-form-dot',
     // Kickers, field labels and tile labels.
     '.mm-kicker, .mm-label, .mm-level, .cr-label, .cr-key, .cr-chip, .cr-tag, .cr-count, .cr-ab, .cr-po, .cr-face-legend, .cr-legend',
     '.cr-bar-labels, .cr-top-comps, .cr-sub, .cr-note, .cr-attr-what, .cr-saved, .tile-l, .gc-tile-l, .brk-cmp-label, .brk-why-label',
@@ -268,6 +268,80 @@ const journeys = {
       }
     }
   },
+  // The season (slice W2a): Home, Continue, match preparation, the result, Tactics, Schedule, a box score,
+  // tables with results, Season stats, simulate to the end (the question and the progress), the review.
+  async season(page, check) {
+    const idle = async () => {
+      await page.waitForTimeout(200);
+      await page.locator('.cr-busy').waitFor({ state: 'detached', timeout: 600000 });
+    };
+    await page.goto(base);
+    await button(page, /New career/).click();
+    await page.locator('.cr-new-side .cr-start').waitFor({ timeout: 20000 });
+    await button(page, /^Europe$/).click();
+    await button(page, /^Lithuania$/).click();
+    await page.locator('.cr-club').first().click();
+    await page.locator('.cr-new-side .cr-start').click();
+    await page.locator('.cr-side').waitFor();
+    await check('season: home (before the season)');
+    await page.locator('.cr-continue-top').click();
+    await idle();
+    await check('season: after the first Continue');
+    for (let i = 0; i < 20 && !(await page.locator('.prep-screen').count()); i++) {
+      await page.locator('.cr-continue-top').click();
+      await idle();
+    }
+    await check('season: match preparation');
+    for (const tab of ['Starting five', 'Key matchup', 'Scouting:', 'Their likely plan']) {
+      const t = page.getByRole('tab', { name: new RegExp(tab) });
+      if (await t.count()) {
+        await t.first().click();
+        await check(`season: match preparation · ${tab.replace(':', '')}`);
+      }
+    }
+    await button(page, /^Simulate$/).click();
+    await page.locator('.res').waitFor({ timeout: 60000 });
+    await idle();
+    await check('season: result');
+    await page.locator('.tb-back').click();
+    await page.locator('.cr-side').waitFor();
+    await check('season: home (after a game)');
+    await page.locator('.cr-nav', { hasText: 'Tactics' }).click();
+    for (const tab of ['Tactics', 'Starting five', 'Key matchup']) {
+      await page.getByRole('tab', { name: new RegExp(tab) }).first().click();
+      await check(`season: tactics · ${tab}`);
+    }
+    await page.locator('.cr-nav', { hasText: 'Schedule' }).click();
+    await check('season: schedule');
+    await page.locator('.cr-table .cr-name').filter({ hasText: /\d+–\d+/ }).first().click();
+    await check('season: box score');
+    await page.locator('.cr-nav', { hasText: 'Squad' }).click();
+    await page.getByRole('radio', { name: 'Season stats' }).click();
+    await check('season: squad · season stats');
+    await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+    await check('season: competitions');
+    for (const comp of ['Big League · America', 'Big League · Europe']) {
+      await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+      await page.locator('.cr-comp', { hasText: comp }).click();
+      await check(`season: table · ${comp}`);
+      await page.getByRole('tab', { name: 'Results' }).click();
+      await check(`season: results · ${comp}`);
+    }
+    await page.locator('.cr-nav', { hasText: 'Home' }).click();
+    await page.locator('.cr-sim-end').click();
+    await check('pop-up: simulate to the end of the regular season?');
+    await page.getByRole('alertdialog').getByRole('button', { name: /Simulate to the end/ }).click();
+    await page.waitForTimeout(1200);
+    await check('pop-up: simulating (progress)');
+    await page.locator('.cr-review').waitFor({ timeout: 900000 });
+    await check('season: season review');
+    await page.locator('.tb-back').click();
+    await page.locator('.cr-side').waitFor();
+    await check('season: home (season over)');
+    await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+    await page.locator('.cr-comp', { hasText: 'Big League · America' }).click();
+    await check('season: table at the end (18 clubs)');
+  },
   async career(page, check) {
     await page.goto(base);
     await button(page, /New career/).click();
@@ -280,9 +354,10 @@ const journeys = {
     await page.locator('.cr-club').first().click();
     await page.locator('.cr-new-side .cr-start').click();
     await page.locator('.cr-side').waitFor();
+    await page.locator('.cr-nav', { hasText: 'Squad' }).click();
     for (const tab of [/First team/, /Dev squad/, /Academy/]) {
       await page.getByRole('tab', { name: tab }).click();
-      for (const v of ['Overview', 'Attributes', 'Profile']) {
+      for (const v of ['Overview', 'Attributes', 'Profile', 'Season stats']) {
         await page.getByRole('radio', { name: v }).click();
         await check(`career: squad ${tab.source.replace(/\\/g, '')} · ${v}`);
       }

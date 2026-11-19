@@ -22,7 +22,7 @@ import type { QuickLeague } from '../game/league/quickLeague';
 import { listSlots } from '../game/league/saves';
 import { abbrOf } from './labels';
 import { CareerNew } from './screens/career/CareerNew';
-import { CareerShell } from './screens/career/CareerShell';
+import { CareerApp } from './screens/career/CareerApp';
 import { careerStore } from './screens/career/store';
 import { readWorld } from '../game/world/saves';
 import type { World } from '../game/world/types';
@@ -107,7 +107,7 @@ function Screens() {
   };
   const openCareer = (world: World, slot: number, replace = false) => {
     worlds.current.set(slot, world);
-    nav.go({ s: 'career', slot, view: { kind: 'squad' } }, { replace });
+    nav.go({ s: 'career', slot, view: { kind: 'home' } }, { replace });
   };
   // Leaving a full-screen moment: to the screen before it, or (opened by its address) its start.
   const leaveTo = (home: Route) => () => (nav.canBack ? nav.back() : nav.go(home, { replace: true }));
@@ -221,7 +221,7 @@ function Screens() {
         );
       return (
         <div className="app">
-          <CareerShell key={r.slot} world={world} slot={r.slot} view={r.view} />
+          <CareerApp key={r.slot} initial={world} slot={r.slot} view={r.view} onWorld={(w) => worlds.current.set(r.slot, w)} />
         </div>
       );
     }

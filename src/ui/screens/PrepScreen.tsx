@@ -9,6 +9,7 @@ import { PlanEditor } from '../components/PlanEditor';
 import { ScoutingReport, type ScoutView } from '../components/ScoutingReport';
 import { NextIcon } from '../icons';
 import { TopBar, type Crumb } from '../components/TopBar';
+import { useMedia } from '../components/useMedia';
 
 export function PrepScreen({
   teams,
@@ -16,6 +17,10 @@ export function PrepScreen({
   onLeave,
   crumbs,
   scout,
+  initial: given,
+  onPlans,
+  actions,
+  dressed,
 }: {
   teams: [Team, Team];
   onReady: (plans: [GamePlan, GamePlan]) => void;
@@ -25,16 +30,33 @@ export function PrepScreen({
   crumbs: Crumb[];
   /** In a league: how well each side knows the other (by side). */
   scout?: [ScoutView, ScoutView];
+  /** A career game: the plans to start from (yours carried over, theirs the AI coach's). */
+  initial?: [GamePlan, GamePlan];
+  /** Every change to your plan (a career saves it). */
+  onPlans?: (plans: [GamePlan, GamePlan]) => void;
+  /** In place of Tip-off: a career's Watch and Simulate. */
+  actions?: (plans: [GamePlan, GamePlan]) => React.ReactNode;
+  /** How many of your squad dress (a career: 12 of 13). */
+  dressed?: number;
 }) {
   const humans: Side[] = [0];
   const initial = useMemo<[GamePlan, GamePlan]>(() => {
+    if (given) return given;
     const rng = createRng(Date.now() >>> 0);
     return [
       makePlan(teams[0]),
       aiGamePlan(teams[1], teams[0], rng),
     ];
+    // The plans are made once for these teams.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teams]);
-  const [plans, setPlans] = useState<[GamePlan, GamePlan]>(initial);
+  const [plans, setPlansState] = useState<[GamePlan, GamePlan]>(initial);
+  const setPlans = (f: (prev: [GamePlan, GamePlan]) => [GamePlan, GamePlan]) =>
+    setPlansState((prev) => {
+      const next = f(prev);
+      onPlans?.(next);
+      return next;
+    });
   const [step, setStep] = useState(0);
   const [handover, setHandover] = useState(false);
   const [left, setLeft] = useState<PrepTab>('tactics');
@@ -68,8 +90,11 @@ export function PrepScreen({
     }
   };
 
+  // A short screen: the rotation's hint and Sort button go beside the tabs.
+  const short = useMedia('(max-height: 800px)');
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   const editor = (section: 'tactics' | 'rotation' | 'matchup') => (
-    <PlanEditor team={team} opponent={opponent} plan={plans[side]} side={side} section={section} onChange={(p) => setPlans((prev) => (side === 0 ? [p, prev[1]] : [prev[0], p]))} />
+    <PlanEditor team={team} opponent={opponent} plan={plans[side]} side={side} section={section} dressed={dressed} slot={short && section === 'rotation' ? slot : null} onChange={(p) => setPlans((prev) => (side === 0 ? [p, prev[1]] : [prev[0], p]))} />
   );
   const report = (section: 'players' | 'tendencies') => <ScoutingReport opponent={opponent} us={team} side={side === 0 ? 1 : 0} scout={scout?.[side]} section={section} />;
   const content: Record<PrepTab, React.ReactNode> = {
@@ -92,19 +117,23 @@ export function PrepScreen({
             <span className="muted">
               <b className={side === 0 ? 'home' : 'away'}>{team.name}</b> v {opponent.name}
             </span>
-            <button className="primary" disabled={plans[side].starters.length !== 5} onClick={confirm}>
-              {step + 1 < humans.length ? `Lock in & pass to ${teams[humans[step + 1]].name}` : 'Tip-off!'} <NextIcon />
-            </button>
+            {actions ? (
+              actions(plans)
+            ) : (
+              <button className="primary" disabled={plans[side].starters.length !== 5} onClick={confirm}>
+                {step + 1 < humans.length ? `Lock in & pass to ${teams[humans[step + 1]].name}` : 'Tip-off!'} <NextIcon />
+              </button>
+            )}
           </>
         }
       />
       {narrow ? (
         <div className="prep">
-          <TabPanel tabs={['tactics', 'rotation', 'matchup', 'players', 'tendencies']} tab={left} onTab={setLeft} content={content} opponent={opponent.name} />
+          <TabPanel tabs={['tactics', 'rotation', 'matchup', 'players', 'tendencies']} tab={left} onTab={setLeft} content={content} opponent={opponent.name} slotRef={setSlot} />
         </div>
       ) : (
         <div className="prep">
-          <TabPanel tabs={['tactics', 'rotation', 'matchup']} tab={left === 'players' || left === 'tendencies' ? 'tactics' : left} onTab={setLeft} content={content} opponent={opponent.name} />
+          <TabPanel tabs={['tactics', 'rotation', 'matchup']} tab={left === 'players' || left === 'tendencies' ? 'tactics' : left} onTab={setLeft} content={content} opponent={opponent.name} slotRef={setSlot} />
           <TabPanel tabs={['players', 'tendencies']} tab={right} onTab={setRight} content={content} opponent={opponent.name} />
         </div>
       )}
@@ -121,15 +150,18 @@ const TAB_LABEL: Record<PrepTab, (opponent: string) => string> = {
   tendencies: () => 'Their likely plan',
 };
 
-function TabPanel({ tabs, tab, onTab, content, opponent }: { tabs: PrepTab[]; tab: PrepTab; onTab: (t: PrepTab) => void; content: Record<PrepTab, React.ReactNode>; opponent: string }) {
+function TabPanel({ tabs, tab, onTab, content, opponent, slotRef }: { tabs: PrepTab[]; tab: PrepTab; onTab: (t: PrepTab) => void; content: Record<PrepTab, React.ReactNode>; opponent: string; slotRef?: (el: HTMLElement | null) => void }) {
   return (
     <div className="panel prep-panel">
+      <div className="prep-tabs-row">
       <div className="prep-tabs" role="tablist">
         {tabs.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => onTab(t)}>
             {TAB_LABEL[t](opponent)}
           </button>
         ))}
+      </div>
+      {slotRef && <div className="brk-views-slot" ref={slotRef} />}
       </div>
       {content[tab]}
     </div>

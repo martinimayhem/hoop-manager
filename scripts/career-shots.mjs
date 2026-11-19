@@ -61,8 +61,10 @@ async function run(width) {
   await page.locator('.cr-field input').fill('Sam');
   await page.locator('.cr-new-side .cr-start').click();
   await page.locator('.cr-side').waitFor();
+  // A career opens on Home (slice W2a); the squad is a sidebar section.
+  await page.locator('.cr-nav', { hasText: 'Squad' }).click();
   await shot('3-squad');
-  for (const v of ['Attributes', 'Profile']) {
+  for (const v of ['Attributes', 'Profile', 'Season stats']) {
     await page.getByRole('radio', { name: v }).click();
     await overflow(`Kaunas · ${v}`);
     await shot(`3-squad-${v.toLowerCase()}`);

@@ -11,6 +11,7 @@ import { REGION_NAME, type Competition, type World, type WorldClub } from '../..
 import { Badge, cameThrough, contractEnd, country, isMine, MoraleFace, CareerPortrait, Stars, playerStars, mid, overallRange, PayrollBar, potentialRange, ratingTone, showRange, useFitRows, Pager } from './parts';
 import { SquadControls, SquadTable, TAB_NOTE, useSquadView, type SquadTab } from './SquadView';
 import type { CareerView as View } from '../../nav';
+import { SeasonTable } from './season';
 
 export type { View };
 
@@ -231,7 +232,7 @@ export function CompetitionsScreen({ w, nav }: { w: World; nav: Nav }) {
     <div className="cr-page">
       <div className="cr-row-head">
         <h1>Competitions</h1>
-        <span className="cr-sub">Before the season: every club 0–0. Your competitions are marked.</span>
+        <span className="cr-sub">Your competitions are marked. Open one for its table and results.</span>
       </div>
       <section className="cr-card cr-comp-region">
         <h2>{REGION_NAME.america}</h2>
@@ -261,7 +262,8 @@ export function CompetitionsScreen({ w, nav }: { w: World; nav: Nav }) {
 export function CompetitionTable({ w, id, nav }: { w: World; id: string; nav: Nav }) {
   const comp = competitionById(w, id);
   if (!comp) return <div className="cr-page">Not found.</div>;
-  return <CompetitionRows w={w} comp={comp} all={standings(w, comp)} nav={nav} />;
+  // From the season's first day the table counts (slice W2a); a W1 world without a season is in name order.
+  return w.play ? <SeasonTable w={w} comp={comp} nav={nav} /> : <CompetitionRows w={w} comp={comp} all={standings(w, comp)} nav={nav} />;
 }
 
 function CompetitionRows({ w, comp, all, nav }: { w: World; comp: Competition; all: ReturnType<typeof standings>; nav: Nav }) {

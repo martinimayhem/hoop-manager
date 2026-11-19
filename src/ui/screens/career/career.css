@@ -24,7 +24,8 @@
 }
 
 /* Resets of the game-wide styles. */
-.cr button {
+/* (Not inside the plan editor, which keeps the game's own buttons.) */
+.cr button:where(:not(.cr-tactics *)) {
   font: inherit;
   color: inherit;
   background: none;
@@ -35,7 +36,7 @@
   text-transform: none;
   cursor: pointer;
 }
-.cr button:hover:not(:disabled) {
+.cr button:where(:not(.cr-tactics *)):hover:not(:disabled) {
   box-shadow: none;
   border-color: inherit;
 }
@@ -1636,4 +1637,382 @@
   border-radius: 8px;
   padding: 0 14px;
   background: var(--panel-2);
+}
+
+/* =====================================================================================
+   Slice W2a: the season. Home, Schedule, results, box scores, the review, Continue.
+   ===================================================================================== */
+.cr-top-date {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  white-space: nowrap;
+}
+.cr-date {
+  font-family: var(--cr-head);
+  font-stretch: condensed;
+  font-weight: 700;
+  font-size: 18px;
+  color: #fff;
+}
+.cr .cr-continue-top,
+.cr .cr-sim-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  white-space: nowrap;
+}
+.cr .cr-sim-end {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--panel-2);
+}
+@media (max-width: 1200px) {
+  .cr-sim-end-label {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .cr-top-money {
+    display: none;
+  }
+}
+
+/* Home: next game and last results | your tables | the inbox. */
+.cr-home {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.cr-home-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .cr-home {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .cr-home-inbox {
+    grid-column: 1 / -1;
+  }
+}
+.cr-next-teams {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.cr-next-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.cr-next-team b {
+  font-family: var(--cr-head);
+  font-stretch: condensed;
+  font-size: 18px;
+  line-height: 1.1;
+}
+.cr .cr-next-team.link {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.cr-next-vs {
+  font-family: var(--cr-head);
+  color: var(--cr-dim);
+  font-size: 18px;
+}
+.cr-next-when {
+  text-align: center;
+  color: var(--cr-soft);
+}
+.cr .cr-table.cr-mini td {
+  height: var(--row);
+}
+.cr-result b {
+  display: inline-block;
+  min-width: 18px;
+}
+.cr-result.won b {
+  color: var(--good);
+}
+.cr-result.lost b {
+  color: var(--cr-red);
+}
+.cr-inbox {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cr-inbox li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid #ffffff0d;
+}
+.cr-inbox li .cr-name {
+  text-align: left;
+  white-space: normal;
+}
+
+/* Schedule and results: month / matchday pager. */
+.cr-month {
+  font-family: var(--cr-head);
+  font-stretch: condensed;
+  font-weight: 700;
+  font-size: 18px;
+  color: #fff;
+  min-width: 150px;
+  text-align: center;
+}
+.cr-form {
+  display: inline-flex;
+  gap: 3px;
+}
+.cr-form-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0b111b;
+}
+.cr-form-dot.w {
+  background: var(--good);
+}
+.cr-form-dot.l {
+  background: var(--cr-red);
+}
+
+/* A game's box score. */
+.cr-game-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.cr-game-score {
+  font-family: var(--cr-head);
+  font-size: 30px;
+}
+.cr .cr-table.cr-quarters {
+  width: auto;
+}
+.cr .cr-box {
+  padding: 0;
+}
+
+/* Tactics: the plan editor in a card. */
+.cr .cr-tactics {
+  padding: 10px 14px;
+}
+
+/* Match preparation: Watch or Simulate. */
+.cr-prep-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 900px) {
+  .cr-prep-actions > .muted {
+    display: none;
+  }
+}
+
+/* The season review: a full-screen moment. */
+.cr-review-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 24px;
+  max-width: 1240px;
+}
+.cr-review-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .cr-review-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.cr-review-pos {
+  display: contents;
+}
+.cr-review-body > .cr-start {
+  align-self: flex-start;
+}
+
+/* Days being played: a pop-up with progress (no decision to make, so no way to close it). */
+.cr-busy-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(420px, 90vw);
+  padding: 18px 20px;
+}
+.overlay.cr-busy {
+  align-items: center;
+}
+.cr-progress {
+  height: 10px;
+  border-radius: 5px;
+  background: #ffffff14;
+  overflow: hidden;
+}
+.cr-progress > i {
+  display: block;
+  height: 100%;
+  background: var(--banner);
+  transition: width 0.2s;
+}
+
+/* Small tables in cards: fixed columns, long names cut short with "…". */
+.cr .cr-table.cr-mini {
+  table-layout: fixed;
+}
+.cr .cr-table.cr-mini th,
+.cr .cr-table.cr-mini td {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.cr .cr-table.cr-mini td.left {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr .cr-table.cr-mini .cr-name {
+  max-width: 100%;
+  overflow: hidden;
+}
+.cr-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* The top bar's club line gives way first. */
+.cr-top-club > div {
+  overflow: hidden;
+}
+.cr .cr-top-name,
+.cr .cr-top-comps {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr .cr-top-club {
+  flex: 0 1 auto;
+}
+/* A box score inside the career: the name column narrower, so shooting fits whole. */
+.cr .cr-box table.eq .wide {
+  width: 20%;
+}
+
+/* Home and the review: three columns down to 1000 px; on a portrait tablet the inbox goes under the
+   next game, beside your tables. */
+@media (max-width: 1100px) {
+  .cr-home {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  .cr-home-inbox {
+    grid-column: auto;
+  }
+  .cr-review-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1000px) {
+  .cr-home {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .cr-home > .cr-home-col:nth-child(2) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .cr-home-inbox {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .cr-review-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.cr .cr-tactics {
+  padding: 8px 12px;
+}
+.cr .cr-tactics .prep-tabs-row h1 {
+  font-size: 26px;
+}
+
+
+/* A box score in the career on a narrow screen: steals, blocks and technicals are left out (the
+   rest is shown whole: nothing cut short). */
+@media (max-width: 900px) {
+  .cr .cr-box .brk-table th:nth-child(10),
+  .cr .cr-box .brk-table td:nth-child(10),
+  .cr .cr-box .brk-table th:nth-child(11),
+  .cr .cr-box .brk-table td:nth-child(11),
+  .cr .cr-box .brk-table th:nth-child(14),
+  .cr .cr-box .brk-table td:nth-child(14) {
+    display: none;
+  }
+  .cr .cr-box table.eq .wide {
+    width: 28%;
+  }
+}
+@media (max-width: 900px) {
+  .cr .cr-box .brk-table th:nth-child(15),
+  .cr .cr-box .brk-table td:nth-child(15) {
+    display: none;
+  }
+  .cr .cr-box table.eq .wide {
+    width: 26%;
+  }
+  .cr .cr-box .brk-table th,
+  .cr .cr-box .brk-table td {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+}
+@media (max-width: 900px) {
+  .cr .cr-box table.eq {
+    table-layout: auto;
+  }
+  .cr .cr-box table.eq .wide {
+    width: auto;
+  }
+  .cr .cr-box .brk-table th:nth-child(15),
+  .cr .cr-box .brk-table td:nth-child(15) {
+    display: table-cell;
+  }
+  .cr .cr-box .brk-table td:first-child .player-cell {
+    display: flex;
+    max-width: 210px;
+    overflow: hidden;
+  }
+  .cr .cr-box .brk-table td:first-child .brk-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }

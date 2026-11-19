@@ -32,7 +32,7 @@ export function buildWorld(seed: number): Promise<World> {
         log(e.data.ms, 'worker');
         log(performance.now() - started, 'worker, including start-up and hand-over');
         resolve(e.data.world);
-      } else reject(new Error(e.data.message));
+      } else reject(new Error(e.data.type === 'error' ? e.data.message : 'Unexpected reply'));
     };
     worker.onerror = () => {
       worker.terminate();

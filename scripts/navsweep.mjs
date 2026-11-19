@@ -86,21 +86,27 @@ async function run(w, h) {
   await page.getByRole('button', { name: /New career/ }).click();
   await page.locator('.cr-new-side .cr-start').waitFor({ timeout: 20000 });
   await screen('new career');
+  await page.getByRole('button', { name: /^Europe$/ }).click();
+  await page.getByRole('button', { name: /^Lithuania$/ }).click();
+  await page.locator('.cr-club').first().click();
   await page.locator('.cr-new-side .cr-start').click();
-  await page.locator('.cr-table').first().waitFor();
-  await screen('career: squad');
+  await page.locator('.cr-side').waitFor();
+  await screen('career: home');
   const trail = [await hash(page)];
   const step = async (name, f) => {
     await f();
     await screen(name);
     trail.push(await hash(page));
   };
+  await step('career: squad', () => page.locator('.cr-nav', { hasText: 'Squad' }).click());
   await step('career: player (yours)', () => page.locator('.cr-table .cr-name').first().click());
   await step('career: competitions', () => page.locator('.cr-nav', { hasText: 'Competitions' }).click());
   await step('career: league table', () => page.locator('.cr-comp').first().click());
   await step('career: another club', () => page.locator('.cr-table tr:not(.me) .cr-name').first().click());
   await step('career: another club\'s player', () => page.locator('.cr-table .cr-name').first().click());
   await step('career: club (yours)', () => page.locator('.cr-nav', { hasText: 'Club' }).click());
+  await step('career: tactics', () => page.locator('.cr-nav', { hasText: 'Tactics' }).click());
+  await step('career: schedule', () => page.locator('.cr-nav', { hasText: 'Schedule' }).click());
   // A reload comes back to the same screen.
   const here = await hash(page);
   await page.reload();
@@ -131,6 +137,71 @@ async function run(w, h) {
   await wait(page);
   checks++;
   if (!(await hash(page)).includes('/competitions')) fail(size, `the path's first part led to ${await hash(page)}`);
+  // ---- The season: your game day, Leave from a match, the result, a box score, the review ----
+  const idle = async () => {
+    await wait(page, 200);
+    await page.locator('.cr-busy').waitFor({ state: 'detached', timeout: 600000 });
+  };
+  const toGameDay = async () => {
+    for (let i = 0; i < 20 && !(await page.locator('.prep-screen').count()); i++) {
+      await page.locator('.cr-continue-top').click();
+      await idle();
+    }
+  };
+  await page.locator('.cr-nav', { hasText: 'Home' }).click();
+  await toGameDay();
+  await screen('career: match preparation');
+  checks++;
+  if ((await backBox(page))?.label !== 'Leave') fail(size, 'match preparation has no Leave in the Back position');
+  // Leave from preparation: back to the career, the game still to play.
+  await page.locator('.tb-back').click();
+  await wait(page, 400);
+  checks++;
+  if (!(await page.locator('.cr-side').count())) fail(size, `Leave from match preparation went to ${await hash(page)}`);
+  // Watch, then leave the match: it asks, and the rest is simulated (the result counts).
+  await page.locator('.cr-continue-top').click();
+  await page.locator('.prep-screen').waitFor();
+  await page.getByRole('button', { name: /^Watch/ }).click();
+  await page.locator('.match').waitFor();
+  await screen('career: match');
+  await page.locator('.tb-back').click();
+  await wait(page, 300);
+  checks++;
+  if (!(await page.locator('[role="alertdialog"]').count())) fail(size, 'Leave during a career match did not ask first');
+  else {
+    await page.getByRole('button', { name: /Leave the match/ }).click();
+    await idle();
+    checks++;
+    const counted = await page.evaluate(() => /(Won|Lost) \d+–\d+/.test(document.body.innerText));
+    if (!(await page.locator('.cr-side').count()) || !counted) fail(size, 'leaving a career match did not go back with the game simulated and counted');
+  }
+  // Simulate: the result screen, then Leave goes back to the career.
+  await toGameDay();
+  await page.getByRole('button', { name: /^Simulate$/ }).click();
+  await page.locator('.res').waitFor({ timeout: 60000 });
+  await idle();
+  await screen('career: result');
+  await page.locator('.tb-back').click();
+  await wait(page, 400);
+  checks++;
+  if (!(await page.locator('.cr-side').count())) fail(size, `Leave from the result went to ${await hash(page)}`);
+  await page.locator('.cr-nav', { hasText: 'Schedule' }).click();
+  await page.locator('.cr-table .cr-name').filter({ hasText: /\d+–\d+/ }).first().click();
+  await screen('career: box score');
+  // Simulate to the end of the regular season: the question, then the review; Continue is then gone.
+  await page.locator('.cr-sim-end').click();
+  await wait(page, 300);
+  checks++;
+  if (!(await page.locator('[role="alertdialog"]').count())) fail(size, 'Simulate to the end did not ask first');
+  await page.getByRole('alertdialog').getByRole('button', { name: /Simulate to the end/ }).click();
+  await page.locator('.cr-review').waitFor({ timeout: 900000 });
+  await screen('career: season review');
+  await page.locator('.tb-back').click();
+  await wait(page, 400);
+  checks++;
+  if (await page.locator('.cr-continue-top').count()) fail(size, 'Continue is still there after the regular season');
+  await screen('career: after the season');
+
   // The main menu button saves the career and says so.
   await page.locator('.tb-menu').click();
   await wait(page, 600);

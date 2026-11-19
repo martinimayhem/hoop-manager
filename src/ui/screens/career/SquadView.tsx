@@ -11,9 +11,24 @@ import { MORALES, type World, type WorldClub, type WorldPlayer } from '../../../
 import { useSort, type SortValue } from '../../components/sortable';
 import { cameThrough, CareerPortrait, code3, contractEnd, country, isMine, mid, MoraleFace, MoraleLegend, overallRange, playerStars, potentialRange, ratingTone, Stars, useFitRows, Pager, type StarKind } from './parts';
 import { starScale } from '../../../game/world/query';
+import { seasonLine, type SeasonLine } from '../../../game/season/play';
+
+/** Season numbers per game, and shooting percentages (GAME_FLOW §6.4: the Season stats view). */
+const perGame = (s: SeasonLine | null, v: (s: SeasonLine) => number) => (s && s.games ? v(s) / s.games : null);
+const pctOf = (made: number, att: number) => (att ? made / att : null);
+const STAT_COLS: { key: string; label: string; tip: string; v: (s: SeasonLine | null) => number | null; show: (x: number) => string }[] = [
+  { key: 's:g', label: 'G', tip: 'Games played', v: (s) => s?.games ?? null, show: (x) => String(x) },
+  { key: 's:min', label: 'MIN', tip: 'Minutes per game', v: (s) => perGame(s, (t) => t.seconds / 60), show: (x) => x.toFixed(1) },
+  { key: 's:pts', label: 'PTS', tip: 'Points per game', v: (s) => perGame(s, (t) => t.pts), show: (x) => x.toFixed(1) },
+  { key: 's:reb', label: 'REB', tip: 'Rebounds per game', v: (s) => perGame(s, (t) => t.oreb + t.dreb), show: (x) => x.toFixed(1) },
+  { key: 's:ast', label: 'AST', tip: 'Assists per game', v: (s) => perGame(s, (t) => t.ast), show: (x) => x.toFixed(1) },
+  { key: 's:fg', label: 'FG%', tip: 'Field goals made, of attempted', v: (s) => (s ? pctOf(s.fgm, s.fga) : null), show: (x) => (x * 100).toFixed(1) },
+  { key: 's:3p', label: '3P%', tip: 'Three-pointers made, of attempted', v: (s) => (s ? pctOf(s.tpm, s.tpa) : null), show: (x) => (x * 100).toFixed(1) },
+  { key: 's:ft', label: 'FT%', tip: 'Free throws made, of attempted', v: (s) => (s ? pctOf(s.ftm, s.fta) : null), show: (x) => (x * 100).toFixed(1) },
+];
 
 export type SquadTab = 'first' | 'dev' | 'academy';
-export type SquadViewId = 'overview' | 'attributes' | 'profile';
+export type SquadViewId = 'overview' | 'attributes' | 'profile' | 'stats';
 const POS_ORDER = 'PG SG SF PF C';
 const VIEW_KEY = 'hm.squadView';
 
@@ -38,6 +53,7 @@ const VIEWS: [SquadViewId, string][] = [
   ['overview', 'Overview'],
   ['attributes', 'Attributes'],
   ['profile', 'Profile'],
+  ['stats', 'Season stats'],
 ];
 
 /** The view last chosen on this device (Overview by default). */
@@ -45,7 +61,7 @@ export function useSquadView(): [SquadViewId, (v: SquadViewId) => void] {
   const [view, setView] = useState<SquadViewId>(() => {
     try {
       const v = localStorage.getItem(VIEW_KEY);
-      return v === 'attributes' || v === 'profile' ? v : 'overview';
+      return v === 'attributes' || v === 'profile' || v === 'stats' ? v : 'overview';
     } catch {
       return 'overview';
     }
@@ -122,6 +138,7 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
   const cap = club.moneySystem === 'cap';
   const { sorted, th, sortButton } = useSort<WorldPlayer>((wp, key): SortValue => {
     if (key.startsWith('a:')) return mid(attrRange(w, wp, key.slice(2) as AttrKey));
+    if (key.startsWith('s:')) return STAT_COLS.find((c) => c.key === key)!.v(seasonLine(w, wp.p.id));
     switch (key) {
       case 'pos':
         return POS_ORDER.indexOf(wp.p.position);
@@ -261,6 +278,34 @@ export function SquadTable({ w, club, tab, view, onPlayer }: { w: World; club: W
       </>
     );
     key = <>{ATTRS.map((a) => `${SHORT[a.key]} ${a.label.toLowerCase()}`).join(' · ')}.</>;
+  } else if (view === 'stats') {
+    head = (
+      <>
+        {th('face', '', { plain: true })}
+        {th('pos', 'Pos')}
+        {th('name', 'Player', { left: true })}
+        {STAT_COLS.map((c) => th(c.key, c.label, { tip: c.tip }))}
+      </>
+    );
+    body = (wp) => {
+      const s = seasonLine(w, wp.p.id);
+      return (
+        <>
+          {face(wp)}
+          {pos(wp)}
+          {name(wp)}
+          {STAT_COLS.map((c) => {
+            const v = c.v(s);
+            return (
+              <td key={c.key} className={v === null ? 'muted' : ''}>
+                {v === null ? '—' : c.show(v)}
+              </td>
+            );
+          })}
+        </>
+      );
+    };
+    key = <>This season, all competitions together · MIN, PTS, REB, AST per game · shooting in %</>;
   } else {
     head = (
       <>

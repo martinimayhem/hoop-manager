@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { buildBoxScore, playerRating } from '../../engine/stats';
-import type { LiveMatch } from '../match/controller';
+import type { MatchState } from '../../engine/types';
 import { TeamTable } from '../components/BoxScoreTable';
 import { TeamCompare } from '../components/BreakScreen';
 import { Portrait } from '../components/Portrait';
@@ -15,7 +15,7 @@ import { useMedia } from '../components/useMedia';
 import { TopBar, type Crumb } from '../components/TopBar';
 
 /** `onContinue`: in a league, the way on (instead of a rematch). */
-export function ResultScreen({ match, onRematch, onLeave, onContinue, crumbs }: { match: LiveMatch; onRematch?: () => void; /** Leave (the Back position): in a league the result is recorded first. */ onLeave: () => void; onContinue?: () => void; crumbs: Crumb[] }) {
+export function ResultScreen({ match, onRematch, onLeave, onContinue, crumbs }: { match: { s: MatchState }; onRematch?: () => void; /** Leave (the Back position): in a league the result is recorded first. */ onLeave: () => void; onContinue?: () => void; crumbs: Crumb[] }) {
   const box = buildBoxScore(match.s);
   const winner = box.winner ?? 0;
   const [tab, setTab] = useState<0 | 1>(0);

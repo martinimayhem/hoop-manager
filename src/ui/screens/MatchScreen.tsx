@@ -5,7 +5,7 @@ import { buildBoxScore } from '../../engine/stats';
 import { defenceOptions, estimate, offenceOptions } from '../../game/clutch';
 import { Sound } from '../sound';
 import { timeoutAllowance } from '../../engine/match';
-import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type PossessionCalls, type Side, type Team } from '../../engine/types';
+import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type MatchRules, type PossessionCalls, type Side, type Team } from '../../engine/types';
 import type { Controller } from '../../game/draft';
 import type { Setup } from '../App';
 import { BoxScoreTables } from '../components/BoxScoreTable';
@@ -43,6 +43,10 @@ export function MatchScreen({
   onFinish,
   onLeave,
   crumbs,
+  humanSide = 0,
+  rules,
+  onAbandon,
+  leaveBody = 'It is not finished: if you leave, this match is lost and not played again.',
 }: {
   setup: Setup;
   teams: [Team, Team];
@@ -52,12 +56,20 @@ export function MatchScreen({
   /** Leave the match (the Back position, labelled Leave); it asks first while the match is on. */
   onLeave: () => void;
   crumbs: Crumb[];
+  /** Which side you coach (a career game away from home: 1). */
+  humanSide?: Side;
+  /** The competition's rules (a career game). */
+  rules?: MatchRules;
+  /** You chose to leave a match under way (a career plays the rest of it). */
+  onAbandon?: (m: LiveMatch) => void;
+  /** What leaving a match under way means here. */
+  leaveBody?: string;
 }) {
   // You (side 0) against the computer (side 1).
-  const controllers: [Controller, Controller] = ['human', 'ai'];
+  const controllers: [Controller, Controller] = humanSide === 1 ? ['ai', 'human'] : ['human', 'ai'];
   const ref = useRef<LiveMatch | null>(null);
   if (!ref.current) {
-    ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed);
+    ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed, rules);
     // ?debugTravels in the address logs every player who walks with the ball in his hands.
     ref.current.debugTravels = new URLSearchParams(window.location.search).has('debugTravels');
   }
@@ -289,8 +301,11 @@ export function MatchScreen({
           if (!m.paused && m.phase === 'playing') m.togglePause();
           rerender();
           leaveBox.ask(
-            { title: 'Leave the match?', body: 'It is not finished: if you leave, this match is lost and not played again.', confirm: 'Leave the match', cancel: 'Keep playing', danger: true },
-            () => resolve(true),
+            { title: 'Leave the match?', body: leaveBody, confirm: 'Leave the match', cancel: 'Keep playing', danger: true },
+            () => {
+              onAbandon?.(m);
+              resolve(true);
+            },
             () => {
               if (!wasPaused && m.paused) m.togglePause();
               rerender();

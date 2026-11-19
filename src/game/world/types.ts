@@ -3,6 +3,7 @@
 // WorldPlayer, so a club's squad goes into a match unchanged.
 
 import type { Player } from '../../engine/types';
+import type { SeasonPlay } from '../season/types';
 
 /** America and Europe: movement between clubs' leagues stays inside a region (WORLD_SPEC §1.2). */
 export type Region = 'america' | 'europe';
@@ -161,4 +162,6 @@ export interface World {
   freeAgents: string[];
   /** Your club and your name as manager (null until you pick one). */
   human: { club: string; manager?: string } | null;
+  /** The season being played (slice W2a): its schedule, results, totals and your plan. */
+  play?: SeasonPlay;
 }
