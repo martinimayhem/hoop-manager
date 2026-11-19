@@ -1,49 +1,29 @@
-// The career shell (GAME_FLOW §6.1, slice brief W1 §6): a left sidebar (icons only below about 1024 px)
-// and a top bar with your club, its competitions and position, the money summary and Continue. In W1
-// Continue and the sidebar items with nothing to show yet are disabled: tapping one says "Coming soon"
-// (a tooltip alone would be hover-only on a tablet).
+// The career shell (GAME_FLOW §6.1, §6.1b; slice brief W1 §6): the top bar shared by every screen (Back,
+// the main menu, the path to this screen; here also your club and its money) and a sidebar with only the
+// sections that work. Which screen is open comes from the page address (nav.tsx), so the browser's back,
+// Escape and a reload all work. Continue appears when the season does (slice W2).
 
-import { ArrowLeftRight, ArrowRight, CalendarDays, ChevronLeft, ClipboardList, House, Search, Shield, Trophy, UserRound, Users, type LucideIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { clubById, competitionsOf, moneySummary, positionIn } from '../../../game/world/query';
+import { Shield, Trophy, Users, type LucideIcon } from 'lucide-react';
+import { useEffect } from 'react';
+import { clubById, competitionById, competitionsOf, leagueOf, moneySummary, positionIn } from '../../../game/world/query';
+import { writeWorld } from '../../../game/world/saves';
 import type { World } from '../../../game/world/types';
+import { TopBar, type Crumb } from '../../components/TopBar';
+import { useNav, type Route } from '../../nav';
 import { Badge, moneyLine } from './parts';
 import { ClubPage, CompetitionsScreen, CompetitionTable, PlayerPage, SquadScreen, type Nav, type View } from './screens';
+import { careerStore } from './store';
 import './career.css';
+type Item = 'squad' | 'competitions' | 'club';
 
-type Item = 'home' | 'squad' | 'tactics' | 'schedule' | 'competitions' | 'transfers' | 'scouting' | 'club' | 'manager';
-
-/** Lucide icons (GAME_FLOW §6.1a: one SVG icon set). */
-const ICON: Record<Item, LucideIcon> = {
-  home: House,
-  squad: Users,
-  tactics: ClipboardList,
-  schedule: CalendarDays,
-  competitions: Trophy,
-  transfers: ArrowLeftRight,
-  scouting: Search,
-  club: Shield,
-  manager: UserRound,
-};
-
-const ITEMS: { id: Item; label: string; ready: boolean }[] = [
-  { id: 'home', label: 'Home', ready: false },
-  { id: 'squad', label: 'Squad', ready: true },
-  { id: 'tactics', label: 'Tactics', ready: false },
-  { id: 'schedule', label: 'Schedule', ready: false },
-  { id: 'competitions', label: 'Competitions', ready: true },
-  { id: 'transfers', label: 'Transfers', ready: false },
-  { id: 'scouting', label: 'Scouting', ready: false },
-  { id: 'club', label: 'Club', ready: true },
-  { id: 'manager', label: 'Manager', ready: false },
+/** Lucide icons (GAME_FLOW §6.1a: one SVG icon set). Only sections that work are shown (§6.1b). */
+const ITEMS: { id: Item; label: string; icon: LucideIcon }[] = [
+  { id: 'squad', label: 'Squad', icon: Users },
+  { id: 'competitions', label: 'Competitions', icon: Trophy },
+  { id: 'club', label: 'Club', icon: Shield },
 ];
 
-function Icon({ id }: { id: Item }) {
-  const C = ICON[id];
-  return <C size={22} strokeWidth={1.9} aria-hidden="true" />;
-}
-
-/** Which sidebar item a view belongs to. */
+/** Which sidebar section a screen belongs to. */
 function itemOf(w: World, v: View): Item {
   if (v.kind === 'squad') return 'squad';
   if (v.kind === 'club' && v.id === w.human?.club) return 'club';
@@ -51,35 +31,51 @@ function itemOf(w: World, v: View): Item {
   return 'competitions';
 }
 
-export function CareerShell({ world, slot, onMenu }: { world: World; slot: number; onMenu: () => void }) {
-  const mine = clubById(world, world.human!.club)!;
-  const [stack, setStack] = useState<View[]>([{ kind: 'squad' }]);
-  const [toast, setToast] = useState<string | null>(null);
-  const timer = useRef<number | undefined>(undefined);
-  const main = useRef<HTMLElement>(null);
-  const view = stack[stack.length - 1];
-
-  const say = (msg: string) => {
-    setToast(msg);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setToast(null), 2200);
+/** The path to a screen, every part leading to its own screen. */
+function crumbsOf(w: World, slot: number, v: View): Crumb[] {
+  const at = (view: View): Route => ({ s: 'career', slot, view });
+  const comps: Crumb = { label: 'Competitions', route: at({ kind: 'competitions' }) };
+  const clubTrail = (clubId: string): Crumb[] => {
+    const club = clubById(w, clubId);
+    if (!club) return [comps];
+    if (clubId === w.human?.club) return [{ label: 'Squad', route: at({ kind: 'squad' }) }];
+    const league = leagueOf(w, clubId);
+    return [comps, { label: league.name, route: at({ kind: 'competition', id: league.id }) }, { label: club.name, route: at({ kind: 'club', id: clubId }) }];
   };
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  switch (v.kind) {
+    case 'squad':
+      return [{ label: 'Squad', route: at(v) }];
+    case 'competitions':
+      return [comps];
+    case 'competition':
+      return [comps, { label: competitionById(w, v.id)?.name ?? '?', route: at(v) }];
+    case 'club':
+      return v.id === w.human?.club ? [{ label: 'Club', route: at(v) }] : clubTrail(v.id);
+    case 'player': {
+      const wp = w.players[v.id];
+      return [...(wp?.club ? clubTrail(wp.club) : [comps]), { label: wp?.p.name ?? '?', route: at(v) }];
+    }
+  }
+}
+
+export function CareerShell({ world, slot, view }: { world: World; slot: number; view: View }) {
+  const app = useNav();
+  const mine = clubById(world, world.human!.club)!;
   // A new screen starts at its top.
   // (Braces: newer browsers' scrollTo returns a promise, which React would take for a clean-up.)
   useEffect(() => {
     window.scrollTo({ top: 0 });
-  }, [stack.length, view]);
+  }, [view]);
 
   const nav: Nav = {
-    go: (v) => setStack((s) => [...s, v]),
-    back: () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)),
-    canBack: stack.length > 1,
+    go: (v) => app.go({ s: 'career', slot, view: v }),
   };
-  const open = (item: Item) => {
-    const it = ITEMS.find((i) => i.id === item)!;
-    if (!it.ready) return say(`${it.label}: coming soon`);
-    setStack([item === 'squad' ? { kind: 'squad' } : item === 'competitions' ? { kind: 'competitions' } : { kind: 'club', id: mine.id }]);
+  const open = (item: Item) => app.go({ s: 'career', slot, view: item === 'squad' ? { kind: 'squad' } : item === 'competitions' ? { kind: 'competitions' } : { kind: 'club', id: mine.id } });
+  // Leaving a career saves it first, and says so (GAME_FLOW §6.1b).
+  const toMenu = async () => {
+    const ok = await writeWorld(careerStore, slot, world);
+    app.setFlash(ok ? `Your career is saved (career slot ${slot + 1}).` : `Your career could not be saved just now; it was last saved in career slot ${slot + 1}.`);
+    app.menu();
   };
 
   const comps = competitionsOf(world, mine.id);
@@ -88,55 +84,37 @@ export function CareerShell({ world, slot, onMenu }: { world: World; slot: numbe
 
   return (
     <div className="cr">
-      <header className="cr-top">
-        <div className="cr-top-club">
-          <Badge club={mine} />
-          <div>
-            <span className="cr-top-name">{mine.name}</span>
-            <span className="cr-top-comps">{comps.map((c) => `${c.name} ${positionIn(world, c, mine.id)}`).join(' · ')}</span>
-          </div>
-        </div>
-        <div className="cr-top-right">
-          <div className="cr-top-money">
-            <span className="cr-label">{m.label}</span>
-            <span className={`cr-big ${m.warn ? 'warn' : ''}`}>{m.value}</span>
-          </div>
-          <button className="cr-continue" aria-disabled="true" title="Coming soon: the season starts in the next slice" onClick={() => say('Continue: coming soon. The season starts in the next slice.')}>
-            Continue
-            <ArrowRight size={18} strokeWidth={2.5} aria-hidden="true" />
-          </button>
-        </div>
-      </header>
+      <TopBar
+        crumbs={crumbsOf(world, slot, view)}
+        onMenu={() => void toMenu()}
+        right={
+          <>
+            <div className="cr-top-club">
+              <Badge club={mine} size={34} />
+              <div>
+                <span className="cr-top-name">{mine.name}</span>
+                <span className="cr-top-comps">{comps.map((c) => `${c.name} ${positionIn(world, c, mine.id)}`).join(' · ')}</span>
+              </div>
+            </div>
+            <div className="cr-top-money">
+              <span className="cr-label">{m.label}</span>
+              <span className={`cr-big ${m.warn ? 'warn' : ''}`}>{m.value}</span>
+            </div>
+          </>
+        }
+      />
 
       <div className="cr-body">
-        <nav className="cr-side" aria-label="Main">
+        <nav className="cr-side" aria-label="Sections">
           {ITEMS.map((it) => (
-            <button
-              key={it.id}
-              className={`cr-nav ${active === it.id ? 'on' : ''} ${it.ready ? '' : 'soon'}`}
-              aria-disabled={!it.ready}
-              aria-current={active === it.id ? 'page' : undefined}
-              title={it.ready ? it.label : `${it.label}: coming soon`}
-              onClick={() => open(it.id)}
-            >
-              <Icon id={it.id} />
+            <button key={it.id} className={`cr-nav ${active === it.id ? 'on' : ''}`} aria-current={active === it.id ? 'page' : undefined} title={it.label} onClick={() => open(it.id)}>
+              <it.icon size={22} strokeWidth={1.9} aria-hidden="true" />
               <span className="cr-nav-label">{it.label}</span>
-              {!it.ready && <span className="cr-soon">Soon</span>}
             </button>
           ))}
-          <div className="cr-side-foot">
-            <span className="cr-saved">
-              Saved · career slot {slot + 1}
-              {world.human?.manager ? ` · ${world.human.manager}` : ''}
-            </span>
-            <button className="cr-nav" onClick={onMenu} title="Main menu">
-              <ChevronLeft size={22} strokeWidth={1.9} aria-hidden="true" />
-              <span className="cr-nav-label">Main menu</span>
-            </button>
-          </div>
         </nav>
 
-        <main className="cr-main" ref={main}>
+        <main className="cr-main">
           {view.kind === 'squad' && <SquadScreen w={world} club={mine} nav={nav} />}
           {view.kind === 'player' && <PlayerPage key={view.id} w={world} id={view.id} nav={nav} />}
           {view.kind === 'competitions' && <CompetitionsScreen w={world} nav={nav} />}
@@ -144,11 +122,6 @@ export function CareerShell({ world, slot, onMenu }: { world: World; slot: numbe
           {view.kind === 'club' && <ClubPage key={view.id} w={world} id={view.id} nav={nav} />}
         </main>
       </div>
-      {toast && (
-        <div className="cr-toast" role="status">
-          {toast}
-        </div>
-      )}
     </div>
   );
 }

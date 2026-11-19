@@ -11,16 +11,16 @@ import { listWorlds, writeWorld, type WorldSlot } from '../../../game/world/save
 import { REGION_NAME, REGIONS, type Competition, type Region, type World, type WorldClub } from '../../../game/world/types';
 import { useConfirm } from '../../components/Confirm';
 import { careerStore } from './store';
+import { TopBar } from '../../components/TopBar';
 import { Badge, country, mid, overallRange, Pager, ratingTone, showRange, useFitRows } from './parts';
 import './career.css';
-import { BackIcon } from '../../icons';
 
 function clubMoney(w: World, c: WorldClub): string {
   const s = moneySummary(w, c);
   return s.system === 'cap' ? `Payroll ${money(s.payroll)}` : `Budget ${money(s.budget)}`;
 }
 
-export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w: World, slot: number) => void }) {
+export function CareerNew({ onStart }: { onStart: (w: World, slot: number) => void }) {
   const [world, setWorld] = useState<World | null>(null);
   const [failed, setFailed] = useState(false);
   const [region, setRegion] = useState<Region>('america');
@@ -59,10 +59,18 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
   // The list shows as many clubs as fit; more go on further pages (GAME_FLOW §6.1a).
   const fit = useFitRows(clubs.length, '.cr-club', comp?.id);
 
-  if (failed) return <div className="cr-wait">The world could not be created. Reload the page to try again.</div>;
+  const bar = <TopBar crumbs={[{ label: 'New career', route: { s: 'career-new' } }]} />;
+  if (failed)
+    return (
+      <>
+        {bar}
+        <div className="cr-wait">The world could not be created. Reload the page to try again.</div>
+      </>
+    );
   if (!world || !club || !comp)
     return (
       <div className="cr-wait">
+        {bar}
         <h1>Creating the world…</h1>
         <span className="cr-sub">318 clubs in America and 11 European countries, about 7,400 people</span>
       </div>
@@ -101,15 +109,7 @@ export function CareerNew({ onBack, onStart }: { onBack: () => void; onStart: (w
   return (
     <div className="cr cr-new">
       {confirm.dialog}
-      <header className="cr-top">
-        <button className="cr-back" onClick={onBack}>
-          <BackIcon /> Menu
-        </button>
-        <div className="cr-new-title">
-          <h1>New career</h1>
-          <span className="cr-sub">Choose any club, at any level: start at the top, or climb from the bottom.</span>
-        </div>
-      </header>
+      <TopBar crumbs={[{ label: 'New career', route: { s: 'career-new' } }]} right={<span className="cr-sub">Choose any club, at any level: start at the top, or climb from the bottom.</span>} />
 
       <div className="cr-new-body">
         <section className="cr-new-pick">

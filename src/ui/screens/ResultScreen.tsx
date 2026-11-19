@@ -11,9 +11,10 @@ import { TeamCompare } from '../components/BreakScreen';
 import { Portrait } from '../components/Portrait';
 import { ShotChart } from '../components/ShotChart';
 import { NextIcon } from '../icons';
+import { TopBar, type Crumb } from '../components/TopBar';
 
 /** `onContinue`: in a league, the way on (instead of a rematch). */
-export function ResultScreen({ match, onRematch, onMenu, onContinue }: { match: LiveMatch; onRematch?: () => void; onMenu: () => void; onContinue?: () => void }) {
+export function ResultScreen({ match, onRematch, onLeave, onContinue, crumbs }: { match: LiveMatch; onRematch?: () => void; /** Leave (the Back position): in a league the result is recorded first. */ onLeave: () => void; onContinue?: () => void; crumbs: Crumb[] }) {
   const box = buildBoxScore(match.s);
   const winner = box.winner ?? 0;
   const [tab, setTab] = useState<0 | 1>(0);
@@ -26,7 +27,8 @@ export function ResultScreen({ match, onRematch, onMenu, onContinue }: { match: 
   const t = box.teams[tab];
   // One part of the box at a time; on a narrower screen the game summary is a third part (GAME_FLOW §6.1a).
   const [part, setPart] = useState<'box' | 'shots' | 'summary'>('box');
-  const narrow = useNarrow(1100);
+  // Narrow or short (a laptop's 650 px of page): the summary is a tab rather than a side column.
+  const narrow = useMedia('(max-width: 1100px), (max-height: 720px)');
   const summary = (
     <>
           <div className="card-star result-mvp" style={{ ['--team' as string]: mvp.side === 0 ? 'var(--home)' : 'var(--away)' }}>
@@ -72,6 +74,8 @@ export function ResultScreen({ match, onRematch, onMenu, onContinue }: { match: 
   );
 
   return (
+    <>
+    <TopBar crumbs={crumbs} leave={onLeave} />
     <div className="res">
       <header className="panel res-board">
         {([0, 1] as const).map((side) => (
@@ -116,7 +120,6 @@ export function ResultScreen({ match, onRematch, onMenu, onContinue }: { match: 
               <button className="primary" onClick={onRematch}>
                 Rematch <NextIcon />
               </button>
-              <button onClick={onMenu}>Main menu</button>
             </>
           )}
         </div>
@@ -151,18 +154,18 @@ export function ResultScreen({ match, onRematch, onMenu, onContinue }: { match: 
               <ShotChart key={tab} events={match.s.events} side={tab} name={t.name} compact />
             </div>
           )}
-          {part === 'summary' && narrow && summary}
+          {part === 'summary' && narrow && <div className="res-summary">{summary}</div>}
         </section>
 
         {!narrow && <aside className="res-side">{summary}</aside>}
       </div>
     </div>
+    </>
   );
 }
 
-/** Whether the window is narrower than px (kept up to date). */
-function useNarrow(px: number): boolean {
-  const query = `(max-width: ${px}px)`;
+/** Whether a media query matches (kept up to date). */
+function useMedia(query: string): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
   useEffect(() => {
     const mq = window.matchMedia(query);

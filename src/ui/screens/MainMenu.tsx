@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { listWorlds, type WorldSlot } from '../../game/world/saves';
 import type { World } from '../../game/world/types';
 import { careerStore } from './career/store';
+import { useNav } from '../nav';
 import type { Speed } from '../match/controller';
 import type { Setup } from '../App';
 import { LEAGUES, type LeagueId } from '../../game/league/leagues';
@@ -93,9 +94,22 @@ export function MainMenu({
     };
   }, []);
   const used = careers.filter((s) => s.status !== 'empty');
+  // A one-off message from the screen before ("Your career is saved"), shown for a few seconds.
+  const nav = useNav();
+  const [flash] = useState(nav.flash);
+  useEffect(() => {
+    if (nav.flash) nav.setFlash(null);
+    // Once, on opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="menu mm">
+      {flash && (
+        <div className="mm-flash" role="status">
+          {flash}
+        </div>
+      )}
       <div>
         <div className="title">
           Hoop <span>Manager</span>

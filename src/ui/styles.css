@@ -4080,3 +4080,231 @@ small {
   display: grid;
   gap: 10px;
 }
+
+/* =====================================================================================
+   The top bar (GAME_FLOW §6.1b): fixed to the top of the window on every screen but the main menu,
+   so Back is always in the same place and the same size.
+   ===================================================================================== */
+.tb {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: #121a2a;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--text-font);
+  font-size: 14px;
+}
+.tb-space {
+  height: 52px;
+  flex: none;
+}
+.tb .tb-back,
+.tb .tb-menu {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  box-shadow: none;
+}
+.tb .tb-back {
+  width: 96px;
+}
+.tb .tb-menu {
+  width: 92px;
+}
+.tb .tb-back:disabled {
+  opacity: 0.35;
+}
+.tb .tb-back:hover:not(:disabled),
+.tb .tb-menu:hover {
+  border-color: var(--accent);
+}
+.tb-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.tb-crumb {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.tb-crumb button {
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--cr-blue, #7fb0ff);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.tb-crumb button:hover:not(:disabled) {
+  text-decoration: underline;
+  box-shadow: none;
+}
+.tb-crumb button.here {
+  color: var(--text);
+  cursor: default;
+}
+.tb-crumb button:disabled {
+  color: var(--muted);
+  opacity: 1;
+}
+.tb-sep {
+  flex: none;
+  color: var(--muted);
+}
+.tb-right {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .tb .tb-back,
+  .tb .tb-menu,
+  .tb-crumb button {
+    height: 44px;
+    min-height: 44px;
+  }
+}
+@media (max-width: 900px) {
+  .tb .tb-back,
+  .tb .tb-menu {
+    width: 44px;
+    padding: 0;
+  }
+  .tb .tb-back span,
+  .tb .tb-menu span {
+    display: none;
+  }
+  .tb-crumb button {
+    max-width: 150px;
+  }
+}
+.tb .cr-top-club .cr-badge {
+  width: 34px !important;
+  height: 34px !important;
+}
+.tb .hub-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The match leaves room for the top bar. */
+.tb-space + .match {
+  height: calc(100vh - 84px);
+  --court-w: min(100%, calc((100vh - 367px) * 2));
+}
+.mm-flash {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #13301f;
+  border: 1px solid var(--good);
+  color: var(--text);
+  font-weight: 600;
+}
+.brk-close {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tb-space + .res {
+  height: calc(100vh - 84px);
+}
+/* The one-off notice ("Your career is saved") floats over the menu, so the menu still fits. */
+.mm-flash {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  box-shadow: 0 8px 30px #0008;
+  animation: mm-flash 6s forwards;
+}
+@keyframes mm-flash {
+  0%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.tb-space + .match {
+  grid-template-columns: minmax(250px, 460px) min(calc(100% - 520px), calc((100vh - 367px) * 2)) minmax(250px, 460px);
+}
+.app:has(.cp) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.res-summary {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+}
+@media (min-width: 800px) {
+  .res-summary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  }
+}
+
+/* Narrow screens: the path needs the room; your club is its badge, the money its figure. */
+@media (max-width: 1100px) {
+  .tb .cr-top-club > div,
+  .tb .cr-top-money .cr-label {
+    display: none;
+  }
+  .tb-right {
+    flex: none;
+  }
+}
+.tb-crumb:last-child {
+  flex-shrink: 0;
+}
+
+/* GAME_FLOW §6.1a: shown whole or not at all. On a small court the card hides (its stats are in Game stats). */
+@container (max-width: 760px) {
+  .ov-star {
+    display: none;
+  }
+}

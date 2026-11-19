@@ -6,6 +6,7 @@ import { useReducer, useState } from 'react';
 import { DEFAULT_PLANS, HARBOR_HAMMERS, SKYLINE_SPARKS } from '../../data/teams';
 import { BreakScreen } from '../components/BreakScreen';
 import { ResultScreen } from '../screens/ResultScreen';
+import { NavProvider } from '../nav';
 import { CourtOverlays, Gamecast } from '../components/Gamecast';
 import { LiveMatch } from '../match/controller';
 
@@ -48,7 +49,9 @@ function ResultPreview({ seed }: { seed: number }) {
   const [m] = useState(() => breakAfter(5, seed, true));
   return (
     <div className="app">
-      <ResultScreen match={m} onRematch={() => undefined} onMenu={() => undefined} />
+      <NavProvider>
+      <ResultScreen match={m} onRematch={() => undefined} onLeave={() => undefined} crumbs={[{ label: 'Result' }]} />
+    </NavProvider>
     </div>
   );
 }

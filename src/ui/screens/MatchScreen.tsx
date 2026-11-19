@@ -1,4 +1,5 @@
 import { VIEW_3D_KEY } from './MainMenu';
+import { X } from 'lucide-react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { buildBoxScore } from '../../engine/stats';
 import { defenceOptions, estimate, offenceOptions } from '../../game/clutch';
@@ -17,6 +18,9 @@ import { CANVAS_H, CANVAS_W, CourtRenderer } from '../court/render';
 import { courtDots } from '../court/dots';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
 import { ARGUE_SECONDS, LiveMatch, type TeamView } from '../match/controller';
+import { TopBar, type Crumb } from '../components/TopBar';
+import { useConfirm } from '../components/Confirm';
+import { useNav } from '../nav';
 import { NextIcon, PlayIcon, PauseIcon, HighlightsIcon, SoundOnIcon, SoundOffIcon, Icon } from '../icons';
 
 /** The timeout key, for the player's team (the button beside the court does the same). */
@@ -37,12 +41,17 @@ export function MatchScreen({
   plans,
   seed,
   onFinish,
+  onLeave,
+  crumbs,
 }: {
   setup: Setup;
   teams: [Team, Team];
   plans: [GamePlan, GamePlan];
   seed: number;
   onFinish: (m: LiveMatch) => void;
+  /** Leave the match (the Back position, labelled Leave); it asks first while the match is on. */
+  onLeave: () => void;
+  crumbs: Crumb[];
 }) {
   // You (side 0) against the computer (side 1).
   const controllers: [Controller, Controller] = ['human', 'ai'];
@@ -258,19 +267,53 @@ export function MatchScreen({
         e.preventDefault();
         m.togglePause();
       }
+      if (e.key === 'Escape' && showBox) {
+        e.preventDefault();
+        setShowBox(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const humanSides = ([0, 1] as const).filter((s) => controllers[s] === 'human');
-  // Twice as sensitive as the effect itself, so that a run shows: an 8-0 run is about a quarter of the
+  // Leaving a match under way loses it: every way out (Leave, the menu, the browser's back, Escape)
+  // asks first, with the match paused while it asks (GAME_FLOW §6.1b).
+  const nav = useNav();
+  const leaveBox = useConfirm();
+  useEffect(() => {
+    nav.setGuard(
+      () =>
+        new Promise<boolean>((resolve) => {
+          if (m.phase === 'final') return resolve(true);
+          const wasPaused = m.paused;
+          if (!m.paused && m.phase === 'playing') m.togglePause();
+          rerender();
+          leaveBox.ask(
+            { title: 'Leave the match?', body: 'It is not finished: if you leave, this match is lost and not played again.', confirm: 'Leave the match', cancel: 'Keep playing', danger: true },
+            () => resolve(true),
+            () => {
+              if (!wasPaused && m.paused) m.togglePause();
+              rerender();
+              resolve(false);
+            },
+          );
+        }),
+    );
+    return () => nav.setGuard(null);
+    // The guard is set once for this match.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m]);
+
+  const humanSides = ([0, 1] as const).filter((s) => controllers[s] === 'human');  // Twice as sensitive as the effect itself, so that a run shows: an 8-0 run is about a quarter of the
   // way to the end. The engine's momentum is unchanged; this is only the needle.
   const momentumPct = 50 - Math.max(-1, Math.min(1, m.momentum * MOMENTUM_DISPLAY)) * 46;
   const humanTips = humanSides.flatMap((sd) => m.liveTips(sd)).sort((a, b) => b.id - a.id);
   const unreadTips = showFeed || roomy ? 0 : humanTips.filter((t) => t.id > seenTip).length;
 
   return (
+    <>
+    <TopBar crumbs={crumbs} leave={onLeave} />
+    {leaveBox.dialog}
     <div className="match">
       <Scoreboard m={m} controllers={controllers} />
       <div className="momentum" title="Momentum">
@@ -423,18 +466,21 @@ export function MatchScreen({
 
       {showBox && (
         <div className="overlay" onClick={() => setShowBox(false)}>
-          <div className="panel modal" onClick={(e) => e.stopPropagation()}>
+          <div className="panel modal" role="dialog" aria-label="Box score" onClick={(e) => e.stopPropagation()}>
             <div className="row">
               <h2>Box score</h2>
               <span className="muted small">(as of the last completed possession)</span>
               <div className="spacer" />
-              <button onClick={() => setShowBox(false)}>Close</button>
+              <button className="brk-close" onClick={() => setShowBox(false)} aria-label="Close the box score" title="Close">
+                <X size={20} aria-hidden="true" />
+              </button>
             </div>
             <BoxScoreTables box={buildBoxScore(m.s)} />
           </div>
         </div>
       )}
     </div>
+    </>
   );
 }
 

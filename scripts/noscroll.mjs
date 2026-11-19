@@ -81,7 +81,7 @@ const journeys = {
       await page.locator('.cr-new-side .cr-start').waitFor({ timeout: 20000 });
       await page.locator('.cr-club').nth(i).click();
       await page.locator('.cr-new-side .cr-start').click();
-      await page.locator('.cr-top-name').waitFor();
+      await page.locator('.cr-side').waitFor();
     }
     await page.goto(base);
     await page.waitForTimeout(400);
@@ -183,7 +183,7 @@ const journeys = {
     await button(page, /^Lithuania$/).click();
     await page.locator('.cr-club').first().click();
     await page.locator('.cr-new-side .cr-start').click();
-    await page.locator('.cr-top-name').waitFor();
+    await page.locator('.cr-side').waitFor();
     for (const tab of [/First team/, /Dev squad/, /Academy/]) {
       await page.getByRole('tab', { name: tab }).click();
       for (const v of ['Overview', 'Attributes', 'Profile']) {
@@ -199,7 +199,7 @@ const journeys = {
     await check('career: competitions');
     await page.locator('.cr-comp', { hasText: 'US Division 2' }).click();
     await check('career: table (16 clubs)');
-    await page.locator('.cr-back').first().click();
+    await page.goBack();
     await page.locator('.cr-comp', { hasText: 'Big League · America' }).click();
     await check('career: table (18 clubs)');
     await page.locator('.cr-table tr:not(.me) .cr-name').first().click();
@@ -208,9 +208,7 @@ const journeys = {
     await check('career: player page (other club)');
     await page.locator('.cr-nav', { hasText: 'Club' }).click();
     await check('career: club (yours)');
-    await page.locator('.cr-nav', { hasText: 'Home' }).click({ force: true });
-    await check('career: coming-soon message');
-    await page.locator('.cr-nav', { hasText: 'Main menu' }).click();
+    await page.locator('.tb-menu').click();
     await check('main menu (with a career saved)');
   },
 };

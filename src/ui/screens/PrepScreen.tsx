@@ -7,17 +7,22 @@ import type { GamePlan, Side, Team } from '../../engine/types';
 import { aiGamePlan } from '../../game/ai';
 import { PlanEditor } from '../components/PlanEditor';
 import { ScoutingReport, type ScoutView } from '../components/ScoutingReport';
-import { NextIcon, MenuIcon } from '../icons';
+import { NextIcon } from '../icons';
+import { TopBar, type Crumb } from '../components/TopBar';
 
 export function PrepScreen({
   teams,
   onReady,
-  onMenu,
+  onLeave,
+  crumbs,
   scout,
 }: {
   teams: [Team, Team];
   onReady: (plans: [GamePlan, GamePlan]) => void;
-  onMenu: () => void;
+  /** Leave the game plan (the Back position, labelled Leave). */
+  onLeave: () => void;
+  /** The path to this screen, for the top bar. */
+  crumbs: Crumb[];
   /** In a league: how well each side knows the other (by side). */
   scout?: [ScoutView, ScoutView];
 }) {
@@ -79,19 +84,20 @@ export function PrepScreen({
   // narrow screen one panel with all four tabs.
   return (
     <div className="prep-screen">
-      <div className="row">
-        <button onClick={onMenu}>
-          <MenuIcon /> Menu
-        </button>
-        <h1 className={side === 0 ? 'home' : 'away'} style={{ margin: 0 }}>
-          {team.name}: game plan
-        </h1>
-        <span className="muted">vs {opponent.name}</span>
-        <div className="spacer" />
-        <button className="primary" disabled={plans[side].starters.length !== 5} onClick={confirm}>
-          {step + 1 < humans.length ? `Lock in & pass to ${teams[humans[step + 1]].name}` : 'Tip-off!'} <NextIcon />
-        </button>
-      </div>
+      <TopBar
+        crumbs={crumbs}
+        leave={onLeave}
+        right={
+          <>
+            <span className="muted">
+              <b className={side === 0 ? 'home' : 'away'}>{team.name}</b> v {opponent.name}
+            </span>
+            <button className="primary" disabled={plans[side].starters.length !== 5} onClick={confirm}>
+              {step + 1 < humans.length ? `Lock in & pass to ${teams[humans[step + 1]].name}` : 'Tip-off!'} <NextIcon />
+            </button>
+          </>
+        }
+      />
       {narrow ? (
         <div className="prep">
           <TabPanel tabs={['tactics', 'rotation', 'matchup', 'players', 'tendencies']} tab={left} onTab={setLeft} content={content} opponent={opponent.name} />

@@ -2,7 +2,8 @@
 // teams side by side, every player's line, and the tactics with the assistant's advice. Changes to
 // the five on court and the plan are made here and go in when play resumes.
 
-import { useState } from 'react';
+import { X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { composite } from '../../engine/ratings';
 import { playerRating } from '../../engine/stats';
 import { AGGRESSIONS, DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type KeyMatchup, type Player, type PlayerStats, type Side } from '../../engine/types';
@@ -66,13 +67,23 @@ export function BreakScreen({ m, controllers, onDone }: { m: LiveMatch; controll
     ['stats', 'Key players & team stats'],
     ['tactics', 'Tactics'],
   ];
+  // A pop-up (GAME_FLOW §6.1b): the X, Escape or a tap outside go back to the game, like the button.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !valid || document.querySelector('[role="alertdialog"]')) return;
+      e.preventDefault();
+      apply();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
   const roster = (side: Side) => (
     <Roster key={side} m={m} side={side} plan={side === editing ? drafts[side] : livePlan(side)} onChange={side === editing ? (p) => setDrafts((d) => ({ ...d, [side]: p })) : undefined} />
   );
 
   return (
-    <div className="overlay">
-      <div className="panel modal brk">
+    <div className="overlay" onClick={(e) => e.target === e.currentTarget && valid && apply()}>
+      <div className="panel modal brk" role="dialog" aria-label={title}>
         <BreakHeader m={m} title={title} valid={valid} onBack={apply} talkPending={talkPending} />
         {ordered.length > 1 && (
           <div className="tabs">
@@ -154,6 +165,9 @@ function BreakHeader({ m, title, valid, onBack, talkPending = false }: { m: Live
       <div className="spacer" />
       <button className={talkPending ? '' : 'primary'} disabled={!valid} onClick={onBack} title={talkPending ? 'You have not given your team talk yet (above).' : undefined}>
         {talkPending ? 'Back without a team talk' : 'Back to the game'} <NextIcon />
+      </button>
+      <button className="brk-close" disabled={!valid} onClick={onBack} aria-label="Close: back to the game" title="Back to the game">
+        <X size={20} aria-hidden="true" />
       </button>
     </div>
   );

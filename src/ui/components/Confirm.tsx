@@ -11,10 +11,14 @@ export interface ConfirmOptions {
   danger?: boolean;
 }
 
-/** `ask(options, then)` opens the box; `then` runs only if the player confirms. Render `dialog` somewhere on the screen. */
-export function useConfirm(): { ask: (o: ConfirmOptions, then: () => void) => void; dialog: ReactNode } {
-  const [open, setOpen] = useState<{ o: ConfirmOptions; then: () => void } | null>(null);
-  const close = () => setOpen(null);
+/** `ask(options, then, otherwise)` opens the box; `then` runs only if the player confirms, `otherwise` if not. Render `dialog` somewhere on the screen. */
+export function useConfirm(): { ask: (o: ConfirmOptions, then: () => void, otherwise?: () => void) => void; dialog: ReactNode } {
+  const [open, setOpen] = useState<{ o: ConfirmOptions; then: () => void; otherwise?: () => void } | null>(null);
+  const close = () => {
+    const otherwise = open?.otherwise;
+    setOpen(null);
+    otherwise?.();
+  };
   const yes = () => {
     const then = open?.then;
     setOpen(null);
@@ -46,5 +50,5 @@ export function useConfirm(): { ask: (o: ConfirmOptions, then: () => void) => vo
       </div>
     </div>
   ) : null;
-  return { ask: (o, then) => setOpen({ o, then }), dialog };
+  return { ask: (o, then, otherwise) => setOpen({ o, then, otherwise }), dialog };
 }

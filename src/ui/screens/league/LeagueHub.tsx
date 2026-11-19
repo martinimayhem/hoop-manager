@@ -5,11 +5,11 @@
 
 import { useMemo } from 'react';
 import { MATCHDAYS, fixtures, humanGames, poolOf, table, type QuickLeague } from '../../../game/league/quickLeague';
-import { LEAGUES } from '../../../game/league/leagues';
 import type { TableRow } from '../../../game/league/standings';
 import type { Speed } from '../../match/controller';
 import { useSort } from '../../components/sortable';
-import { NextIcon, MenuIcon, TrophyIcon } from '../../icons';
+import { TopBar, type Crumb } from '../../components/TopBar';
+import { NextIcon, TrophyIcon } from '../../icons';
 
 const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th')}`;
 
@@ -34,7 +34,7 @@ export function LeagueHub({
   onPlay,
   onSimMine,
   onSimSeason,
-  onMenu,
+  crumbs,
   onNewLeague,
 }: {
   league: QuickLeague;
@@ -43,7 +43,7 @@ export function LeagueHub({
   onPlay: () => void;
   onSimMine: () => void;
   onSimSeason: () => void;
-  onMenu: () => void;
+  crumbs: Crumb[];
   onNewLeague: () => void;
 }) {
   const rows = table(league);
@@ -115,38 +115,32 @@ export function LeagueHub({
 
   return (
     <div className="hub">
-      <header className="hub-bar">
-        <button onClick={onMenu}>
-          <MenuIcon /> Menu
-        </button>
-        <div className="hub-title">
-          <h1>{LEAGUES[league.league].name}</h1>
-          <span className="muted small">
-            {over ? 'Season over' : `Matchday ${league.matchday + 1} of ${MATCHDAYS}`} · <span className="home">{name(me)}</span>
-            {league.manager ? `, manager ${league.manager}` : ''}
-          </span>
-          <div className="hub-progress" title={`${Math.min(league.matchday, MATCHDAYS)} of ${MATCHDAYS} matchdays played`}>
-            <div style={{ width: `${(100 * Math.min(league.matchday, MATCHDAYS)) / MATCHDAYS}%` }} />
-          </div>
-        </div>
-        <div className="spacer" />
-        {!over && (
+      <TopBar
+        crumbs={crumbs}
+        right={
           <>
-            <span className="muted small">Match speed</span>
-            <span className="hub-seg">
-              <button className={speed === 'normal' ? 'on' : ''} onClick={() => onSpeed('normal')}>
-                Normal
-              </button>
-              <button className={speed === 'fast' ? 'on' : ''} onClick={() => onSpeed('fast')}>
-                Fast
-              </button>
+            <span className="muted small hub-where">
+              {over ? 'Season over' : `Matchday ${league.matchday + 1} of ${MATCHDAYS}`} · <span className="home">{name(me)}</span>
+              {league.manager ? `, manager ${league.manager}` : ''}
             </span>
-            <button className="small" onClick={onSimSeason} title="Every remaining match, yours included, is played by the computer.">
-              Sim to season end
-            </button>
+            {!over && (
+              <>
+                <span className="hub-seg" title="Match speed">
+                  <button className={speed === 'normal' ? 'on' : ''} onClick={() => onSpeed('normal')}>
+                    Normal
+                  </button>
+                  <button className={speed === 'fast' ? 'on' : ''} onClick={() => onSpeed('fast')}>
+                    Fast
+                  </button>
+                </span>
+                <button className="small" onClick={onSimSeason} title="Every remaining match, yours included, is played by the computer.">
+                  Sim to season end
+                </button>
+              </>
+            )}
           </>
-        )}
-      </header>
+        }
+      />
 
       <div className="hub-main">
         <div className="hub-left">

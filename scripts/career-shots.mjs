@@ -60,7 +60,7 @@ async function run(width) {
   await page.screenshot({ path: join(out, `${width}-2b-new-career-viewport.png`) });
   await page.locator('.cr-field input').fill('Sam');
   await page.locator('.cr-new-side .cr-start').click();
-  await page.locator('.cr-top-name').waitFor();
+  await page.locator('.cr-side').waitFor();
   await shot('3-squad');
   for (const v of ['Attributes', 'Profile']) {
     await page.getByRole('radio', { name: v }).click();
@@ -90,15 +90,12 @@ async function run(width) {
   await page.screenshot({ path: join(out, `${width}-5e-other-player-viewport.png`) });
   await page.locator('.cr-nav', { hasText: 'Club' }).click();
   await shot('6-club-budget');
-  // Disabled for real (aria-disabled), but a tap still says "coming soon".
-  await page.locator('.cr-nav', { hasText: 'Home' }).click({ force: true });
-  await shot('7-coming-soon');
 
   // An America Big League club: the cap system.
   await newCareer();
   await page.locator('.cr-club', { hasText: 'New York Skyliners' }).click();
   await page.locator('.cr-new-side .cr-start').click();
-  await page.locator('.cr-top-name').waitFor();
+  await page.locator('.cr-side').waitFor();
   await shot('8-squad-cap');
   await page.locator('.cr-nav', { hasText: 'Club' }).click();
   await shot('9-club-cap');
@@ -130,12 +127,12 @@ async function run(width) {
           }
         }
         await page.getByRole('radio', { name: 'Overview' }).click();
-        await page.locator('.cr-back').click();
+        await page.goBack();
       }
-      await page.locator('.cr-back').click();
+      await page.goBack();
     }
   }
-  await page.locator('.cr-nav', { hasText: 'Main menu' }).click();
+  await page.locator('.tb-menu').click();
   await shot('10-menu');
   await ctx.close();
 }

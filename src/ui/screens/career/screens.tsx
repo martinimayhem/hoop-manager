@@ -10,25 +10,15 @@ import { ageOf, clubById, competitionById, competitionsOf, leagueOf, ordinal, st
 import { REGION_NAME, type Competition, type World, type WorldClub } from '../../../game/world/types';
 import { Badge, cameThrough, contractEnd, country, isMine, MoraleFace, CareerPortrait, Stars, playerStars, mid, overallRange, PayrollBar, potentialRange, ratingTone, showRange, useFitRows, Pager } from './parts';
 import { SquadControls, SquadTable, TAB_NOTE, useSquadView, type SquadTab } from './SquadView';
-import { BackIcon } from '../../icons';
+import type { CareerView as View } from '../../nav';
 
-export type View = { kind: 'squad' } | { kind: 'player'; id: string } | { kind: 'competitions' } | { kind: 'competition'; id: string } | { kind: 'club'; id: string };
+export type { View };
 
+/** Opening another career screen (a new entry in the browser's history: Back returns). */
 export interface Nav {
   go: (v: View) => void;
-  back: () => void;
-  canBack: boolean;
 }
 
-/** Back to the screen before, as an icon button (it sits in a header row). */
-function BackButton({ nav }: { nav: Nav }) {
-  if (!nav.canBack) return null;
-  return (
-    <button className="cr-back icon" onClick={nav.back} aria-label="Back" title="Back">
-      <BackIcon />
-    </button>
-  );
-}
 
 // ---------------------------------------------------------------------------
 
@@ -116,11 +106,6 @@ export function PlayerPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
             <span className="cr-num">
               #{wp.p.number} · {wp.p.position}
             </span>
-            {nav.canBack && (
-              <button className="cr-back small" onClick={nav.back}>
-                <BackIcon /> Back
-              </button>
-            )}
           </div>
           <span className="cr-sub big">
             {ageOf(w, wp)} years · {country(wp.nationality)} · {wp.p.heightCm} cm, {wp.p.weightKg} kg · {wp.p.archetype} · {origin}
@@ -286,7 +271,6 @@ function CompetitionRows({ w, comp, all, nav }: { w: World; comp: Competition; a
   return (
     <div className="cr-page">
       <div className="cr-row-head start">
-        <BackButton nav={nav} />
         <h1>{comp.name}</h1>
         <span className="cr-sub">
           {comp.country ? `${country(comp.country)} · ` : ''}
@@ -403,7 +387,6 @@ export function ClubPage({ w, id, nav }: { w: World; id: string; nav: Nav }) {
   return (
     <div className="cr-page">
       <div className="cr-row-head cr-club-bar">
-        <BackButton nav={nav} />
         <Badge club={club} size={30} />
         <h1 className="cr-club-title" title={club.name}>
           {club.name}

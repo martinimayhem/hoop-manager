@@ -6,7 +6,8 @@ import type { QuickLeague } from '../../../game/league/quickLeague';
 import { clearSlot, listSlots, summarise, type SlotInfo } from '../../../game/league/saves';
 import { browserStorage } from './storage';
 import { useConfirm } from '../../components/Confirm';
-import { NextIcon, PrevIcon } from '../../icons';
+import { NextIcon } from '../../icons';
+import { TopBar } from '../../components/TopBar';
 
 
 function savedWhen(iso: string): string {
@@ -14,7 +15,7 @@ function savedWhen(iso: string): string {
   return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-export function LeagueMenu({ onOpen, onBack }: { onOpen: (league: QuickLeague, slot: number) => void; onBack: () => void }) {
+export function LeagueMenu({ onOpen, onNew }: { onOpen: (league: QuickLeague, slot: number) => void; /** A new game: the main menu, where new games start. */ onNew: () => void }) {
   const [slots, setSlots] = useState<SlotInfo[]>(() => listSlots(browserStorage));
 
   const confirm = useConfirm();
@@ -26,14 +27,10 @@ export function LeagueMenu({ onOpen, onBack }: { onOpen: (league: QuickLeague, s
 
   return (
     <div className="menu ql">
+      <TopBar crumbs={[{ label: 'Saved games', route: { s: 'saves' } }]} />
       {confirm.dialog}
-      <div className="row">
-        <button onClick={onBack}>
-          <PrevIcon /> Back
-        </button>
-        <div className="title" style={{ fontSize: 34 }}>
-          Saved <span>games</span>
-        </div>
+      <div className="title" style={{ fontSize: 34 }}>
+        Saved <span>games</span>
       </div>
       <div className="muted">Your games save themselves as you play. A new game starts from the main menu.</div>
 
@@ -70,7 +67,9 @@ export function LeagueMenu({ onOpen, onBack }: { onOpen: (league: QuickLeague, s
                 <div className="ql-slot-no">Slot {s.slot + 1}</div>
                 <div className="ql-slot-main muted">Empty</div>
                 <div className="ql-slot-actions">
-                  <button onClick={onBack}>＋ New game</button>
+                  <button onClick={onNew}>
+                    New game <NextIcon />
+                  </button>
                 </div>
               </div>
             );
