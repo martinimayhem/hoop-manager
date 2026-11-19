@@ -96,10 +96,13 @@ for every news item about my players").
 
 1. **Match preparation screen:** the opponent report (scouting ranges, likely tactics), your game
    plan and rotation (carried over from last game), fatigue and availability, assistant tips.
-2. **Choose how to play it:** **Watch** (the full match) · **Key moments** (quarter summaries, then
-   the last 5 minutes and every timeout live) · **Simulate** (result only). **Key games** (rivals,
-   top of the table, cups, playoffs) pre-select Watch; other games pre-select what you chose last
-   time.
+2. **Choose how to play it:** **Watch** (the full match) · **Key moments** · **Simulate** (result
+   only). **Key games** (WORLD_SPEC §1.1: postseason games, cup ties from the quarter-finals, season
+   deciders) pre-select Watch; other games pre-select what you chose last time.
+   **Key moments** (decided 19 Nov 2026): each quarter is simulated and shown as a **quarter card**
+   (score, the runs, the top players); at every break you can change tactics as in a watched game;
+   the **last 5 minutes of the 4th quarter, and any overtime, are played live**. If one side leads by
+   20 or more with 5 minutes left, the game goes straight to the result.
 3. **The match** as built today: tactics, timeouts, subs, clutch calls, halftime team talk.
 4. **After the match:** box score, player ratings, injuries, morale changes, and a **press moment**
    if it was a big game.
@@ -224,8 +227,8 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 ### 5.1 Sizes
 - **First team: 13 players** (12 dress for a game; WORLD_SPEC §1.4).
 - **Development squad: up to 5 players**, every club. Young or developing players who train with
-  the club but don't play in the league. Wages fixed at the minimum and **outside the cap and the
-  threshold** *(tune)*.
+  the club but don't play in the league. Wages fixed at the minimum, for budget clubs **1% of the club
+  budget** each, and **outside the cap and the threshold** *(tune)*.
 - **Academy (European clubs):** about 6 players aged 15–18 (WORLD_SPEC §5.2).
 
 ### 5.2 The draft (America only)
@@ -284,6 +287,11 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 - **Text sizes:** 14 px is the minimum for anything you read as content, **table cells included**
   (names, numbers, stars' labels). 12–13 px only for column headers, labels and captions. The sweep
   checks both.
+- **Buttons:** one size for every big call-to-action button (Continue, New career, Play the match,
+  Manage a club): 52 px tall, at least 220 px wide, 17 px text.
+- **Main menu:** no settings panel. Court view (2D/3D) and match speed are chosen in the match and
+  remembered. "Manage a club" always works: with a free save slot the game starts at once; with every
+  slot in use, a pop-up asks which game to save over.
 - **Row heights:** table rows 28 px with a mouse, 44 px on touch screens (where a long table then
   pages sooner).
 - **Nothing is cut off.** If something can't be shown whole at a size (for example the "Player of
@@ -376,7 +384,9 @@ Decided 18 Nov 2026 (owner, with Football Manager screens as reference for the *
 
 - **Ability and potential are stars**, 0.5 to 5 in half stars, in every table and on the player page.
   - Stars compare the player with **the league the club plays in** (a 4-star player in US Division 4
-    is a key player there, not in the Big League). The player page says which league.
+    is a key player there, not in the Big League). For Big League clubs that is **the whole Big League**
+    (both conferences), also for European clubs that play a national league too. The player page says
+    which league.
   - **Ability** stars come from his overall; **potential** stars from his staff-estimated ceiling, so
     they are an estimate for your own players too. Other clubs' players: the estimate of your scouts.
   - Two colours that differ in lightness too: ability gold, potential blue.
