@@ -3075,10 +3075,6 @@ table.scout-table.eq .stars {
   justify-content: center;
   gap: 10px;
 }
-.hub-next-actions .big {
-  font-size: 17px;
-  padding: 10px 26px;
-}
 .hub-champion {
   font-family: var(--display);
   font-stretch: condensed;
@@ -3216,10 +3212,6 @@ table.scout-table.eq .stars {
   text-transform: uppercase;
   color: var(--home);
   line-height: 1.1;
-}
-.mm .big {
-  font-size: 17px;
-  padding: 10px 26px;
 }
 .mm-modes {
   display: grid;
@@ -3494,10 +3486,6 @@ table.scout-table.eq .stars {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-}
-.cp-side .big {
-  font-size: 17px;
-  padding: 10px;
 }
 .cp-grid {
   grid-auto-rows: minmax(96px, 150px);
@@ -4595,4 +4583,54 @@ body:has(.tb) .overlay {
 }
 .brk-table tr.sits-out td {
   opacity: 0.75;
+}
+
+/* One size for every big call-to-action button, on every screen (owner, 19 Nov 2026): the main
+   menu's Continue and New career, Play the match, Manage a club, the career's start buttons. */
+button.primary.big,
+.cr button.primary.cr-start {
+  min-height: 52px;
+  min-width: 220px;
+  padding: 0 24px;
+  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* The main menu's other ways in: rows in a panel, like the career slots. */
+.mm-more {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px;
+}
+
+/* Which slot to save over: a pop-up after Manage when every slot is in use. */
+.overlay.slot-picker {
+  align-items: center;
+}
+.slot-picker-box {
+  margin: auto;
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+}
+.slot-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.slot-picker-head h3,
+.slot-picker-box p {
+  margin: 0;
+}
+.slot-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }

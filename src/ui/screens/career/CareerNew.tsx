@@ -12,6 +12,7 @@ import { REGION_NAME, REGIONS, type Competition, type Region, type World, type W
 import { useConfirm } from '../../components/Confirm';
 import { careerStore } from './store';
 import { TopBar } from '../../components/TopBar';
+import { SlotPicker } from '../../components/SlotPicker';
 import { Badge, country, mid, overallRange, Pager, ratingTone, showRange, useFitRows } from './parts';
 import './career.css';
 
@@ -29,7 +30,8 @@ export function CareerNew({ onStart }: { onStart: (w: World, slot: number) => vo
   const [chosen, setChosen] = useState<string | null>(null);
   const [manager, setManager] = useState('');
   const [slots, setSlots] = useState<WorldSlot[] | null>(null);
-  const [replace, setReplace] = useState<number | null>(null);
+  // All slots in use: Manage asks which one to save over.
+  const [asking, setAsking] = useState(false);
   const [saving, setSaving] = useState(false);
   const confirm = useConfirm();
 
@@ -77,21 +79,19 @@ export function CareerNew({ onStart }: { onStart: (w: World, slot: number) => vo
     );
 
   const empty = slots?.findIndex((s) => s.status === 'empty') ?? -1;
-  const slot = empty >= 0 ? empty : replace;
   const rank = clubs.findIndex((c) => c.id === club.id) + 1;
 
+  const go = async (slot: number) => {
+    setAsking(false);
+    setSaving(true);
+    const mine = takeOver(world, club.id, manager.trim() || undefined);
+    await writeWorld(careerStore, slot, mine);
+    onStart(mine, slot);
+  };
   const start = () => {
-    if (slot === null || saving) return;
-    const go = async () => {
-      setSaving(true);
-      const mine = takeOver(world, club.id, manager.trim() || undefined);
-      await writeWorld(careerStore, slot, mine);
-      onStart(mine, slot);
-    };
-    if (empty >= 0) return void go();
-    const s = slots?.[slot];
-    const what = s?.status === 'ok' ? `${s.summary.club} (season ${s.summary.season})` : 'the save';
-    confirm.ask({ title: `Replace ${what}?`, body: `Your new career goes in career slot ${slot + 1}, and the career saved there is gone for good.`, confirm: 'Replace it', cancel: 'Keep it', danger: true }, () => void go());
+    if (saving || !slots) return;
+    if (empty >= 0) void go(empty);
+    else setAsking(true);
   };
 
   const pickRegion = (r: Region) => {
@@ -109,6 +109,18 @@ export function CareerNew({ onStart }: { onStart: (w: World, slot: number) => vo
   return (
     <div className="cr cr-new">
       {confirm.dialog}
+      {asking && slots && (
+        <SlotPicker
+          heading="Save over which career?"
+          choices={slots.map((s) => ({
+            slot: s.slot,
+            title: s.status === 'ok' ? s.summary.club : s.status === 'empty' ? 'Empty' : "Can't be opened",
+            detail: s.status === 'ok' ? `${s.summary.league} · season ${s.summary.season}–${String(s.summary.season + 1).slice(2)}` : s.status === 'empty' ? '' : s.message,
+          }))}
+          onPick={(slot) => void go(slot)}
+          onClose={() => setAsking(false)}
+        />
+      )}
       <TopBar crumbs={[{ label: 'New career', route: { s: 'career-new' } }]} right={<span className="cr-sub">Choose any club, at any level: start at the top, or climb from the bottom.</span>} />
 
       <div className="cr-new-body">
@@ -230,20 +242,7 @@ export function CareerNew({ onStart }: { onStart: (w: World, slot: number) => vo
             <span className="cr-label">Your name (manager)</span>
             <input value={manager} maxLength={24} placeholder="optional" onChange={(e) => setManager(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && start()} />
           </label>
-          {slots && empty < 0 && (
-            <div className="cr-replace">
-              <span className="cr-sub">All three career slots are in use. Save over:</span>
-              <div className="cr-pills cr-slots">
-                {slots.map((s) => (
-                  <button key={s.slot} className={replace === s.slot ? 'on' : ''} aria-pressed={replace === s.slot} onClick={() => setReplace(s.slot)}>
-                    <b>Slot {s.slot + 1}</b>
-                    <small>{s.status === 'ok' ? s.summary.club : s.status === 'empty' ? 'empty' : s.status}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <button className="cr-start" disabled={slot === null || saving || !slots} onClick={start}>
+          <button className="primary cr-start" disabled={saving || !slots} onClick={start}>
             {saving ? 'Saving…' : `Manage ${club.name}`}
           </button>
         </aside>

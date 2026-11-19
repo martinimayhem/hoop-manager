@@ -1,4 +1,4 @@
-import { VIEW_3D_KEY } from './MainMenu';
+import { SPEED_KEY, VIEW_3D_KEY } from './MainMenu';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { buildBoxScore } from '../../engine/stats';
@@ -17,7 +17,7 @@ import { CourtOverlays, Gamecast, PlayByPlay } from '../components/Gamecast';
 import { CANVAS_H, CANVAS_W, CourtRenderer } from '../court/render';
 import { courtDots } from '../court/dots';
 import { DEFENCE_INFO, OFFENCE_INFO, TEAM_COLOURS, TEMPO_INFO, clockString, periodLabel } from '../labels';
-import { ARGUE_SECONDS, LiveMatch, type TeamView } from '../match/controller';
+import { ARGUE_SECONDS, LiveMatch, type Speed, type TeamView } from '../match/controller';
 import { TopBar, type Crumb } from '../components/TopBar';
 import { useConfirm } from '../components/Confirm';
 import { useNav } from '../nav';
@@ -102,6 +102,15 @@ export function MatchScreen({
     return () => ro.disconnect();
   }, []);
   const [seenTip, setSeenTip] = useState(-1);
+  // The speed chosen here is the next match's too (there is no setting on the main menu).
+  const setSpeed = (s: Speed) => {
+    m.setSpeed(s);
+    try {
+      localStorage.setItem(SPEED_KEY, s);
+    } catch {
+      /* this match only */
+    }
+  };
   const [muted, setMuted] = useState(sound.muted);
   /** Paused because the player switched away; they continue from the overlay. */
   const [away, setAway] = useState(false);
@@ -390,10 +399,10 @@ export function MatchScreen({
           </button>
           <div className="spacer" />
           <span className="muted small">Speed</span>
-          <button className={`small ${m.speed === 'normal' ? 'active' : ''}`} onClick={() => m.setSpeed('normal')}>
+          <button className={`small ${m.speed === 'normal' ? 'active' : ''}`} onClick={() => setSpeed('normal')}>
             Normal
           </button>
-          <button className={`small ${m.speed === 'fast' ? 'active' : ''}`} onClick={() => m.setSpeed('fast')}>
+          <button className={`small ${m.speed === 'fast' ? 'active' : ''}`} onClick={() => setSpeed('fast')}>
             Fast
           </button>
           <button

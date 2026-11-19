@@ -79,20 +79,13 @@ export function MainMenu({
   onCareerNew: () => void;
   onCareerOpen: (world: World, slot: number) => void;
 }) {
-  const [speed, setSpeedState] = useState<Speed>(lastSpeed);
-  const [view, setViewState] = useState<Setup['view']>(startView);
+  // The court view and match speed are chosen in the match itself; it remembers them for the next one.
+  const [speed] = useState<Speed>(lastSpeed);
+  const [view] = useState<Setup['view']>(startView);
   const [region, setRegionState] = useState<Region>(lastRegion);
   const setRegion = (r: Region) => {
     setRegionState(r);
     remember(REGION_KEY, r);
-  };
-  const setSpeed = (s: Speed) => {
-    setSpeedState(s);
-    remember(SPEED_KEY, s);
-  };
-  const setView = (v: Setup['view']) => {
-    setViewState(v);
-    remember(VIEW_3D_KEY, v === '3d' ? '1' : '0');
   };
 
   const [slots] = useState(() => listSlots(browserStorage));
@@ -159,7 +152,7 @@ export function MainMenu({
           <div>
             <div className="mm-kicker">Career · new</div>
             <b className="mm-club">Manage a club, season after season</b>
-            <div className="muted">318 clubs in America and 11 European countries. Pick any club and look around: squads, players, competitions, money. Playing the season comes next.</div>
+            <div className="muted">318 clubs in America and 11 European countries. Pick any club and play its season: your games live or simulated, the rest of the world around you.</div>
           </div>
           <button className="primary big" onClick={onCareerNew}>
             New career <NextIcon />
@@ -223,35 +216,25 @@ export function MainMenu({
         </div>
       </section>
 
-      <div className="mm-links">
-        <button className="mm-link" onClick={onLoad}>
-          Saved games ({saves.length}) <NextIcon />
+      <section className="panel mm-more">
+        <button className="mm-career-slot" onClick={onLoad}>
+          <span>
+            <b>Saved games</b>
+            <small className="muted">Your Quick League games ({saves.length})</small>
+          </span>
+          <span className="mm-go">
+            Open <NextIcon />
+          </span>
         </button>
-        <button className="mm-link" onClick={() => onFriendly({ names: ['Harbor Hammers', 'Skyline Sparks'], speed, view })} title="One match, no league: Harbor Hammers (big and slow) against Skyline Sparks (small and fast).">
-          Friendly match <NextIcon />
+        <button className="mm-career-slot" onClick={() => onFriendly({ names: ['Harbor Hammers', 'Skyline Sparks'], speed, view })}>
+          <span>
+            <b>Friendly match</b>
+            <small className="muted">One match, no league: Harbor Hammers against Skyline Sparks</small>
+          </span>
+          <span className="mm-go">
+            Play <NextIcon />
+          </span>
         </button>
-      </div>
-
-      <section className="panel mm-settings">
-        <span className="mm-label">Court view</span>
-        <span className="hub-seg">
-          <button className={view === '2d' ? 'on' : ''} onClick={() => setView('2d')} title="The classic court, seen from above the corner.">
-            2D
-          </button>
-          <button className={view === '3d' ? 'on' : ''} onClick={() => setView('3d')} title="A 3D court: drag to turn it, scroll to zoom. You can switch during the match.">
-            3D (beta)
-          </button>
-        </span>
-        <span className="mm-label">Match speed</span>
-        <span className="hub-seg">
-          <button className={speed === 'normal' ? 'on' : ''} onClick={() => setSpeed('normal')} title="About 7.5 minutes a quarter with every possession shown">
-            Normal
-          </button>
-          <button className={speed === 'fast' ? 'on' : ''} onClick={() => setSpeed('fast')} title="About 4 minutes a quarter with every possession shown">
-            Fast
-          </button>
-        </span>
-        <span className="muted small">Both can be changed during a match too.</span>
       </section>
       </div>
       </div>

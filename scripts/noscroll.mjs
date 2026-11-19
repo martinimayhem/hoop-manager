@@ -152,6 +152,13 @@ const journeys = {
     await button(page, /New career/).click();
     await page.locator('.cr-new-side .cr-start').waitFor({ timeout: 20000 });
     await check('career: new (all slots full)');
+    // Manage with every slot in use: the pop-up asks which career to save over; Escape closes only it.
+    await page.locator('.cr-new-side .cr-start').click();
+    await page.locator('.slot-picker-box').waitFor();
+    await check('pop-up: save over which career?');
+    await page.keyboard.press('Escape');
+    await page.locator('.slot-picker-box').waitFor({ state: 'detached' });
+    if (!(await page.locator('.cr-new-side').count())) throw new Error('Escape on the slot pop-up left the screen');
   },
   async quickLeague(page, check) {
     for (const league of [/Legends League/, /Pro League/, /Street League/]) {

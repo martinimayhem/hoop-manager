@@ -11,7 +11,7 @@ import { listSlots, summarise } from '../../../game/league/saves';
 import { Rating } from '../../components/common';
 import { browserStorage } from './storage';
 import { TopBar } from '../../components/TopBar';
-import { useConfirm } from '../../components/Confirm';
+import { SlotPicker } from '../../components/SlotPicker';
 import { NextIcon, PrevIcon } from '../../icons';
 import { useFitRows } from '../career/parts';
 
@@ -68,8 +68,8 @@ export function ClubPicker({ league, region, onStart }: { league: LeagueId; regi
   const [manager, setManager] = useState('');
   const [slots] = useState(() => listSlots(browserStorage));
   const empty = slots.findIndex((s) => s.status === 'empty');
-  const [replace, setReplace] = useState<number | null>(null);
-  const slot = empty >= 0 ? empty : replace;
+  // All slots in use: Manage asks which one to save over.
+  const [asking, setAsking] = useState(false);
   const chosen = clubs[pick];
   const roster = [...chosen.team.players].sort((a, b) => composite(b).overall - composite(a).overall);
   const st = standing(chosen.rank);
@@ -77,20 +77,30 @@ export function ClubPicker({ league, region, onStart }: { league: LeagueId; regi
   const side = useRef<HTMLDivElement>(null);
   const fit = useFitRows(roster.length, '.cp-roster tbody tr', pick, side);
 
-  const confirm = useConfirm();
+  const go = (slot: number) => onStart(takeOver(q, pick, manager.trim() || undefined), slot);
   const start = () => {
-    if (slot === null) return;
-    const go = () => onStart(takeOver(q, pick, manager.trim() || undefined), slot);
-    if (empty >= 0) return go();
-    const s = slots[slot];
-    const what = s.status === 'ok' ? `${summarise(s.data).club} (${summarise(s.data).league})` : 'the save';
-    confirm.ask({ title: `Replace ${what}?`, body: `Your new game goes in slot ${slot + 1}, and the game saved there is gone for good.`, confirm: 'Replace it', cancel: 'Keep it', danger: true }, go);
+    if (empty >= 0) go(empty);
+    else setAsking(true);
   };
 
   return (
     <div className="cp">
       <TopBar crumbs={[{ label: 'New Quick League', route: { s: 'menu' } }, { label: leagueName(league, region), route: { s: 'quick-new', league, region } }]} />
-      {confirm.dialog}
+      {asking && (
+        <SlotPicker
+          heading="Save over which game?"
+          choices={slots.map((s) => ({
+            slot: s.slot,
+            title: s.status === 'ok' ? summarise(s.data).club : s.status === 'empty' ? 'Empty' : "Can't be opened",
+            detail: s.status === 'ok' ? `${summarise(s.data).league} · ${summarise(s.data).progress}` : '',
+          }))}
+          onPick={(slot) => {
+            setAsking(false);
+            go(slot);
+          }}
+          onClose={() => setAsking(false)}
+        />
+      )}
       <header className="cp-bar">
         <div>
           <h1>{leagueName(league, region)}</h1>
@@ -180,18 +190,7 @@ export function ClubPicker({ league, region, onStart }: { league: LeagueId; regi
             <span>Your name (manager)</span>
             <input value={manager} maxLength={24} placeholder="optional" onChange={(e) => setManager(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && start()} />
           </label>
-          {empty < 0 && (
-            <div className="cp-replace">
-              <span className="muted small">All three save slots are in use. Save over:</span>
-              {slots.map((s) => (
-                <button key={s.slot} className={`small ${replace === s.slot ? 'active' : ''}`} onClick={() => setReplace(s.slot)} title={s.status === 'ok' ? `${summarise(s.data).club}, ${summarise(s.data).league}` : undefined}>
-                  Slot {s.slot + 1}
-                  {s.status === 'ok' ? ` · ${summarise(s.data).club}` : ''}
-                </button>
-              ))}
-            </div>
-          )}
-          <button className="primary big" disabled={slot === null} onClick={start}>
+          <button className="primary big" onClick={start}>
             Manage {chosen.team.name} <NextIcon />
           </button>
         </aside>

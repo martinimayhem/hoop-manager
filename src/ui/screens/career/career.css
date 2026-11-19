@@ -959,12 +959,8 @@
   font-size: 15px;
 }
 .cr .cr-start {
-  min-height: 52px;
+  /* The look and size of every primary call to action (styles.css: button.primary, one size). */
   border-radius: 8px;
-  background: var(--accent);
-  color: #1b0d00;
-  font-weight: 700;
-  font-size: 16px;
 }
 .cr .cr-start:disabled {
   opacity: 0.5;
@@ -1008,10 +1004,6 @@
   }
   .cr .cr-new-bar .cr-back {
     align-self: center;
-  }
-  .cr .cr-new-bar .cr-start {
-    min-height: 44px;
-    padding: 0 22px;
   }
 }
 
@@ -2015,4 +2007,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+}
+
+/* Primary buttons look the same inside the career as everywhere else. */
+.cr button.primary {
+  background: var(--banner);
+  border: 1px solid transparent;
+  color: #fff;
+  font-family: var(--display);
+  font-stretch: condensed;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 2px #0007;
+  box-shadow: 0 4px 14px #d7263d40;
+  border-radius: 8px;
+}
+.cr button.primary:disabled {
+  opacity: 0.5;
 }
