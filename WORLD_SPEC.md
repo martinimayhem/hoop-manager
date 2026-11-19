@@ -68,9 +68,10 @@ a club near home).
     semi-finals and final).
   - **Both conferences use the real rules unchanged**, including EuroLeague's play-in for places
     7–10 with only 12 clubs (10 of 12 go on; decided 18 Nov 2026).
-  - **Big League Final: one single game**, America champion v Europe champion, at a neutral venue
-    *(tune)*. This is the only addition to the real NBA and EuroLeague formats. Rules for the Final:
-    see §17.
+  - **Big League Final: one single game**, America champion v Europe champion. **The hosts
+    alternate** (decided 19 Nov 2026): Europe hosts in even seasons under FIBA rules, America in odd
+    seasons under NBA rules, in a big arena of the host region. This is the only addition to the real
+    NBA and EuroLeague formats.
   - *Watch-out:* an American champion can play up to 28 playoff games plus the Final; a European club
     that goes deep in everything about 85–90 games a season, as real EuroLeague clubs do.
 - **US Divisions 2–4:** double round-robin (30 games); the champion is promoted, places 2–5 play a
@@ -83,11 +84,20 @@ a club near home).
   midweek, national-league and cup games at the weekend**, so they play about 70 games a season
   against about 45 for an American Big League club. Rotation, fatigue and injuries (§2.2) are what
   make this a real choice: rest players in one competition to win the other.
-- **Cups:** single-game knockouts, drawn at random, lower-tier club at home *(tune)*, until four
-  clubs are left; then a **Final Four weekend** at one venue (semi-finals and final). Big League
-  clubs enter in the last 16. They are the giant-killing stories of the season.
-- **Key games:** derbies, top-of-the-table games, cup ties and playoffs are marked as key games.
-  "Simulate to the next key game" is how a season stays inside 2–4 hours (§3).
+- **Cups:** single-game knockouts, drawn at random, the lower-tier club at home *(tune)*, until four
+  clubs are left; then a **Final Four weekend** at one venue (semi-finals and final). They are the
+  giant-killing stories of the season. Formats (decided 19 Nov 2026):
+  - **America Cup (66 clubs): everyone enters in round 1.** A preliminary game between the 4
+    lowest-placed Division 4 clubs of last season makes it 64; then rounds of 64, 32 and 16,
+    quarter-finals and the Final Four. A Big League club can lose to a Division 4 side in round 1.
+  - **National cups (24 clubs):** round 1 for the 16 lowest-placed clubs (8 winners); the last 16
+    adds the 8 best tier-1 clubs of last season (Big League clubs among them); then quarter-finals
+    and the Final Four. **Portugal (12):** round 1 for the 8 lowest (4 winners) with the top 4 in the
+    quarter-finals, then the Final Four.
+- **Key games** (decided 19 Nov 2026): **every play-in, playoff and Final game**, **cup ties from the
+  quarter-finals on** (Final Four included), and **season deciders**: the last 5 regular-season games
+  when your club is within 2 wins of a playoff, play-in, promotion or relegation line. Only your own
+  games. "Simulate to the next key game" stops on them; it is how a season stays inside 2–4 hours.
 
 ### 1.2 Promotion, relegation, licences and wildcards
 
@@ -499,7 +509,8 @@ Every slice must keep these checks green, or explain why a target needs to chang
   full engine).
 - **Regional rules (built):** Europe's games use FIBA rules, a player out on his 5th foul; America's
   NBA rules, out on his 6th (`MatchRules`, tests/rules.test.ts). National leagues and national cups:
-  FIBA. Big League playoffs: America conference NBA, Europe conference FIBA; the Final: see §17.
+  FIBA. Big League: America conference NBA, Europe conference FIBA; a game between the conferences
+  uses the **home club's** rules; the Final the host's (§1.1).
 - **Tablet:** every screen works by touch at tablet size (from about 768 px wide); every keyboard
   shortcut (timeout, pause) has an on-screen button. The 3D view must keep a usable frame rate on a
   mid-range tablet, or fall back to 2D. Phone layouts are out (SCOPE.md).
@@ -526,7 +537,7 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 | Slice | What | Playable when done |
 |---|---|---|
 | **W1 Foundation** | World generator (11 countries + America, cities, clubs, licences, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (competitions, clubs, players), tablet-ready layout | You can create a world, save it, load it and look around, on desktop and tablet |
-| **W2 One season** (built as W2a: the regular season, `briefs/W2a.md`; then W2b: everything else) | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
+| **W2 One season** (built as W2a: the regular season, `briefs/W2a.md`; W2b: postseason, cups, next season, `briefs/W2b.md`) | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
 | **W3 Years go by** | Aging, development, training focus, retirement, contract expiry and AI re-signing, rollover to the next season; squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
 | **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contracts, wage demands, extensions, contract clauses, buyouts, free agency days | You can build through free agency |
@@ -564,8 +575,8 @@ The full list, against Football Manager, is in [SCOPE.md](SCOPE.md). In short:
    28 playoff games. Accepted as realistic for now; check in play-testing whether "simulate to the
    next key game" keeps a season inside 2–4 hours, and add a shorter-series setting only if it
    doesn't.
-2. **Licence-loss window:** third bottom-2 finish within 5 seasons, or ever?
-3. **Rules for the one-game Final:** NBA, FIBA, or alternate each season?
+2. *(Decided 19 Nov 2026: the licence-loss window is the last 5 seasons; the Final's hosts and rules
+   alternate, §1.1.)*
 
 ### Decided on 18 Nov 2026
 
