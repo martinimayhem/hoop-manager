@@ -313,6 +313,36 @@ Offseason, in this order (screens and decisions per step: GAME_FLOW.md §3.7):  
 
 ## 7. Contracts and free agency
 
+### 7.0 Contract expiry first version (decided 20 Nov 2026, built in W2b)
+
+Contracts run out from W2b on, before full free agency (W5). This is the simple version; W5 builds
+on it and does not replace it.
+
+- **Every contract has an end season** and counts down at each new season. A contract with no years
+  left expires at the rollover. Development-squad players' contracts roll on unchanged for now.
+- **Your players:** when the regular season ends, an inbox message lists your players whose contract
+  is expiring. Before the new season a **contract screen** (a Continue stop) asks, per player:
+  **offer a new deal** (years within §7.1's limits, yearly wage) or **let him go**. The player
+  answers yes, no, or asks for a higher wage you can accept, always with a one-line reason. He
+  decides on wage compared with his demand (§7.1) and on last season's playing time.
+- **Money when re-signing your own players:**
+  - **Cap system (America Big League):** you may go over the cap to re-sign **your own** player (a
+    simple form of Bird rights), up to the hard ceiling (1.34 C). Without this, a club over the cap
+    could never keep its stars. Other signings need cap room or are minimum contracts. Full Bird
+    rules, the mid-level and buyouts stay in W5.
+  - **Budget system (everyone else):** the new payroll must fit the club's wage budget; a club already
+    over it (after promotion or relegation) can only offer minimum deals.
+- **AI clubs decide automatically:** an AI club re-signs an expiring player if he is among its 10 best
+  players and his demand fits its money rules above; otherwise he leaves.
+- **Free-agent list:** players nobody re-signs join the existing free agents (§1.4). After the
+  re-signing step, **you sign first** (free-agent screen, a Continue stop), then every AI club below
+  13 players fills up with the best free agent it can afford, worst-placed club first. A free agent
+  accepts an offer at or above his demand.
+- **You can't start a season below 13 players.** The new-season step stays blocked with "sign *n* more
+  players" and an **Auto-fill** button that signs the best affordable free agents for you.
+- **Not in this version (W5):** offers from several clubs, free-agency days, clauses, extensions
+  during the season, in-season free-agent signings.
+
 ### 7.1 Contracts
 - A contract is a **yearly wage**: **1–5 years** in the cap system (America Big League), **1–3
   years** in the budget system, where every contract also has a **buyout fee**. The limits come
@@ -518,6 +548,10 @@ Every slice must keep these checks green, or explain why a target needs to chang
 - **Background worker:** all world simulation runs in a Web Worker so the screen never freezes.
 - **Saves in IndexedDB**, not localStorage: after 10 seasons a world holds about 12,000 players with
   career records, roughly 20–25 MB, far beyond localStorage's typical limit. Several save slots.
+- **Saves are compressed** (decided 20 Nov 2026): every save is gzip-compressed with the browser's
+  built-in CompressionStream before it is stored. At each rollover, past seasons are cut back to what
+  the "What is stored" line below and the W2b brief §7 keep. The target is a save that stays small after 20 seasons;
+  `scripts/seasons-check.ts` reports the size per season.
 - **Save versioning:** every save has a format version and migrations, so updates never break an
   old career.
 - **Deterministic:** a world seed generates the world; every match stores its seed.
@@ -537,10 +571,10 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 | Slice | What | Playable when done |
 |---|---|---|
 | **W1 Foundation** | World generator (11 countries + America, cities, clubs, licences, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (competitions, clubs, players), tablet-ready layout | You can create a world, save it, load it and look around, on desktop and tablet |
-| **W2 One season** (built as W2a: the regular season, `briefs/W2a.md`; W2b: postseason, cups, next season, `briefs/W2b.md`) | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary | You can play a full season with any club in 2–4 hours |
-| **W3 Years go by** | Aging, development, training focus, retirement, contract expiry and AI re-signing, rollover to the next season; squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
+| **W2 One season** (built as W2a: the regular season, `briefs/W2a.md`; W2b: postseason, cups, next season, `briefs/W2b.md`) | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary; added to W2b on 20 Nov 2026: contract expiry, re-signing and a simple free-agent list (§7.0), compressed saves (§14) | You can play a full season with any club in 2–4 hours |
+| **W3 Years go by** | Aging, development, training focus, retirement (contract expiry moved to W2b, §7.0); squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
-| **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contracts, wage demands, extensions, contract clauses, buyouts, free agency days | You can build through free agency |
+| **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contracts, wage demands, extensions, contract clauses, buyouts, free agency days, built on §7.0's first version | You can build through free agency |
 | **W6 Trades** | AI club plans, valuation, trade screen with salary matching (America), buyout offers (everywhere), "what would you want?", deadline day, AI-to-AI deals | You can trade, and the AI is hard to exploit |
 | **W7 The club** | Staff (phase 4) with hiring and firing, facilities and board requests, money, sponsor and shoe/kit deals, board objectives, sacking and job offers | Money and staff are real decisions |
 | **W8 Scouting 2.0** | Scouts by region, narrowing ranges, shortlist | Finding hidden talent is a skill |

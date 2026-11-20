@@ -94,8 +94,9 @@ the inbox.
   - **New schedules** for every competition and cup; tables and season stats start again.
   - **History:** the season is archived: final tables, champions, cup winners, promoted and relegated
     clubs; each player's season stats are added to his career stats.
-  - **Not yet (W3):** ageing, development, retirements, contract expiry, new youth. Squads stay as
-    they are; game plans are kept.
+  - **Contracts (added 20 Nov 2026):** contract expiry, re-signing and the free-agent list as in
+    WORLD_SPEC §7.0, with its two Continue stops (contract screen, free-agent screen).
+  - **Not yet (W3):** ageing, development, retirements, new youth. Game plans are kept.
 
 ## 7. Stored data
 
@@ -105,6 +106,8 @@ the inbox.
 - **Past seasons:** final tables, results, champions, player season totals; box scores only of your
   own games and of every Final.
 - Measure and report the save size after one and after three seasons.
+- **Compressed saves (added 20 Nov 2026):** gzip with CompressionStream (WORLD_SPEC §14); old saves
+  still load.
 
 ## 8. Screens
 
@@ -129,7 +132,12 @@ Within the screen rules (nothing scrolls, 14 px, Back in place):
   - licences and wildcards: the 5-season counter, the third bottom-2 finish, wildcards picked as
     above, Big League Europe 12 clubs;
   - Key moments with no changes made at the breaks: the same seed gives the same result as Simulate;
-  - the same seed gives the same seasons; save and load mid-postseason plays on identically.
+  - the same seed gives the same seasons; save and load mid-postseason plays on identically;
+  - contracts (WORLD_SPEC §7.0): count-down and expiry, your re-sign answers, going over the cap only
+    for your own players and never above 1.34 C, budget clubs within budget, AI re-signing, every
+    club at 13 players before the new season, the new-season step blocked below 13.
+- **Twenty seasons** headless: squads stay at 13 every season, no errors; report the compressed save
+  size after each rollover.
 - **Three seasons in a row** played headless with every game simulated: every competition the right
   size each season, champions recorded, no errors; report the time per season and the save size.
 - One postseason game watched and one played with Key moments through the real screens; report both.
