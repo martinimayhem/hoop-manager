@@ -102,7 +102,10 @@ for every news item about my players").
    **Key moments** (decided 19 Nov 2026): each quarter is simulated and shown as a **quarter card**
    (score, the runs, the top players); at every break you can change tactics as in a watched game;
    the **last 5 minutes of the 4th quarter, and any overtime, are played live**. If one side leads by
-   20 or more with 5 minutes left, the game goes straight to the result.
+   20 or more with 5 minutes left, the game goes straight to the result. **Up to the live part**,
+   Key moments plays exactly as Simulate with the same seed when nothing is changed at the breaks;
+   **from the live part on** it plays as a watched game, so the final score can differ (decided
+   20 Nov 2026).
 3. **The match** as built today: tactics, timeouts, subs, clutch calls, halftime team talk.
 4. **After the match:** box score, player ratings, injuries, morale changes, and a **press moment**
    if it was a big game.
