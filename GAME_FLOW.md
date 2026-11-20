@@ -92,6 +92,11 @@ Continue runs through days on its own and stops only when:
 Everything else goes to the **inbox** without stopping. A setting lets you add stops (e.g. "stop
 for every news item about my players").
 
+**A decision blocks Continue, as in Football Manager** (decided 20 Nov 2026). While a message needs
+your answer, Continue becomes **"Respond"** and takes you to that message; time doesn't move until
+you have answered it. Messages that are only news never block. Home marks a message that needs a
+decision ("Decision") and gives its action buttons in the message itself.
+
 ### 3.4 Your game day
 
 1. **Match preparation screen:** the opponent report (scouting ranges, likely tactics), your game
@@ -361,6 +366,14 @@ Competitions, on the design canvas
 owner; screenshots go into the slice brief, because Claude Code can't open it). Approved mockups
 are linked from the slice brief that builds them.
 
+**Round 2, the reference sheet** (20 Nov 2026): [`design/reference-v1.html`](design/reference-v1.html)
+in the repository, so Claude Code can open and screenshot it. It holds the **design system v1**
+(colours, rating bands, type, components, layout rules) and two screens drawn at 1366×768: the
+**Player profile** (look approved 20 Nov 2026; its attribute panel changes to the 21 attributes in
+slice E1) and **Home** (inbox with a reading pane, next game, mini table, objective, job security,
+squad alerts; drawn, not yet approved). Every screen is to be built from these tokens and
+components; a later UI slice brings the whole game onto them.
+
 
 ### 6.4 Squad table views
 
@@ -370,7 +383,7 @@ First team / Dev squad / Academy tabs. Decided 18 Nov 2026.
 | View | Columns |
 |---|---|
 | **Overview** (default) | Portrait, Pos, Player, Age, Nat, **Ability ★**, **Potential ★**, **Morale face**, Contract end, Wage, Buyout (budget clubs) or Years left (cap clubs) |
-| **Attributes** | Pos, Player, OVR, then all 11 ratings with short headers: SPD, STA, MID, 3PT, FT, LAY, DNK, PAS, DRI, REB, IQ, colour-coded as on the player page |
+| **Attributes** | Pos, Player, OVR, then the ratings with the short headers of SPEC.md §3.1, colour-coded as on the player page. With 21 attributes (from slice E1) the view has a switch: **Offence** (LAY DNK PST MID 3PT FT PAS HDL), **Defence** (PER INT STL BLK DRB ORB), **Physical & mental** (SPD STR JMP STA OIQ DIQ CLU) |
 | **Profile** | Portrait, Pos, Player, Age, Height, Weight, Archetype, Origin (college or academy), Hometown, Potential ★ |
 
 - Every column sorts. Other clubs' players show **scout ranges** for numbers, as everywhere else.
@@ -412,6 +425,7 @@ Decided 18 Nov 2026 (owner, with Football Manager screens as reference for the *
 |---|---|
 | W1 Foundation | §6 sidebar shell, top bar, Squad and Competitions screens (browse only), payroll bar (display) |
 | W2 One season | §2–§3.6 calendar, Continue and its stops, game day, postseason, season review |
+| E1 Attributes that matter | §6.4 Attributes view with its group switch; the player page's attribute panel |
 | W3 Years go by | §3.7 offseason checklist (retirements, development), §5.1 dev squad and academy |
 | W4 Talent pipeline | §5.2 draft and live draft room |
 | W5 Free agency | §4 both money systems for signings, buyouts, options, free agency days |
