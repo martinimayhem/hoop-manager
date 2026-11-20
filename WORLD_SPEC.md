@@ -164,7 +164,9 @@ first team, as in real life. The world lab checks that the population stays stab
 
 ## 2. Players
 
-Everything in SPEC.md §3 stays: the 15 attributes (1–99), position, archetype, height and weight.
+Everything in SPEC.md §3 stays: the **21 attributes** (1–99, five groups; decided 20 Nov 2026, built in
+slice E1), position, archetype, height and weight. Every attribute has an engine job and a season's
+stats must show it (SPEC.md §3.1b).
 Career mode adds:
 
 | Field | Purpose |
@@ -521,6 +523,7 @@ You don't run the books: the board does. You influence the club through four cho
 | AI-to-AI trades | Value difference within 10% on average |
 | Exploit bot | A bot sends 1,000 lopsided trade offers; the AI accepts fewer than 2% |
 | Cap and budgets | No America Big League club above the hard ceiling; at most 1/3 pay luxury tax in a season; European clubs over the threshold pay the tax; no budget-system club below zero |
+| Attributes show in stats | SPEC.md §3.1b, over every league of a season |
 | Speed | One matchday under 1 second in the browser; a whole season fast-forwarded in under 90 seconds in the browser |
 
 Every slice must keep these checks green, or explain why a target needs to change.
@@ -572,6 +575,7 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 |---|---|---|
 | **W1 Foundation** | World generator (11 countries + America, cities, clubs, licences, colleges, players with nationalities, names with blocklists), data model, IndexedDB saves, background worker, browse screens (competitions, clubs, players), tablet-ready layout | You can create a world, save it, load it and look around, on desktop and tablet |
 | **W2 One season** (built as W2a: the regular season, `briefs/W2a.md`; W2b: postseason, cups, next season, `briefs/W2b.md`) | Midweek/weekend calendar, schedules for the Big League, US divisions, national leagues and cups (Final Four weekends), standings, key games, play-ins, NBA/EuroLeague-style playoffs and the one-game Final, your matches live or simulated, everything else simulated, playoffs, promotion/relegation, wildcards, season summary; added to W2b on 20 Nov 2026: contract expiry, re-signing and a simple free-agent list (§7.0), compressed saves (§14) | You can play a full season with any club in 2–4 hours |
+| **E1 Attributes that matter** (`briefs/E1.md`, added 20 Nov 2026) | The 21 attributes of SPEC.md §3.1, the engine reworked so each one decides real events, the 102 stars and the generator re-rated, saves converted, the stats-show-attributes checks (SPEC.md §3.1b), lopsided blowouts fixed. Comes before W3, because development and aging work per attribute | Players differ the way real players do, and the box score proves it |
 | **W3 Years go by** | Aging, development, training focus, retirement (contract expiry moved to W2b, §7.0); squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
 | **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contracts, wage demands, extensions, contract clauses, buyouts, free agency days, built on §7.0's first version | You can build through free agency |

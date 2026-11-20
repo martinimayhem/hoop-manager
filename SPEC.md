@@ -52,20 +52,68 @@ The two moments that must be fun first: **building the squad** (draft, trades, f
 ## 3. Players
 
 ### 3.1 Attributes (1–99 scale)
-Shown to the user in **5 groups** so the screen stays readable; all 15 values used by the engine.
 
-| Group | Attributes |
-|---|---|
-| **Physical** | Speed, Height, Weight, Stamina |
-| **Scoring** | Shooting (mid-range), 3-Point, Free Throw %, Layup, Dunking |
-| **Playmaking** | Passing, Dribbling |
-| **Defence & Boards** | Rebounding, Tactics (basketball IQ / defensive awareness) |
-| **Hidden-ish** | Injury proneness, Development potential (only shown as a scout estimate) |
+**21 attributes in 5 groups (decided 20 Nov 2026, built in slice E1, `briefs/E1.md`).** Rule: **every
+attribute has one clear job in the match engine, and a season's stats must show it** (§3.1b). An
+attribute without an engine job is not added. Height and weight are real values (e.g. 198 cm,
+102 kg), shown in the player header, and feed the engine as well.
 
-- Height and weight are real values (e.g. 198 cm, 102 kg), converted to engine ratings.
-- Each player has a **position** (PG, SG, SF, PF, C) and can play adjacent positions with a penalty.
-- Each player has an **archetype** tag (e.g. "Sharpshooter", "Rim Protector", "Slasher",
-  "Floor General") so the user can scan quickly.
+| Group | Attribute (short) | What it decides in the engine | Its counter |
+|---|---|---|---|
+| **Physical** | Speed (SPD) | Transition, beating a man off the dribble, chase-down blocks, staying in front | — |
+| | Strength (STR) | Post-ups, finishing through contact (and-ones), post defence, boxing out | Slower in transition |
+| | Jumping (JMP) | Dunks, blocks, rebounds | — |
+| | Stamina (STA) | How fast energy drains | — |
+| **Scoring** | Layup (LAY) | Finishing at the rim without a dunk | — |
+| | Dunking (DNK) | Dunk chance and dunk makes | — |
+| | Post scoring (PST) | The post-up play (`postUp`, shot type `post`) | Double teams |
+| | Mid-range (MID) | Mid-range makes | — |
+| | 3-Point (3PT) | Three-point makes | — |
+| | Free throw (FT) | Free-throw makes | — |
+| **Playmaking** | Passing (PAS) | Assists, open shots created for team-mates, bad-pass turnovers | — |
+| | Ball handling (HDL) | Creating drives, beating pressure and the press, ball security | — |
+| **Defence & boards** | Perimeter defence (PER) | Contests on jumpers and drives | — |
+| | Interior defence (INT) | Contests at the rim without a block, post defence | — |
+| | Steals (STL) | Steal chance on passes and dribbles | More reach fouls |
+| | Blocks (BLK) | Block chance | More fouls; out of rebounding position |
+| | Defensive rebounding (DRB) | Defensive boards | — |
+| | Offensive rebounding (ORB) | Second chances | Fewer men back in transition |
+| **Mental** | Offensive IQ (OIQ) | Shot selection, shot-clock violations, running plays well | — |
+| | Defensive IQ (DIQ) | Help defence (fewer open shots allowed), zone execution, fewer fouls | — |
+| | Clutch (CLU) | A small make-rate bonus or penalty in the last 5 minutes of a game within 6 points | — |
+
+- **Hidden:** injury proneness and development potential (potential only as a scout estimate).
+- **Replaced:** Rebounding (split into DRB and ORB), Dribbling (now Ball handling), Tactics (split
+  into Offensive IQ and Defensive IQ). Weight no longer stands in for strength, nor height for jumping.
+- **Not added, because they have no engine job:** leadership, consistency, hustle.
+- The engine turns attributes into **composite ratings** (`src/engine/ratings.ts`) that decide the
+  events; each composite is listed with its formula in the E1 code, and every attribute must feed at
+  least one.
+- Each player has a **position** (PG, SG, SF, PF, C) and can play adjacent positions with a penalty,
+  and an **archetype** tag (e.g. "Sharpshooter", "Rim Protector", "Slasher", "Floor General").
+
+### 3.1b Stats must show the attributes (decided 20 Nov 2026)
+
+The balance lab (`npm run lab`) simulates full seasons and fails the build unless:
+
+- **Each attribute shows in its stat.** Across players with enough minutes, the rank correlation
+  between the attribute and its stat is at least **0.6** *(tune)*: STL and steals per 36 minutes,
+  BLK and blocks, ORB and offensive rebounds, DRB and defensive rebounds, 3PT and three-point %, FT
+  and free-throw %, MID and mid-range %, PAS and assists, HDL and turnovers (negative), PST and post
+  points per post-up, DNK and dunks, PER and opponents' make rate on contested jumpers, INT and
+  opponents' make rate at the rim.
+- **Totals look like real basketball**, per team per game, by rule set *(tune; E1 checks them
+  against the latest NBA and EuroLeague season averages before fixing them)*:
+
+  | | NBA rules (America) | FIBA rules (Europe) |
+  |---|---|---|
+  | Steals | 7.5–9 | 6–8 |
+  | Blocks | 4.5–5.5 | 2.5–4 |
+  | Turnovers | 13–15 | 11–14 |
+  | Free-throw attempts | 19–24 | 18–23 |
+  | Threes attempted | 34–40 | 24–30 |
+  | Offensive rebound rate | 23–28% | 25–30% |
+- **Margins look real:** the share of games decided by 30+ points stays below 5% in the Big League.
 
 ### 3.2 Design rule: every strength must have a counter
 To keep skill in the game, attributes interact rather than simply add up:
