@@ -113,6 +113,12 @@ function scrollers() {
     }
   }
   for (const [k, v] of covered) out.push(`covered ${k} "${v}"`);
+  // Nothing cut off at the window's edge: every button whole inside it.
+  for (const b of document.querySelectorAll('button')) {
+    const r = b.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0 || getComputedStyle(b).visibility === 'hidden') continue;
+    if (r.right > innerWidth + 1 || r.left < -1) out.push(`button cut off at the edge: "${(b.innerText || b.getAttribute('aria-label') || '').trim().slice(0, 24)}"`);
+  }
   // A native dropdown only when all its options fit without scrolling: 12 or fewer (GAME_FLOW §6.1a).
   for (const s of document.querySelectorAll('select')) if (s.options.length > 12) out.push(`dropdown with ${s.options.length} options: "${s.options[0]?.text.slice(0, 24)}"`);
   return out;
@@ -294,8 +300,9 @@ const journeys = {
     await page.locator('.cr-continue-top').click();
     await idle();
     await check('season: after the first Continue');
-    for (let i = 0; i < 20 && !(await page.locator('.prep-screen').count()); i++) {
-      await page.locator('.cr-continue-top').click();
+    for (let i = 0; i < 30 && !(await page.locator('.prep-screen').count()); i++) {
+      if (await page.locator('.cr-moment').count()) await page.locator('.cr-moment .cr-start').click();
+      else await page.locator('.cr-continue-top').click();
       await idle();
     }
     await check('season: match preparation');
@@ -336,18 +343,118 @@ const journeys = {
     }
     await page.locator('.cr-nav', { hasText: 'Home' }).click();
     await page.locator('.cr-sim-end').click();
+    await page.locator('.slot-picker-box .mm-career-slot', { hasText: /end of the regular season/ }).click();
     await check('pop-up: simulate to the end of the regular season?');
-    await page.getByRole('alertdialog').getByRole('button', { name: /Simulate to the end/ }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: /Simulate/ }).click();
     await page.waitForTimeout(1200);
     await check('pop-up: simulating (progress)');
-    await page.locator('.cr-review').waitFor({ timeout: 900000 });
-    await check('season: season review');
-    await page.locator('.tb-back').click();
-    await page.locator('.cr-side').waitFor();
-    await check('season: home (season over)');
+    await page.locator('.cr-busy').waitFor({ state: 'detached', timeout: 900000 });
+    // Your postseason starts: read it, then Leave back to the career.
+    if (await page.locator('.cr-moment').count()) {
+      await page.locator('.tb-back').click();
+      await page.locator('.cr-side').waitFor();
+    }
+    await page.locator('.cr-nav', { hasText: 'Home' }).click();
+    await check('season: home (regular season over)');
     await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
     await page.locator('.cr-comp', { hasText: 'Big League · America' }).click();
     await check('season: table at the end (18 clubs)');
+  },
+  // The postseason (slice W2b): simulate ahead, the moments Continue stops for, cups, brackets, a key
+  // game's preparation, Key moments, knocked out, the review's tabs, the next season, History.
+  async postseason(page, check) {
+    const idle = async () => {
+      await page.waitForTimeout(200);
+      await page.locator('.cr-busy').waitFor({ state: 'detached', timeout: 900000 });
+    };
+    await page.goto(base);
+    await button(page, /New career/).click();
+    await page.locator('.cr-new-side .cr-start').waitFor({ timeout: 20000 });
+    await button(page, /^Europe$/).click();
+    await button(page, /^Lithuania$/).click();
+    await page.locator('.cr-club').first().click();
+    await page.locator('.cr-new-side .cr-start').click();
+    if (await page.locator('.slot-picker-box').count()) await page.locator('.slot-picker-box .mm-career-slot').first().click();
+    await page.locator('.cr-side').waitFor();
+    await page.locator('.cr-continue-top').click();
+    await idle();
+    await page.locator('.cr-sim-end').click();
+    await page.locator('.slot-picker-box').waitFor();
+    await check('pop-up: simulate ahead');
+    await page.locator('.slot-picker-box .mm-career-slot', { hasText: /end of the regular season/ }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: /Simulate/ }).click();
+    await idle();
+    if (await page.locator('.cr-moment').count()) await check('postseason: moment (your postseason starts)');
+    if (await page.locator('.cr-moment').count()) {
+      await page.locator('.cr-moment .cr-start').click();
+      await idle();
+    }
+    await page.locator('.cr-nav', { hasText: 'Home' }).click().catch(() => {});
+    if (await page.locator('.cr-nav').count()) {
+      await check('postseason: home');
+      await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+      await check('postseason: competitions (cups, history)');
+      await page.locator('.cr-comp.cup', { hasText: 'Cup' }).first().click();
+      await check('postseason: cup');
+      await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+      await page.locator('.cr-comp', { hasText: 'Big League · America' }).click();
+      await page.getByRole('tab', { name: 'Playoffs' }).click();
+      await check('postseason: bracket (Big League America)');
+      await page.locator('.cr-nav', { hasText: 'Schedule' }).click();
+      await check('postseason: schedule');
+    }
+    for (let i = 0; i < 30 && !(await page.locator('.prep-screen').count()); i++) {
+      if (await page.locator('.cr-moment').count()) await page.locator('.cr-moment .cr-start').click();
+      else await page.locator('.cr-continue-top').click();
+      await idle();
+    }
+    if (await page.locator('.prep-screen').count()) {
+      await check('postseason: match preparation (key game)');
+      await button(page, /^Key moments/).click();
+      await page.locator('.cr-km').waitFor();
+      await check('key moments: quarter card');
+      await page.getByRole('tab', { name: 'Tactics' }).click();
+      await check('key moments: tactics');
+      await page.getByRole('tab', { name: /Starting five/ }).click();
+      await check('key moments: rotation');
+      await page.locator('.tb-back').click();
+      await page.getByRole('alertdialog').waitFor();
+      await check('pop-up: leave key moments?');
+      await page.getByRole('button', { name: /Leave the match/ }).click();
+      await idle();
+    }
+    // On to the end of the season, reading the moments (knocked out, season over).
+    for (let i = 0; i < 200 && !(await page.locator('.cr-review .cr-tabs').count()); i++) {
+      if (await page.locator('.cr-moment').count()) {
+        const title = (await page.locator('.cr-moment h1').textContent()) ?? '';
+        if (/Knocked out/i.test(title)) await check('postseason: knocked out');
+        if (/season is over/i.test(title)) await check('postseason: your season is over');
+        if (await button(page, /Simulate to the end of the season/).count()) await button(page, /Simulate to the end of the season/).click();
+        else await page.locator('.cr-moment .cr-start').click();
+        await idle();
+        continue;
+      }
+      if (await page.locator('.prep-screen').count()) {
+        await button(page, /^Simulate$/).click();
+        await page.locator('.res').waitFor({ timeout: 60000 });
+        await idle();
+        await page.locator('.res').getByRole('button', { name: /Continue/ }).first().click();
+        continue;
+      }
+      if (await page.locator('.cr-continue-top').count()) await page.locator('.cr-continue-top').click();
+      await idle();
+    }
+    for (const tab of ['Your season', 'Champions', 'Up and down', 'Players']) {
+      await page.getByRole('tab', { name: tab }).click();
+      await check(`season review: ${tab.toLowerCase()}`);
+    }
+    await button(page, /Start the next season/).click();
+    await idle();
+    await page.locator('.cr-side').waitFor();
+    await check('next season: home');
+    await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+    await page.locator('.cr-chip', { hasText: 'History' }).click();
+    await check('next season: history');
   },
   async career(page, check) {
     await page.goto(base);
@@ -426,7 +533,7 @@ try {
       try {
         await journey(page, check);
       } catch (e) {
-        results.push({ size: `${w}x${h}`, name: `${jname}: could not continue`, problems: [e.message.split('\n')[0]] });
+        results.push({ size: `${w}x${h}`, name: `${jname}: could not continue`, problems: [e.message.split('\n').slice(0, 4).join(' ')] });
       }
       await ctx.close();
     }

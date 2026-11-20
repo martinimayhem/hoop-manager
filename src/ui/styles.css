@@ -4634,3 +4634,9 @@ button.primary.big,
   flex-direction: column;
   gap: 8px;
 }
+
+/* A box score's name column: room enough for shooting (`19-28`) to show whole in the other columns. */
+.box-team table.eq .wide {
+  width: 22%;
+}
+

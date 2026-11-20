@@ -23,9 +23,14 @@ export type CareerView =
   | { kind: 'prep' }
   | { kind: 'match' }
   | { kind: 'result' }
-  | { kind: 'review' };
+  | { kind: 'review' }
+  /** Slice W2b: something Continue stopped for, a game played as Key moments, a cup, past seasons. */
+  | { kind: 'moment' }
+  | { kind: 'keymoments' }
+  | { kind: 'cup'; id: string }
+  | { kind: 'history' };
 
-const CAREER_KINDS = ['home', 'squad', 'tactics', 'schedule', 'competitions', 'prep', 'match', 'result', 'review'] as const;
+const CAREER_KINDS = ['home', 'squad', 'tactics', 'schedule', 'competitions', 'prep', 'match', 'result', 'review', 'moment', 'keymoments', 'history'] as const;
 
 export type Route =
   | { s: 'menu' }
@@ -54,7 +59,7 @@ export function toPath(r: Route): string {
       return '/career/new';
     case 'career': {
       const v = r.view;
-      const tail = v.kind === 'player' || v.kind === 'competition' || v.kind === 'club' || v.kind === 'game' ? `${v.kind}/${encodeURIComponent(v.id)}` : v.kind;
+      const tail = v.kind === 'player' || v.kind === 'competition' || v.kind === 'club' || v.kind === 'game' || v.kind === 'cup' ? `${v.kind}/${encodeURIComponent(v.id)}` : v.kind;
       return `/career/${r.slot}/${tail}`;
     }
   }
@@ -76,7 +81,7 @@ export function fromPath(path: string): Route {
     const id = p[3];
     const simple = CAREER_KINDS.find((k) => k === kind);
     const view: CareerView =
-      (kind === 'player' || kind === 'competition' || kind === 'club' || kind === 'game') && id ? { kind, id } : simple ? { kind: simple } : { kind: 'home' };
+      (kind === 'player' || kind === 'competition' || kind === 'club' || kind === 'game' || kind === 'cup') && id ? { kind, id } : simple ? { kind: simple } : { kind: 'home' };
     return { s: 'career', slot: slot(p[1])!, view };
   }
   return { s: 'menu' };

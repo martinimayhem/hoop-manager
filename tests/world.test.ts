@@ -273,8 +273,8 @@ describe('the same seed, the same world; saves', () => {
     expect((await readWorld(store, 2)).status).toBe('broken');
   });
   it('WHEN a career is saved THEN it is compressed to under a megabyte', async () => {
-    // Format 2: the season (slice W2a); format-1 saves are upgraded on loading (tests/season.test.ts).
-    expect(WORLD_FORMAT).toBe(2);
+    // Format 3: the postseason, cups and history (slice W2b); older saves are upgraded on loading (tests/season.test.ts).
+    expect(WORLD_FORMAT).toBe(3);
     const bytes = await encode({ format: WORLD_FORMAT, kind: 'world', savedAt: '', summary: {}, data: w });
     expect(bytes.length).toBeLessThan(1024 * 1024);
   });

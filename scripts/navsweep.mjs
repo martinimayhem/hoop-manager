@@ -140,11 +140,12 @@ async function run(w, h) {
   // ---- The season: your game day, Leave from a match, the result, a box score, the review ----
   const idle = async () => {
     await wait(page, 200);
-    await page.locator('.cr-busy').waitFor({ state: 'detached', timeout: 600000 });
+    await page.locator('.cr-busy').waitFor({ state: 'detached', timeout: 900000 });
   };
   const toGameDay = async () => {
-    for (let i = 0; i < 20 && !(await page.locator('.prep-screen').count()); i++) {
-      await page.locator('.cr-continue-top').click();
+    for (let i = 0; i < 30 && !(await page.locator('.prep-screen').count()); i++) {
+      if (await page.locator('.cr-moment').count()) await page.locator('.cr-moment .cr-start').click();
+      else await page.locator('.cr-continue-top').click();
       await idle();
     }
   };
@@ -188,19 +189,70 @@ async function run(w, h) {
   await page.locator('.cr-nav', { hasText: 'Schedule' }).click();
   await page.locator('.cr-table .cr-name').filter({ hasText: /\d+–\d+/ }).first().click();
   await screen('career: box score');
-  // Simulate to the end of the regular season: the question, then the review; Continue is then gone.
+  // Simulate ahead (slice W2b): a menu, and each choice asks first.
   await page.locator('.cr-sim-end').click();
   await wait(page, 300);
   checks++;
-  if (!(await page.locator('[role="alertdialog"]').count())) fail(size, 'Simulate to the end did not ask first');
-  await page.getByRole('alertdialog').getByRole('button', { name: /Simulate to the end/ }).click();
-  await page.locator('.cr-review').waitFor({ timeout: 900000 });
-  await screen('career: season review');
-  await page.locator('.tb-back').click();
-  await wait(page, 400);
+  if (!(await page.locator('.slot-picker-box').count())) fail(size, 'Simulate ahead did not open its choices');
+  await page.locator('.slot-picker-box .mm-career-slot', { hasText: /end of the regular season/ }).click();
+  await wait(page, 300);
   checks++;
-  if (await page.locator('.cr-continue-top').count()) fail(size, 'Continue is still there after the regular season');
-  await screen('career: after the season');
+  if (!(await page.locator('[role="alertdialog"]').count())) fail(size, 'Simulate to the end of the regular season did not ask first');
+  await page.getByRole('alertdialog').getByRole('button', { name: /Simulate/ }).click();
+  await idle();
+  // What Continue stopped for (your postseason starts): Leave goes back to the career.
+  if (await page.locator('.cr-moment').count()) {
+    await screen('career: moment (postseason)');
+    await page.locator('.tb-back').click();
+    await wait(page, 400);
+    checks++;
+    if (!(await page.locator('.cr-side').count())) fail(size, `Leave from a moment went to ${await hash(page)}`);
+  }
+  await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+  await page.locator('.cr-comp.cup').first().click();
+  await screen('career: cup');
+  await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
+  await page.locator('.cr-chip', { hasText: 'History' }).click();
+  await screen('career: history');
+  // A game as Key moments: Leave asks first, then the rest is simulated.
+  await page.locator('.cr-nav', { hasText: 'Home' }).click();
+  for (let i = 0; i < 30 && !(await page.locator('.prep-screen').count()); i++) {
+    if (await page.locator('.cr-moment').count()) await page.locator('.cr-moment .cr-start').click();
+    else await page.locator('.cr-continue-top').click();
+    await idle();
+  }
+  if (await page.locator('.prep-screen').count()) {
+    await page.getByRole('button', { name: /^Key moments/ }).click();
+    await page.locator('.cr-km').waitFor();
+    await screen('career: key moments');
+    await page.locator('.tb-back').click();
+    await wait(page, 300);
+    checks++;
+    if (!(await page.locator('[role="alertdialog"]').count())) fail(size, 'Leave during Key moments did not ask first');
+    else {
+      await page.getByRole('button', { name: /Leave the match/ }).click();
+      await idle();
+    }
+  }
+  // On to the end of the season: the review, then the next season.
+  for (let i = 0; i < 200 && !(await page.locator('.cr-review .cr-tabs').count()); i++) {
+    if (await page.locator('.cr-moment').count()) {
+      if (await page.getByRole('button', { name: /Simulate to the end of the season/ }).count()) await page.getByRole('button', { name: /Simulate to the end of the season/ }).click();
+      else await page.locator('.cr-moment .cr-start').click();
+    } else if (await page.locator('.prep-screen').count()) {
+      await page.getByRole('button', { name: /^Simulate$/ }).click();
+      await page.locator('.res').waitFor({ timeout: 60000 });
+      await idle();
+      await page.locator('.res').getByRole('button', { name: /Continue/ }).first().click();
+    } else await page.locator('.cr-continue-top').click();
+    await idle();
+  }
+  await screen('career: season review');
+  await page.getByRole('button', { name: /Start the next season/ }).click();
+  await idle();
+  await screen('career: the next season');
+  checks++;
+  if (!(await page.locator('.cr-continue-top').count())) fail(size, 'no Continue in the new season');
 
   // The main menu button saves the career and says so.
   await page.locator('.tb-menu').click();

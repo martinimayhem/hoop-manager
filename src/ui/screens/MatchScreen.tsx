@@ -5,7 +5,7 @@ import { buildBoxScore } from '../../engine/stats';
 import { defenceOptions, estimate, offenceOptions } from '../../game/clutch';
 import { Sound } from '../sound';
 import { timeoutAllowance } from '../../engine/match';
-import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type MatchRules, type PossessionCalls, type Side, type Team } from '../../engine/types';
+import { DEFENCE_SCHEMES, OFFENSIVE_FOCI, TEMPOS, type GamePlan, type MatchRules, type MatchState, type PossessionCalls, type Side, type Team } from '../../engine/types';
 import type { Controller } from '../../game/draft';
 import type { Setup } from '../App';
 import { BoxScoreTables } from '../components/BoxScoreTable';
@@ -45,6 +45,7 @@ export function MatchScreen({
   crumbs,
   humanSide = 0,
   rules,
+  from,
   onAbandon,
   leaveBody = 'It is not finished: if you leave, this match is lost and not played again.',
 }: {
@@ -60,6 +61,8 @@ export function MatchScreen({
   humanSide?: Side;
   /** The competition's rules (a career game). */
   rules?: MatchRules;
+  /** A match already under way (Key moments' live part). */
+  from?: MatchState;
   /** You chose to leave a match under way (a career plays the rest of it). */
   onAbandon?: (m: LiveMatch) => void;
   /** What leaving a match under way means here. */
@@ -69,7 +72,7 @@ export function MatchScreen({
   const controllers: [Controller, Controller] = humanSide === 1 ? ['ai', 'human'] : ['human', 'ai'];
   const ref = useRef<LiveMatch | null>(null);
   if (!ref.current) {
-    ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed, rules);
+    ref.current = new LiveMatch(teams[0], teams[1], plans, seed, controllers, setup.speed, rules, from);
     // ?debugTravels in the address logs every player who walks with the ball in his hands.
     ref.current.debugTravels = new URLSearchParams(window.location.search).has('debugTravels');
   }

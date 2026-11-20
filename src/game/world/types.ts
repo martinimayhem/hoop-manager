@@ -3,7 +3,7 @@
 // WorldPlayer, so a club's squad goes into a match unchanged.
 
 import type { Player } from '../../engine/types';
-import type { SeasonPlay } from '../season/types';
+import type { SeasonArchive, SeasonPlay } from '../season/types';
 
 /** America and Europe: movement between clubs' leagues stays inside a region (WORLD_SPEC §1.2). */
 export type Region = 'america' | 'europe';
@@ -101,6 +101,8 @@ export interface WorldPlayer {
   college?: string;
   collegeYear?: number;
   contract?: Contract;
+  /** Seasons gone by (slice W2b): the season, his club, games played then STAT_KEYS (all competitions). */
+  career?: { season: number; club: string; t: number[] }[];
 }
 
 export interface WorldClub {
@@ -127,8 +129,12 @@ export interface WorldClub {
   midLevelLeft: number;
   /** European clubs only: a Big League Europe licence or wildcard. */
   licence: Licence;
-  /** Bottom-2 finishes in the Big League Europe (a licence is lost after the third). */
+  /** Bottom-2 finishes in the Big League Europe over the last 5 seasons (a licence is lost at the third). */
   bottomTwoFinishes: number;
+  /** The seasons of those finishes (slice W2b). */
+  bottomTwoSeasons?: number[];
+  /** After dropping a tier (or out of the Big League): the budget it lost, and how many seasons of help are left (WORLD_SPEC §1.2: 50%, then 25%). */
+  parachute?: { gap: number; seasons: number };
   /** 1–20: training centre, youth (academy in Europe, college scouting in America), medical centre. */
   facilities: { training: number; youth: number; medical: number };
   /** Player ids: the first team (13). */
@@ -164,4 +170,6 @@ export interface World {
   human: { club: string; manager?: string } | null;
   /** The season being played (slice W2a): its schedule, results, totals and your plan. */
   play?: SeasonPlay;
+  /** Seasons gone by (slice W2b). */
+  history?: SeasonArchive[];
 }

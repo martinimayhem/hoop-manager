@@ -14,24 +14,22 @@ import {
   humanGames,
   humanGameToday,
   humanPlan,
+  isKey,
   nextHumanGame,
-  placeIn,
   playOf,
-  seasonLine,
   squadTeam,
   table,
   type Row,
 } from '../../../game/season/play';
 import { BIG_LEAGUE, type SeasonGame } from '../../../game/season/types';
-import { clubById, competitionById, competitionsOf, leagueOf } from '../../../game/world/query';
+import { clubById, competitionById, competitionsOf } from '../../../game/world/query';
 import type { Competition, World, WorldClub } from '../../../game/world/types';
-import { gameScore } from '../../../engine/stats';
 import { TeamTable } from '../../components/BoxScoreTable';
 import { PlanEditor } from '../../components/PlanEditor';
 import { useMedia } from '../../components/useMedia';
-import { TopBar, type Crumb } from '../../components/TopBar';
 import { NextIcon, PrevIcon } from '../../icons';
 import { Badge, Pager, useFitRows } from './parts';
+import { Bracket, KeyTag, SituationCard } from './postseason';
 import type { Nav } from './screens';
 
 const TEAM_COLOURS = ['var(--home)', 'var(--away)'];
@@ -82,7 +80,8 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
   const last = played.slice(-5).reverse();
   const comps = competitionsOf(w, me.id);
   const inbox = [...p.inbox].reverse();
-  const fit = useFitRows(inbox.length, '.cr-inbox li', p.inbox.length);
+  // Inbox messages can be long: it pages down to one at a time if it must.
+  const fit = useFitRows(inbox.length, '.cr-inbox li', p.inbox.length, undefined, 1);
   return (
     <div className="cr-page">
       <div className="cr-row-head">
@@ -112,7 +111,8 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
                       </button>
                     </div>
                     <span className="cr-next-when">
-                      {longDate(w.season, next.day)} · {compName(w, next.comp)} · {s.home ? 'home' : 'away'}
+                      {longDate(w.season, next.day)} · {compName(w, next.comp)}
+                      {next.label ? `, ${next.label.toLowerCase()}` : ''} · {s.home ? 'home' : 'away'} {isKey(w, next) && <KeyTag />}
                     </span>
                     {today && (
                       <button className="primary cr-start" onClick={onPrepare}>
@@ -168,7 +168,9 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
             <MiniTable key={c.id} w={w} comp={c} me={me} nav={nav} />
           ))}
         </div>
-        <section className="cr-card cr-home-inbox">
+        <div className="cr-home-col cr-home-inbox">
+        <SituationCard w={w} />
+        <section className="cr-card">
           <div className="cr-row-head">
             <h2>Inbox</h2>
             <Pager fit={fit} total={inbox.length} />
@@ -192,6 +194,7 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
             <span className="cr-sub">Nothing yet. Press Continue to start the season.</span>
           )}
         </section>
+        </div>
       </div>
     </div>
   );
@@ -335,7 +338,10 @@ export function ScheduleScreen({ w, nav }: { w: World; nav: Nav }) {
               return (
                 <tr key={g.id} className={today ? 'me' : ''}>
                   <td className="left">{shortDate(w.season, g.day)}</td>
-                  <td className="left muted">{compName(w, g.comp)}</td>
+                  <td className="left muted wrap">
+                    {compName(w, g.comp)}
+                    {g.label ? `, ${g.label.toLowerCase()}` : ''} {!g.score && isKey(w, g) && <KeyTag />}
+                  </td>
                   <td className="left">{s.home ? 'Home' : 'Away'}</td>
                   <td className="left">
                     <button className="cr-name with-badge" onClick={() => nav.go({ kind: 'club', id: s.opp.id })}>
@@ -372,7 +378,7 @@ export function ScheduleScreen({ w, nav }: { w: World; nav: Nav }) {
 // A competition: its table (counted from the results) and its results by day
 
 export function SeasonTable({ w, comp, nav }: { w: World; comp: Competition; nav: Nav }) {
-  const [tab, setTab] = useState<'table' | 'results'>('table');
+  const [tab, setTab] = useState<'table' | 'results' | 'playoffs'>(() => ((w.play?.ties ?? []).some((t) => t.comp === comp.id) ? 'playoffs' : 'table'));
   return (
     <div className="cr-page">
       <div className="cr-row-head start">
@@ -382,6 +388,7 @@ export function SeasonTable({ w, comp, nav }: { w: World; comp: Competition; nav
             [
               ['table', 'Table'],
               ['results', 'Results'],
+              ['playoffs', 'Playoffs'],
             ] as const
           ).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
@@ -390,7 +397,7 @@ export function SeasonTable({ w, comp, nav }: { w: World; comp: Competition; nav
           ))}
         </div>
       </div>
-      {tab === 'table' ? <TableRows w={w} comp={comp} nav={nav} /> : <Results w={w} comp={comp} nav={nav} />}
+      {tab === 'table' ? <TableRows w={w} comp={comp} nav={nav} /> : tab === 'results' ? <Results w={w} comp={comp} nav={nav} /> : <Bracket w={w} comp={comp.id} nav={nav} />}
     </div>
   );
 }
@@ -611,121 +618,6 @@ export function GameScreen({ w, id, nav }: { w: World; id: string; nav: Nav }) {
       </div>
       <div className="cr-card cr-box">
         <TeamTable key={side} t={teams[side]} colour={TEAM_COLOURS[side]} side={side} head={false} />
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Season review (GAME_FLOW §3.6 in short): a full-screen moment
-
-export function SeasonReview({ w, crumbs, onLeave }: { w: World; crumbs: Crumb[]; onLeave: () => void }) {
-  const me = clubById(w, w.human!.club)!;
-  const comps = competitionsOf(w, me.id);
-  const league = leagueOf(w, me.id);
-  const perGame = (id: string, comp?: string) => {
-    const s = seasonLine(w, id, comp);
-    return s && s.games ? { s, ppg: s.pts / s.games, rpg: (s.oreb + s.dreb) / s.games, apg: s.ast / s.games, gs: gameScore(s) / s.games } : null;
-  };
-  const best = me.roster
-    .map((id) => ({ id, x: perGame(id) }))
-    .filter((r) => r.x && r.x.s.games >= 5)
-    .sort((a, b) => b.x!.gs - a.x!.gs)
-    .slice(0, 5);
-  const leagueKey = league.kind === 'bigLeague' ? BIG_LEAGUE : league.id;
-  const minGames = Math.ceil(compGames(w, league.id).filter((g) => g.home === me.id || g.away === me.id).length / 2);
-  const scorers = league.clubs
-    .flatMap((c) => clubById(w, c)!.roster)
-    .map((id) => ({ id, x: perGame(id, leagueKey) }))
-    .filter((r) => r.x && r.x.s.games >= minGames)
-    .sort((a, b) => b.x!.ppg - a.x!.ppg)
-    .slice(0, 5);
-  const games = humanGames(w);
-  const won = games.filter((g) => g.score && fromSide(w, g, me.id).won).length;
-  return (
-    <div className="cr cr-review">
-      <TopBar crumbs={crumbs} leave={onLeave} />
-      <div className="cr-review-body">
-        <div className="cr-row-head start">
-          <Badge club={me} size={44} />
-          <h1>
-            {me.name}: the {w.season}–{String(w.season + 1).slice(2)} regular season
-          </h1>
-          <span className="cr-sub">
-            {won}–{games.length - won} in all games
-          </span>
-        </div>
-        <div className="cr-review-grid">
-          <section className="cr-card">
-            <h2>Final positions</h2>
-            <dl className="cr-facts">
-              {comps.map((c) => {
-                const rows = table(w, c.id);
-                return (
-                  <div key={c.id} className="cr-review-pos">
-                    <dt>{c.name}</dt>
-                    <dd>
-                      <b className="cr-big small">{placeIn(w, c.id, me.id)}</b> of {rows.length} · {record(rows, me.id)}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </section>
-          <section className="cr-card">
-            <h2>Your best players</h2>
-            <table className="cr-table cr-mini">
-              <thead>
-                <tr>
-                  <th className="left">Player</th>
-                  <th style={{ width: 40 }} title="Games">G</th>
-                  <th style={{ width: 50 }} title="Points per game">PTS</th>
-                  <th style={{ width: 50 }} title="Rebounds per game">REB</th>
-                  <th style={{ width: 50 }} title="Assists per game">AST</th>
-                </tr>
-              </thead>
-              <tbody>
-                {best.map(({ id, x }) => (
-                  <tr key={id}>
-                    <td className="left">{w.players[id].p.name}</td>
-                    <td>{x!.s.games}</td>
-                    <td>{x!.ppg.toFixed(1)}</td>
-                    <td>{x!.rpg.toFixed(1)}</td>
-                    <td>{x!.apg.toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-          <section className="cr-card">
-            <h2>Top scorers · {league.name}</h2>
-            <table className="cr-table cr-mini">
-              <thead>
-                <tr>
-                  <th className="left">Player</th>
-                  <th className="left" style={{ width: '38%' }}>Club</th>
-                  <th style={{ width: 50 }} title="Points per game">PTS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scorers.map(({ id, x }) => {
-                  const club = clubById(w, w.players[id].club!)!;
-                  return (
-                    <tr key={id} className={club.id === me.id ? 'me' : ''}>
-                      <td className="left">{w.players[id].p.name}</td>
-                      <td className="left muted">{club.name}</td>
-                      <td>{x!.ppg.toFixed(1)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <span className="cr-sub">At least {minGames} games.</span>
-          </section>
-        </div>
-        <button className="primary cr-start" onClick={onLeave}>
-          Back to your career <NextIcon />
-        </button>
       </div>
     </div>
   );

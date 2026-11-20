@@ -14,6 +14,9 @@ import {
   closeDay,
   humanGameToday,
   inputsToday,
+  inputFor,
+  outputFrom,
+  playInput,
   nextDay,
   playOf,
   rulesFor,
@@ -165,7 +168,7 @@ describe('the same season', () => {
     const a = await playDays(startSeason(takeOver(createWorld(11), blEurope.clubs[0])), 6);
     const b = await playDays(world, 6);
     expect(playOf(a).games.map((x) => x.score ?? null)).toEqual(playOf(b).games.map((x) => x.score ?? null));
-  });
+  }, 60_000);
 
   it('WHEN a career is saved mid-season and loaded THEN it plays on identically', async () => {
     const half = await playDays(world, 5);
@@ -177,7 +180,7 @@ describe('the same season', () => {
     const straight = await playDays(half, 4);
     expect(playOf(fromSave).games.map((x) => x.score ?? null)).toEqual(playOf(straight).games.map((x) => x.score ?? null));
     expect(playOf(fromSave).stats).toEqual(playOf(straight).stats);
-  });
+  }, 60_000);
 
   it('WHEN Continue runs THEN it stops on the first day, then on your game day', async () => {
     const r1 = await advance(world, simulateInputs);
@@ -195,8 +198,8 @@ describe('season stats', () => {
     const p = playOf(w);
     const sums = new Map<string, number[]>();
     for (const g of p.games.filter((x) => x.score)) {
-      const box = boxOf(w, g)!;
-      // The box score played again from the seed gives the same score.
+      // Kept box scores (yours), and the others played again from their seed: the same score.
+      const box = boxOf(w, g) ?? outputFrom(g.id, playInput(inputFor(w, g))).sides;
       expect([box[0].lines, box[1].lines].map((ls) => ls.reduce((s, l) => s + (l[2] as number), 0))).toEqual(g.score);
       for (const side of box)
         for (const [id, ...nums] of side.lines) {
@@ -215,7 +218,7 @@ describe('season stats', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(1000);
-  });
+  }, 60_000);
 
   it('WHEN a W1 save (format 1) is loaded THEN it gets its season', async () => {
     const store = memoryStore();

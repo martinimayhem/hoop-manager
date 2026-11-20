@@ -21,6 +21,39 @@ export interface SeasonGame {
   /** Home score, away score, once played. */
   score?: [number, number];
   ot?: boolean;
+  /** Not the regular season: a play-in, playoff or Final game, or a cup tie (slice W2b). */
+  stage?: 'playin' | 'playoff' | 'final' | 'cup';
+  /** The tie (series or single game) it belongs to. */
+  tie?: string;
+  /** "First round, game 3", "Cup quarter-final". */
+  label?: string;
+  /** A series game not needed (the series was decided before it): kept so ids stay put, never played. */
+  off?: true;
+}
+
+/** A knockout pairing: a play-in game, a playoff series, a cup tie. */
+export interface Tie {
+  id: string;
+  /** The competition (a league's id for its playoffs; 'big-league-final'; a cup's id). */
+  comp: string;
+  /** The round's key ('playin-a', 'r1', 'qf', 'sf', 'final', 'r64' …). */
+  round: string;
+  /** The better-placed club (the extra home game) and the other. */
+  a: string;
+  b: string;
+  bestOf: number;
+  games: number[];
+  winner?: string;
+  /** The day it was decided. */
+  decided?: number;
+}
+
+/** Something Continue stops for in the postseason and the cups (GAME_FLOW §3.3, slice W2b §5). */
+export interface Moment {
+  kind: 'post' | 'draw' | 'out' | 'over';
+  title: string;
+  lines: string[];
+  day: number;
 }
 
 /** The order of a player's numbers in a box score line and in his season totals (after games played). */
@@ -39,7 +72,7 @@ export interface BoxSide {
 
 export interface InboxItem {
   day: number;
-  kind: 'start' | 'result' | 'end';
+  kind: 'start' | 'result' | 'end' | 'draw' | 'post' | 'news';
   text: string;
   /** The game it is about. */
   game?: number;
@@ -63,5 +96,32 @@ export interface SeasonPlay {
   /** Your game plan and rotation over the whole first team (13): the last of the bench does not dress. */
   plan: GamePlan | null;
   /** How you played your last game (the next one starts with the same choice: GAME_FLOW §3.4). */
-  mode: 'watch' | 'simulate';
+  mode: 'watch' | 'simulate' | 'keyMoments';
+  /** Play-ins, playoffs, Finals and cup ties so far (slice W2b). */
+  ties?: Tie[];
+  /** Knockout rounds already made, by competition and round (so each is made once). */
+  made?: Record<string, true>;
+  /** What Continue stopped for, until you read it. */
+  moment?: Moment | null;
+  /** A season started before cups existed (a W2a save) has none. */
+  noCups?: true;
+}
+
+/** A season gone by (slice W2b §7): kept small. */
+export interface SeasonArchive {
+  season: number;
+  /** Final regular-season tables: [club, won, lost, points for, points against], in order. */
+  tables: Record<string, [string, number, number, number, number][]>;
+  /** Who won what: a league's champion (its title), the Big League, each cup. */
+  champions: Record<string, string>;
+  promoted: string[];
+  relegated: string[];
+  licenceLost: string[];
+  wildcards: string[];
+  /** Every game: [competition, day, home, away, home score, away score, stage or ''], in order. */
+  results: [string, number, string, string, number, number, string][];
+  /** Box scores kept: your games and every Final, by the game's place in `results`. */
+  boxes: Record<number, [BoxSide, BoxSide]>;
+  /** Your club that season. */
+  human?: string;
 }

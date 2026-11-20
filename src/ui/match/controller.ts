@@ -352,9 +352,12 @@ export class LiveMatch {
   /** Engine events up to this index have been (or will be, via the animation) published. */
   private publishedThrough = 0;
 
-  /** `rules`: the competition's (a career game; absent: the NBA's). */
-  constructor(home: Team, away: Team, plans: [GamePlan, GamePlan], seed: number, controllers: [Controller, Controller], speed: Speed, rules?: MatchRules) {
-    this.s = createMatch(home, away, plans[0], plans[1], seed, rules);
+  /**
+   * `rules`: the competition's (a career game; absent: the NBA's). `from`: a match already under way
+   * (Key moments: the live part starts with 5 minutes left); what happened before goes into the feed.
+   */
+  constructor(home: Team, away: Team, plans: [GamePlan, GamePlan], seed: number, controllers: [Controller, Controller], speed: Speed, rules?: MatchRules, from?: MatchState) {
+    this.s = from ?? createMatch(home, away, plans[0], plans[1], seed, rules);
     this.s.humanCoach = [controllers[0] === 'human', controllers[1] === 'human'];
     this.starters = [[...plans[0].starters], [...plans[1].starters]];
     this.names = namesFor(this.s);
@@ -366,6 +369,12 @@ export class LiveMatch {
     this.motion.setSpeedRatings(ratings);
     this.motion.setPlayerInfo(Object.fromEntries(([0, 1] as const).flatMap((side) => this.s.teams[side].team.players.map((p) => [playerKey(side, p.id), { three: p.attrs.three, position: p.position }]))));
     this.view = [this.snapshotTeam(0), this.snapshotTeam(1)];
+    // A match already under way: what happened so far goes quietly into the feed (no sound, no caption).
+    if (from) {
+      for (const ev of from.events) this.publish(ev, true);
+      this.publishedThrough = from.events.length;
+      this.clock = from.clock;
+    }
     this.flushEngineEvents();
   }
 

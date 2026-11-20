@@ -5,10 +5,13 @@
 // back, Escape and a reload all work.
 
 import { CalendarDays, ClipboardList, FastForward, LayoutDashboard, Shield, Trophy, Users, type LucideIcon } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import type { GamePlan } from '../../../engine/types';
 import { shortDate } from '../../../game/season/calendar';
-import { compName, humanGameToday, placeIn, playOf } from '../../../game/season/play';
+import { compName, humanGameToday, isKey, placeIn, playOf, regularOver } from '../../../game/season/play';
+import { cupsOf, stillPlaying } from '../../../game/season/post';
+import { CupScreen, HistoryScreen } from './postseason';
 import { clubById, competitionById, competitionsOf, leagueOf, moneySummary } from '../../../game/world/query';
 import type { World } from '../../../game/world/types';
 import { TopBar, type Crumb } from '../../components/TopBar';
@@ -89,22 +92,33 @@ export function crumbsOf(w: World, slot: number, v: View): Crumb[] {
       const mine = g && w.human && (g.home === w.human.club || g.away === w.human.club);
       return [mine ? { label: 'Schedule', route: at({ kind: 'schedule' }) } : comps, ...(g && !mine ? [{ label: compName(w, g.comp), route: at({ kind: 'competitions' }) }] : []), { label, route: at(v) }];
     }
-    case 'prep':
-      return [home, { label: 'Game day', route: at(v) }];
+    case 'prep': {
+      // A key game says so in the path (WORLD_SPEC §1.1: marked on match preparation).
+      const g = w.play ? humanGameToday(w) : undefined;
+      return [home, { label: g && isKey(w, g) ? 'Key game' : 'Game day', route: at(v) }];
+    }
     case 'match':
       return [home, { label: 'Match', route: at(v) }];
     case 'result':
       return [home, { label: 'Result', route: at(v) }];
     case 'review':
       return [home, { label: 'Season review', route: at(v) }];
+    case 'moment':
+      return [home, { label: w.play?.moment?.title ?? 'News', route: at(v) }];
+    case 'keymoments':
+      return [home, { label: 'Key moments', route: at(v) }];
+    case 'cup':
+      return [comps, { label: cupsOf(w).find((c) => c.id === v.id)?.name ?? 'Cup', route: at(v) }];
+    case 'history':
+      return [comps, { label: 'History', route: at(v) }];
   }
 }
 
 export interface ShellActions {
   /** Continue (GAME_FLOW §3.3); on your game day it opens match preparation. */
   onContinue: () => void;
-  /** Simulate to the end of the regular season (asks first). */
-  onSimToEnd: () => void;
+  /** Simulate ahead (asks first): to your next key game, the end of the regular season, the end of the season. */
+  onSim: (mode: 'toKey' | 'toRegularEnd' | 'toEnd') => void;
   onPlan: (p: GamePlan) => void;
   onPrepare: () => void;
   /** Saves and goes to the main menu. */
@@ -134,6 +148,13 @@ export function CareerShell({ world, slot, view, actions }: { world: World; slot
   const today = humanGameToday(world);
   // Continue only while it does something (GAME_FLOW §6.1b): hidden once the regular season is over.
   const canContinue = p.phase !== 'review';
+  const [ahead, setAhead] = useState(false);
+  const playing = stillPlaying(world, p.games, p.ties, p.made);
+  const choices: { mode: 'toKey' | 'toRegularEnd' | 'toEnd'; label: string; note: string }[] = [
+    ...(playing ? [{ mode: 'toKey' as const, label: 'To your next key game', note: 'Your games are simulated until a key game: a playoff, a cup tie from the quarter-finals, a season decider.' }] : []),
+    ...(!regularOver(world) ? [{ mode: 'toRegularEnd' as const, label: 'To the end of the regular season', note: 'Every game until the last regular-season game, yours too.' }] : []),
+    ...(!playing ? [{ mode: 'toEnd' as const, label: 'To the end of the season', note: 'Your season is over: the rest of the world plays to the season review.' }] : []),
+  ];
 
   return (
     <div className="cr">
@@ -159,9 +180,9 @@ export function CareerShell({ world, slot, view, actions }: { world: World; slot
             </div>
             {canContinue && (
               <>
-                <button className="cr-sim-end" onClick={actions.onSimToEnd} disabled={actions.busy} title="Simulate to the end of the regular season" aria-label="Simulate to the end of the regular season">
+                <button className="cr-sim-end" onClick={() => setAhead(true)} disabled={actions.busy} title="Simulate ahead" aria-label="Simulate ahead" aria-haspopup="dialog">
                   <FastForward size={18} aria-hidden="true" />
-                  <span className="cr-sim-end-label">To season end</span>
+                  <span className="cr-sim-end-label">Simulate ahead</span>
                 </button>
                 <button className="primary cr-continue-top" onClick={actions.onContinue} disabled={actions.busy}>
                   {today ? 'Game day' : 'Continue'} <NextIcon />
@@ -172,6 +193,38 @@ export function CareerShell({ world, slot, view, actions }: { world: World; slot
         }
       />
 
+      {ahead && (
+        <div className="overlay slot-picker" onClick={(e) => e.target === e.currentTarget && setAhead(false)}>
+          <div className="panel slot-picker-box" role="dialog" aria-label="Simulate ahead">
+            <div className="slot-picker-head">
+              <h3>Simulate ahead</h3>
+              <button className="brk-close" onClick={() => setAhead(false)} aria-label="Close" title="Close">
+                <X size={20} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="slot-picker-list">
+              {choices.map((c) => (
+                <button
+                  key={c.mode}
+                  className="mm-career-slot"
+                  onClick={() => {
+                    setAhead(false);
+                    actions.onSim(c.mode);
+                  }}
+                >
+                  <span>
+                    <b>{c.label}</b>
+                    <small className="muted">{c.note}</small>
+                  </span>
+                  <span className="mm-go">
+                    Go <NextIcon />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="cr-body">
         <nav className="cr-side" aria-label="Sections">
           {ITEMS.map((it) => (
@@ -192,6 +245,8 @@ export function CareerShell({ world, slot, view, actions }: { world: World; slot
           {view.kind === 'competition' && <CompetitionTable key={view.id} w={world} id={view.id} nav={nav} />}
           {view.kind === 'club' && <ClubPage key={view.id} w={world} id={view.id} nav={nav} />}
           {view.kind === 'game' && <GameScreen key={view.id} w={world} id={view.id} nav={nav} />}
+          {view.kind === 'cup' && <CupScreen key={view.id} w={world} id={view.id} nav={nav} />}
+          {view.kind === 'history' && <HistoryScreen w={world} nav={nav} />}
         </main>
       </div>
     </div>

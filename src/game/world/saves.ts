@@ -8,8 +8,8 @@ import { startSeason } from '../season/play';
 import { clubById, competitionsOf } from './query';
 import { REGION_NAME, type World } from './types';
 
-/** The career save format this version of the game writes (W1 version 2 started again at 1; 2: the season, slice W2a). */
-export const WORLD_FORMAT = 2;
+/** The career save format this version of the game writes (W1 version 2 started again at 1; 2: the season, slice W2a; 3: postseason, cups, history, slice W2b). */
+export const WORLD_FORMAT = 3;
 export const WORLD_SLOTS = 3;
 
 /** Where the bytes go: IndexedDB in the browser, a Map in tests. */
@@ -44,6 +44,15 @@ export type WorldSlot =
 const MIGRATIONS: Record<number, (file: WorldFile) => WorldFile> = {
   // W1 careers get their season: the schedule, the day before the first.
   1: (f) => ({ ...f, format: 2, data: startSeason(f.data) }),
+  // W2a seasons get their postseason (made as Continue goes on). Their calendar had no free cup
+  // weekends, so that season has no cups; the next one does. A season ended at the regular season's
+  // end carries on into its postseason.
+  2: (f) => {
+    const p = f.data.play;
+    if (!p) return { ...f, format: 3 };
+    const play = { ...p, ties: p.ties ?? [], made: p.made ?? {}, moment: null, noCups: true as const, ...(p.phase === 'review' ? { phase: 'regular' as const, done: true } : {}) };
+    return { ...f, format: 3, data: { ...f.data, play } };
+  },
 };
 
 export function summariseWorld(w: World): WorldSummary {

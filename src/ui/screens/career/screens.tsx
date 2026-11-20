@@ -12,6 +12,7 @@ import { Badge, cameThrough, contractEnd, country, isMine, MoraleFace, CareerPor
 import { SquadControls, SquadTable, TAB_NOTE, useSquadView, type SquadTab } from './SquadView';
 import type { CareerView as View } from '../../nav';
 import { SeasonTable } from './season';
+import { cupsOf } from '../../../game/season/post';
 
 export type { View };
 
@@ -225,6 +226,11 @@ export function CompetitionsScreen({ w, nav }: { w: World; nav: Nav }) {
       <small>{c.clubs.length}</small>
     </button>
   );
+  const cupLink = (id: string, label: string) => (
+    <button key={id} className={`cr-comp cup ${w.human && cupsOf(w).find((c) => c.id === id)?.clubs.includes(w.human.club) ? 'mine' : ''}`} onClick={() => nav.go({ kind: 'cup', id })}>
+      {label}
+    </button>
+  );
   const america = w.competitions.filter((c) => c.region === 'america');
   const bigEurope = w.competitions.find((c) => c.kind === 'bigLeague' && c.region === 'europe')!;
   // Tier 2 is shown as "2" beside its country's first tier ("Spanish League · 2").
@@ -232,11 +238,17 @@ export function CompetitionsScreen({ w, nav }: { w: World; nav: Nav }) {
     <div className="cr-page">
       <div className="cr-row-head">
         <h1>Competitions</h1>
-        <span className="cr-sub">Your competitions are marked. Open one for its table and results.</span>
+        <span className="cr-sub">Your competitions are marked. Open one for its table, results and playoffs.</span>
+        <button className="cr-chip link" onClick={() => nav.go({ kind: 'history' })}>
+          History
+        </button>
       </div>
       <section className="cr-card cr-comp-region">
         <h2>{REGION_NAME.america}</h2>
-        <div className="cr-comps">{america.map((c) => link(c))}</div>
+        <div className="cr-comps">
+          {america.map((c) => link(c))}
+          {cupLink('cup-america', 'America Cup')}
+        </div>
       </section>
       <section className="cr-card cr-comp-region">
         <div className="cr-row-head">
@@ -249,7 +261,10 @@ export function CompetitionsScreen({ w, nav }: { w: World; nav: Nav }) {
             return (
               <div key={cc} className="cr-country">
                 <span className="cr-label">{country(cc)}</span>
-                <div className="cr-comps">{tiers.map((c) => link(c, c.tier === 1 ? 'Tier 1' : 'Tier 2'))}</div>
+                <div className="cr-comps">
+                  {tiers.map((c) => link(c, c.tier === 1 ? 'Tier 1' : 'Tier 2'))}
+                  {cupLink(`cup-${cc.toLowerCase()}`, 'Cup')}
+                </div>
               </div>
             );
           })}

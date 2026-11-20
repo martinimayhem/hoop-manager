@@ -20,9 +20,14 @@ export const CUP_WEEKS = [5, 11, 17, 23, 29];
 export const US_LAST_WEEK = 34;
 /** National leagues: 22 rounds spread over the weekends of weeks 0–31 that aren't cup weekends. */
 export const NATIONAL_LAST_WEEK = 31;
-/** Big League: 40 rounds over weeks 0–31: Tuesday and Thursday in every fourth week, else Wednesday. */
+/**
+ * Big League: 40 rounds over weeks 0–31: Tuesday and Thursday in every fourth week (2, 6, 10 …),
+ * else Wednesday. The cup weekends are Wednesday weeks, so a Final Four's Friday semi-finals have the
+ * Thursday free (slice W2b).
+ */
 export const BIG_LEAGUE_LAST_WEEK = 31;
-export const isBigLeagueDoubleWeek = (week: number) => week % 4 === 1;
+export const isBigLeagueDoubleWeek = (week: number) => week % 4 === 2;
+export const FRI = 6;
 
 /** The season's first day (a Saturday), as a UTC date. */
 export function seasonStart(year: number): Date {

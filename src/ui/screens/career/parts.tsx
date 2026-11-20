@@ -334,7 +334,7 @@ const MIN_ROWS = 3;
  * How many of `total` rows to show, and which page; `rowSelector` finds one row to measure. `box`: a
  * panel of fixed height that holds the list (its overflow is measured instead of the page's).
  */
-export function useFitRows(total: number, rowSelector: string, resetKey: unknown = null, box?: RefObject<HTMLElement | null>) {
+export function useFitRows(total: number, rowSelector: string, resetKey: unknown = null, box?: RefObject<HTMLElement | null>, min = MIN_ROWS) {
   const [size, setSize] = useState(total);
   const [page, setPage] = useState(0);
   // A new list, a new window size: try all rows again.
@@ -358,9 +358,9 @@ export function useFitRows(total: number, rowSelector: string, resetKey: unknown
     const de = document.scrollingElement ?? document.documentElement;
     const b = box?.current;
     const over = b ? b.scrollHeight - b.clientHeight : de.scrollHeight - window.innerHeight;
-    if (over <= 0 || size <= MIN_ROWS) return;
+    if (over <= 0 || size <= min) return;
     const row = document.querySelector(rowSelector)?.getBoundingClientRect().height || 40;
-    setSize((s) => Math.max(MIN_ROWS, Math.min(s, total) - Math.max(1, Math.ceil(over / row))));
+    setSize((s) => Math.max(min, Math.min(s, total) - Math.max(1, Math.ceil(over / row))));
   });
   const pages = Math.max(1, Math.ceil(total / size));
   const p = Math.min(page, pages - 1);

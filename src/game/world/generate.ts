@@ -325,6 +325,16 @@ interface Draft {
   licence: WorldClub['licence'];
 }
 
+/**
+ * A club's budget at a level (WORLD_SPEC §10.1), as the world is made: `rank` 0 for the league's biggest
+ * club to 1 for its smallest (slice W2b: a club that changes tier gets the new tier's money).
+ */
+export function levelBudget(level: 'blE' | 'us2' | 'us3' | 'us4' | 'n1' | 'n2', country: string, rank: number): number {
+  const [lo, hi] = BUDGET[level];
+  const top = level === 'n1' || level === 'n2' ? Math.max(lo * 1.5, hi * (COUNTRY[country]?.money ?? 1)) : hi;
+  return tidy(clamp(byRank([lo, top], rank), lo, hi));
+}
+
 export function createWorld(seed: number): World {
   const m = new Maker(seed);
   const rng = m.rng;

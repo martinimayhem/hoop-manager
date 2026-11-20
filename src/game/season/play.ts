@@ -12,10 +12,11 @@ import { createRng } from '../../engine/rng';
 import { buildBoxScore, emptyStats } from '../../engine/stats';
 import { FIBA_RULES, NBA_RULES, type GamePlan, type MatchRules, type MatchState, type PlayerStats, type Side, type Team } from '../../engine/types';
 import { aiGamePlan } from '../ai';
-import { clubById } from '../world/query';
+import { clubById, competitionsOf } from '../world/query';
 import type { World, WorldClub } from '../world/types';
 import { shortDate } from './calendar';
 import { buildSchedule, mix } from './schedule';
+import { advancePost, compLabel, isKeyGame } from './post';
 import { BIG_LEAGUE, STAT_KEYS, type BoxLine, type BoxSide, type InboxItem, type SeasonGame, type SeasonPlay } from './types';
 
 /** Players who dress for a game (GAME_FLOW §5.1). */
@@ -166,8 +167,16 @@ export function simulateInputs(inputs: SimInput[]): GameOutput[] {
 // ---------------------------------------------------------------------------
 // Results into the world
 
-/** The competition key a game's numbers are kept under (the Big League's: BIG_LEAGUE). */
-export const statsKey = (g: SeasonGame) => g.comp;
+/** The competition key a game's numbers are kept under (the Big League's: BIG_LEAGUE; a league's playoffs apart from its regular season; a cup its own). */
+export const statsKey = (g: SeasonGame) => (g.stage && g.stage !== 'cup' ? `${g.comp}|post` : g.comp);
+
+/** Whose box scores are kept (slice W2b §7): your games, every postseason game, cup ties from the quarter-finals on. */
+export function keepsBox(w: World, g: SeasonGame): boolean {
+  if (isHumanGame(w, g)) return true;
+  if (g.stage === 'playin' || g.stage === 'playoff' || g.stage === 'final') return true;
+  if (g.stage === 'cup') return ['qf', 'ff', 'ff-final'].includes(g.tie?.split('|')[1] ?? '');
+  return false;
+}
 
 /** Adds played games to the world: scores, season totals, your box scores and inbox. */
 export function applyOutputs(w: World, outs: GameOutput[]): World {
@@ -195,8 +204,8 @@ export function applyOutputs(w: World, outs: GameOutput[]): World {
         const nextTotals = prev.map((v, i) => (i === 0 ? v + (nums[0] > 0 ? 1 : 0) : v + nums[i - 1]));
         table[id] = nextTotals;
       }
+    if (keepsBox(w, g)) boxes[o.id] = o.sides;
     if (human && (g.home === human || g.away === human)) {
-      boxes[o.id] = o.sides;
       inbox.push({ day: g.day, kind: 'result', text: resultText(w, g, o.score, o.ot), game: o.id });
     }
   }
@@ -207,11 +216,11 @@ function resultText(w: World, g: SeasonGame, score: [number, number], ot: boolea
   const home = g.home === w.human?.club;
   const [us, them] = home ? score : [score[1], score[0]];
   const opp = clubById(w, home ? g.away : g.home)?.name ?? '?';
-  return `${us > them ? 'Won' : 'Lost'} ${us}–${them}${ot ? ' (OT)' : ''} ${home ? 'v' : 'at'} ${opp}, ${compName(w, g.comp)}`;
+  return `${us > them ? 'Won' : 'Lost'} ${us}–${them}${ot ? ' (OT)' : ''} ${home ? 'v' : 'at'} ${opp}, ${compName(w, g.comp)}${g.label ? `, ${g.label.toLowerCase()}` : ''}`;
 }
 
 export function compName(w: World, comp: string): string {
-  return comp === BIG_LEAGUE ? 'Big League' : (w.competitions.find((c) => c.id === comp)?.name ?? comp);
+  return compLabel(w, comp);
 }
 
 // ---------------------------------------------------------------------------
@@ -225,13 +234,13 @@ export function gamesOn(w: World, day: number): SeasonGame[] {
   let ix = dayIndex.get(games);
   if (!ix) {
     ix = new Map();
-    for (const g of games) ix.set(g.day, [...(ix.get(g.day) ?? []), g]);
+    for (const g of games) if (!g.off) ix.set(g.day, [...(ix.get(g.day) ?? []), g]);
     dayIndex.set(games, ix);
   }
   return ix.get(day) ?? [];
 }
 
-export const lastDay = (w: World) => playOf(w).games.reduce((m, g) => Math.max(m, g.day), 0);
+export const lastDay = (w: World) => playOf(w).games.reduce((m, g) => (g.off ? m : Math.max(m, g.day)), 0);
 export const isHumanGame = (w: World, g: SeasonGame) => !!w.human && (g.home === w.human.club || g.away === w.human.club);
 
 /** Your game today, if it is still to be played. */
@@ -243,7 +252,7 @@ export function humanGameToday(w: World): SeasonGame | undefined {
 
 /** Your club's games, in order. */
 export function humanGames(w: World): SeasonGame[] {
-  return w.human ? playOf(w).games.filter((g) => isHumanGame(w, g)) : [];
+  return w.human ? playOf(w).games.filter((g) => !g.off && isHumanGame(w, g)).sort((a, b) => a.day - b.day) : [];
 }
 
 /** Your next game still to play (today's included). */
@@ -260,7 +269,7 @@ function addInbox(w: World, item: InboxItem): World {
 export function beginSeason(w: World): World {
   const p = playOf(w);
   if (p.phase !== 'before') return w;
-  const started: World = { ...w, play: { ...p, phase: 'regular', day: 0, done: false } };
+  const started: World = withPost({ ...w, play: { ...p, phase: 'regular', day: 0, done: false } });
   return addInbox(started, { day: 0, kind: 'start', text: `The ${w.season}–${String(w.season + 1).slice(2)} season starts today, ${shortDate(w.season, 0)}. Your first game: ${firstGameText(started)}.` });
 }
 
@@ -271,13 +280,25 @@ function firstGameText(w: World): string {
   return `${shortDate(w.season, g.day)}, ${home ? 'v' : 'at'} ${clubById(w, home ? g.away : g.home)?.name ?? '?'} (${compName(w, g.comp)})`;
 }
 
-/** Today's games are all played: the day is over, and the season too after its last game. */
+/** The postseason and the cups move on: series decided, next rounds made, draws (post.ts). */
+export function withPost(w: World): World {
+  return advancePost(w, (ww, comp) => table(ww, comp).map((r) => r.club));
+}
+
+/** Today's games are all played: the day is over (the next rounds are made), and the season too after its last game. */
 export function closeDay(w: World): World {
-  const p = playOf(w);
-  const closed: World = { ...w, play: { ...p, done: true } };
-  if (p.games.some((g) => !g.score)) return closed;
-  const ended: World = { ...closed, play: { ...playOf(closed), phase: 'review' } };
-  return addInbox(ended, { day: p.day, kind: 'end', text: `The regular season is over. Your season review is ready.` });
+  const closed = withPost({ ...w, play: { ...playOf(w), done: true } });
+  const p = playOf(closed);
+  if (p.games.some((g) => !g.score && !g.off)) return closed;
+  const ended: World = { ...closed, play: { ...p, phase: 'review', moment: null } };
+  return addInbox(ended, { day: p.day, kind: 'end', text: `The season is over. Your season review is ready.` });
+}
+
+/** Whether your competitions' regular seasons are over (every regular-season game of your leagues played). */
+export function regularOver(w: World): boolean {
+  const human = w.human?.club;
+  const keys = new Set(human ? competitionsOf(w, human).map((c) => (c.kind === 'bigLeague' ? BIG_LEAGUE : c.id)) : []);
+  return !playOf(w).games.some((g) => !g.stage && !g.score && (!human || keys.has(g.comp)));
 }
 
 /** The next day. */
@@ -294,14 +315,36 @@ export function inputsToday(w: World, withoutHuman = false): SimInput[] {
     .map((g) => inputFor(w, g));
 }
 
-/** Why Continue stopped: your game day, the season's first day, or the end of the regular season. */
-export type Stop = 'gameDay' | 'firstDay' | 'end';
+/** Why Continue stopped: your game day, the season's first day, something to read (a draw, the postseason, knocked out), a target reached, or the end of the season. */
+export type Stop = 'gameDay' | 'firstDay' | 'moment' | 'reached' | 'end';
+
+/**
+ * continue: day by day, stopping for you (GAME_FLOW §3.3). Your games are simulated too in the others:
+ * toKey until your next key game, toRegularEnd until the regular season is over, toEnd until the season is.
+ */
+export type AdvanceMode = 'continue' | 'toKey' | 'toRegularEnd' | 'toEnd';
 
 export interface AdvanceOptions {
-  /** Your games are simulated too, until the end of the regular season. */
+  mode?: AdvanceMode;
+  /** Old name: the same as mode 'toRegularEnd'. */
   toEnd?: boolean;
   /** After every matchday (autosave, the progress bar). */
   onDay?: (w: World) => void | Promise<void>;
+}
+
+/** Your key game today, still to play. */
+export function keyGameToday(w: World): SeasonGame | undefined {
+  const g = humanGameToday(w);
+  return g && isKey(w, g) ? g : undefined;
+}
+
+export const isKey = (w: World, g: SeasonGame) => isKeyGame(w, g, table);
+
+/** A moment's lines go to the inbox instead (when simulating ahead, nothing stops for it). */
+function momentToInbox(w: World): World {
+  const p = playOf(w);
+  if (!p.moment) return w;
+  return { ...w, play: { ...p, moment: null, inbox: [...p.inbox, { day: Math.max(0, p.day), kind: 'news', text: `${p.moment.title}: ${p.moment.lines.join(' ')}` }] } };
 }
 
 /**
@@ -309,25 +352,37 @@ export interface AdvanceOptions {
  * games are then played after yours), the season's first day, or the end of the regular season.
  */
 export async function advance(w: World, sim: (inputs: SimInput[]) => Promise<GameOutput[]> | GameOutput[], opts: AdvanceOptions = {}): Promise<{ w: World; stop: Stop }> {
+  const mode: AdvanceMode = opts.mode ?? (opts.toEnd ? 'toRegularEnd' : 'continue');
+  const stopsFor = (x: World): Stop | null => {
+    if (mode === 'continue') return playOf(x).moment ? 'moment' : humanGameToday(x) ? 'gameDay' : null;
+    if (mode === 'toKey') return keyGameToday(x) ? 'gameDay' : null;
+    return null;
+  };
   let cur = w;
   if (playOf(cur).phase === 'before') {
     cur = beginSeason(cur);
-    if (!opts.toEnd) return { w: cur, stop: humanGameToday(cur) ? 'gameDay' : 'firstDay' };
+    if (mode === 'continue') return { w: cur, stop: stopsFor(cur) ?? 'firstDay' };
   }
   if (playOf(cur).phase === 'review') return { w: cur, stop: 'end' };
   for (;;) {
+    // Simulating ahead nothing stops for news: it goes to the inbox (what the last day brought stays to read).
+    if (mode !== 'continue') cur = momentToInbox(cur);
     const p = playOf(cur);
     if (!p.done) {
-      if (!opts.toEnd && humanGameToday(cur)) return { w: cur, stop: 'gameDay' };
+      const why = stopsFor(cur);
+      if (why) return { w: cur, stop: why };
       const inputs = inputsToday(cur);
       if (inputs.length) {
         cur = closeDay(applyOutputs(cur, await sim(inputs)));
         await opts.onDay?.(cur);
       } else cur = closeDay(cur);
       if (playOf(cur).phase === 'review') return { w: cur, stop: 'end' };
+      if (mode === 'toRegularEnd' && regularOver(cur)) return { w: cur, stop: 'reached' };
+      if (mode === 'continue' && playOf(cur).moment) return { w: cur, stop: 'moment' };
     }
     cur = nextDay(cur);
-    if (!opts.toEnd && humanGameToday(cur)) return { w: cur, stop: 'gameDay' };
+    const why = stopsFor(cur);
+    if (why) return { w: cur, stop: why };
   }
 }
 
@@ -343,12 +398,10 @@ export async function finishGameDay(w: World, mine: GameOutput, sim: (inputs: Si
 // ---------------------------------------------------------------------------
 // Box scores
 
-/** A game's box score: yours as stored, any other played again from its seed (the squads don't change during the season). */
+/** A game's box score, when one is kept (keepsBox): your games, the postseason, the later cup rounds. */
 export function boxOf(w: World, g: SeasonGame): [BoxSide, BoxSide] | null {
   if (!g.score) return null;
-  const stored = playOf(w).boxes[g.id];
-  if (stored) return stored;
-  return outputFrom(g.id, playInput(inputFor(w, g))).sides;
+  return playOf(w).boxes[g.id] ?? null;
 }
 
 /** A stored line's numbers as the engine's stats. */
@@ -399,7 +452,7 @@ export function compGames(w: World, compId: string): SeasonGame[] {
     const mine = new Set(comp.clubs);
     return w.play.games.filter((g) => g.comp === BIG_LEAGUE && (mine.has(g.home) || mine.has(g.away)));
   }
-  return w.play.games.filter((g) => g.comp === compId);
+  return w.play.games.filter((g) => g.comp === compId && !g.stage);
 }
 
 const tables = new WeakMap<SeasonGame[], Map<string, Row[]>>();

@@ -2026,3 +2026,161 @@
 .cr button.primary:disabled {
   opacity: 0.5;
 }
+
+/* =====================================================================================
+   Slice W2b: brackets, cups, history, your situation, key games, moments, Key moments.
+   ===================================================================================== */
+.cr-tag.key {
+  background: color-mix(in srgb, var(--warn) 25%, transparent);
+  color: var(--warn);
+}
+.cr-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cr-lines li {
+  padding: 2px 0;
+}
+.cr-situation {
+  gap: 6px;
+}
+/* A bracket: one column per round. */
+.cr-bracket {
+  display: grid;
+  grid-template-columns: repeat(var(--rounds), minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.cr-bracket-round {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.cr-tie {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cr-tie-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--row);
+  min-width: 0;
+}
+.cr-tie-row.lost {
+  opacity: 0.6;
+}
+.cr-tie-row.won b,
+.cr-tie-row.won .cr-name {
+  color: #fff;
+}
+.cr-tie-row.me .cr-name {
+  color: var(--accent);
+}
+.cr .cr-tie-game {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  color: var(--cr-blue);
+  font-size: 14px;
+}
+.cr-cup-ties {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.cr .cr-comp.cup {
+  border-style: dashed;
+}
+.cr-history {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.cr-columns {
+  column-width: 300px;
+  column-gap: 24px;
+}
+.cr-columns .cr-review-pos {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  break-inside: avoid;
+  padding: 3px 0;
+}
+.cr-columns dd.me {
+  color: var(--accent);
+}
+.cr-review-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 760px) {
+  .cr-review-grid.two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cr-moment-line {
+  margin: 0;
+  line-height: 1.45;
+}
+.cr .cr-sim-end.big-text {
+  min-height: 52px;
+  font-size: 15px;
+  padding: 0 18px;
+}
+.cr-km .cr-game-score {
+  font-size: 26px;
+}
+.cr .cr-tie-score {
+  min-width: 36px;
+  min-height: var(--row);
+  justify-content: flex-end;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.cr-columns {
+  column-width: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  column-gap: 32px;
+}
+
+.cr .cr-tabs.wrap {
+  flex-wrap: wrap;
+}
+
+
+.cr-columns .cr-review-pos {
+  align-items: center;
+}
+.cr-columns dt,
+.cr-columns dd {
+  margin: 0;
+}
+
+
+/* Match preparation with Watch, Key moments and Simulate: on narrower screens the top bar keeps the three buttons whole and leaves out the matchup text (the opponent is in the scouting tab). */
+@media (max-width: 1100px) {
+  .tb-right:has(.cr-prep-actions) > span.muted {
+    display: none;
+  }
+}
+

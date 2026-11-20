@@ -57,8 +57,9 @@ try {
   await page.locator('.cr-continue-top').click();
   await idle();
   await shot('after-first-continue');
-  for (let i = 0; i < 20 && !(await page.locator('.prep-screen').count()); i++) {
-    await page.locator('.cr-continue-top').click();
+  for (let i = 0; i < 30 && !(await page.locator('.prep-screen').count()); i++) {
+    if (await page.locator('.cr-moment').count()) await page.locator('.cr-moment .cr-start').click();
+    else await page.locator('.cr-continue-top').click();
     await idle();
   }
   console.log(`To the first game day: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
@@ -99,8 +100,9 @@ try {
 
   // The next game day: watched through the real match screen (played on quickly through its dev handle).
   await page.locator('.cr-nav', { hasText: 'Home' }).click();
-  for (let i = 0; i < 20 && !(await page.locator('.prep-screen').count()); i++) {
-    await page.locator('.cr-continue-top').click();
+  for (let i = 0; i < 30 && !(await page.locator('.prep-screen').count()); i++) {
+    if (await page.locator('.cr-moment').count()) await page.locator('.cr-moment .cr-start').click();
+    else await page.locator('.cr-continue-top').click();
     await idle();
   }
   await button(/^Watch/).click();
