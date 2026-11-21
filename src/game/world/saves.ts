@@ -117,8 +117,11 @@ export async function readWorld(store: WorldStore, slot: number): Promise<WorldS
     const r = upgrade(await decode(bytes));
     if ('status' in r) return { slot, ...r };
     return { slot, status: 'ok', savedAt: r.file.savedAt, summary: r.file.summary, data: r.file.data };
-  } catch {
-    return { slot, status: 'broken', message: "This save can't be read." };
+  } catch (err) {
+    // Say why (and log it), so a broken save can be looked into.
+    const why = err instanceof Error ? err.message : String(err);
+    console.error(`[saves] career slot ${slot + 1} can't be read:`, err);
+    return { slot, status: 'broken', message: `This save can't be read (${why.slice(0, 120)}).` };
   }
 }
 
