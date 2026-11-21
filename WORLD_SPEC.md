@@ -334,6 +334,26 @@ on it and does not replace it.
   offer starts at his demand; while you lower it, the screen says what he will answer (yes / asks
   for his demand from 85% / no below 85%) before you send it. He accepts any length within §7.1's
   limits; wishes about contract length come in W5.
+- **Contract talks at any time, as in Football Manager** (moved into W2b on 21 Nov 2026; the
+  owner: "similar dynamics to FM"):
+  - **Offer a new contract** to any of your players at any time, from the player page's contract
+    panel and the squad table. Same screen as re-signing: his interest in staying, his demand, and
+    what he will answer while you set the offer. The new deal replaces the current one from that
+    day. While under contract he never accepts less than his current wage, and in the first 12
+    months after signing he won't talk unless he asked for it ("only just signed").
+  - **He asks for a new contract** when his demand to stay is at least 1.3 × his wage and he has
+    2+ seasons left (checked at the rollover and at mid-season): an inbox decision ("wants a new
+    contract": **open talks** or **refuse**). Refusing is remembered: −10 on his interest in
+    staying until he gets a new deal (W3 adds the morale effect).
+  - **Release a player** at any time: he becomes a free agent, and his remaining wages keep
+    counting against your cap or wage budget until his contract would have ended (otherwise a
+    club could sign long contracts and drop them for free).
+  - **Last-year reminder:** at the start of a season an inbox message (news, not a decision) lists
+    your players in the last year of their contract.
+  - **AI clubs** extend their 8 best players in their last year at mid-season, when the player
+    would consider staying and the money rules allow it.
+  - **Still later:** other clubs approaching your players (buyout offers, pre-contracts in the
+    last year) and transfer listing (W6); clauses and wishes about length (W5).
 - **Money when re-signing your own players:**
   - **Cap system (America Big League):** you may go over the cap to re-sign **your own** player (a
     simple form of Bird rights), up to the hard ceiling (1.34 C). Without this, a club over the cap
@@ -445,9 +465,8 @@ on it and does not replace it.
 - **Answering an offer:** at or above his demand he says yes; from 85% of it he asks for his
   demand; below 85% he says no. Always with a one-line reason from the factor that weighs most
   ("wants a bigger role", "wants to win", "wants more money", "the club can't afford him").
-- **Extensions:** in the last year of a contract you can offer an extension. The player says yes,
-  no, or asks for more, and always says why ("wants a bigger role", "wants a contender").
-- **Releasing a player** costs his remaining wage for the current season.
+- **New contracts and extensions** at any time, and **releasing** a player: §7.0 (changed 21 Nov
+  2026: extensions were only in the last year, and releasing cost only the current season).
 
 ### 7.2 Free agency
 - Players with expiring contracts become free agents in the offseason (step 4 of §3).
@@ -685,7 +704,7 @@ Each slice is designed in detail, built on its own branch, tested (unit tests + 
 | **E1 Attributes that matter** (`briefs/E1.md`, added 20 Nov 2026) | The 21 attributes of SPEC.md §3.1, the engine reworked so each one decides real events, the 102 stars and the generator re-rated, saves converted, the stats-show-attributes checks (SPEC.md §3.1b), lopsided blowouts fixed. Comes before W3, because development and aging work per attribute | Players differ the way real players do, and the box score proves it |
 | **W3 Years go by** | Aging, development, training focus, retirement (contract expiry moved to W2b, §7.0); squad life: morale, promises, player chats, injuries, fatigue and rest; world lab over 20 seasons | You can play season after season, and rotation matters |
 | **W4 Talent pipeline** | Colleges, academies, draft lottery and draft, rookie contracts | You can draft and grow your own players |
-| **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contracts, wage demands, extensions, contract clauses, buyouts, free agency days, built on §7.0's first version | You can build through free agency |
+| **W5 Free agency** | Both money systems (cap and budget, GAME_FLOW.md §4), contract clauses, buyouts, free agency days, built on §7.0's first version | You can build through free agency |
 | **W6 Trades** | AI club plans, valuation, trade screen with salary matching (America), buyout offers (everywhere), "what would you want?", deadline day, AI-to-AI deals | You can trade, and the AI is hard to exploit |
 | **W7 The club** | Staff (phase 4) with hiring and firing, facilities and board requests, money, sponsor and shoe/kit deals, board objectives, sacking and job offers | Money and staff are real decisions |
 | **W8 Scouting 2.0** | Scouts by region, narrowing ranges, shortlist | Finding hidden talent is a skill |
