@@ -367,7 +367,14 @@ on it and does not replace it.
   (demand).** A Division 4 club can't sign a superstar however much it offers: he won't talk to
   it. Interest was added on 21 Nov 2026 (owner: "more sophisticated").
 
-  **Step 1: interest.** Every player rates a club he could join (or stay at) from 0 to 100:
+  **Step 1: interest.** First a hard **league floor** (added 21 Nov 2026): a player won't consider
+  a club whose league prestige (table below) is under **standing − 55 − 3 × (years over 30)**,
+  whatever else the club offers ("won't play below a first-tier league", "won't play in Division
+  4"). A superstar in his prime (standing 95+) therefore never plays in a second tier or US
+  Divisions 3–4, even at home; an ageing star can still step down. Personality and home soften how
+  he rates a club, never the level he plays at.
+
+  Then every player rates a club he could join (or stay at) from 0 to 100:
 
   | Factor | Weight | 0 … 100 |
   |---|---|---|
