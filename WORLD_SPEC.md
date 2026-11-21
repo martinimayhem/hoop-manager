@@ -350,6 +350,10 @@ on it and does not replace it.
   re-signing step, **you sign first** (free-agent screen, a Continue stop), then every AI club below
   13 players fills up with the best free agent it can afford, worst-placed club first. A free agent
   accepts an offer at or above his demand.
+  **Fallback** (decided 21 Nov 2026): a club still below 13 that can't afford any free agent at his
+  demand signs, at its minimum deal, the free agent **with the lowest demand** among those who would
+  consider the club, never the best one. A good player never takes a minimum deal: he stays a free
+  agent (in-season signings come in W5).
 - **You can't start a season below 13 players.** The new-season step stays blocked with "sign *n* more
   players" and an **Auto-fill** button that signs the best affordable free agents for you.
 - **Not in this version (W5):** offers from several clubs, free-agency days, clauses, extensions
