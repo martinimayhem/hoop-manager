@@ -302,7 +302,9 @@ Offseason, in this order (screens and decisions per step: GAME_FLOW.md §3.7):  
 ## 6. Scouting
 
 - Every player outside your club is shown with **ranges**, as today: well-known players with
-  narrow ranges, unknowns with wide ones.
+  narrow ranges, unknowns with wide ones. Until scouts arrive (W8) a range is never wider than ±2 for
+  your own league, ±4 for your own region, ±6 otherwise (GAME_FLOW §6.4, decided 21 Nov 2026).
+  Stats are public and never ranges.
 - **Scouts** (staff, §9) are assigned to a **region**: US colleges, Europe, free agents, or a
   specific opponent.
 - Each scouting look **narrows the range** around the true value, but never below a minimum width,
