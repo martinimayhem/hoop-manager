@@ -2,7 +2,7 @@
 // what Continue stopped for (the postseason, a draw, knocked out, your season over), Key moments, and
 // the season review with "Start the next season". Within the screen rules: nothing scrolls, 14 px.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { setGamePlan } from '../../../engine/match';
 import type { GamePlan, MatchState, Side } from '../../../engine/types';
 import { longDate, shortDate } from '../../../game/season/calendar';
@@ -19,7 +19,7 @@ import { PlanEditor } from '../../components/PlanEditor';
 import { useMedia } from '../../components/useMedia';
 import { TopBar, type Crumb } from '../../components/TopBar';
 import { NextIcon, PrevIcon } from '../../icons';
-import { Badge, Pager, useFitRows } from './parts';
+import { Badge, Pager, country, useFitRows } from './parts';
 import type { Nav } from './screens';
 
 const nameOf = (w: World, c: string) => clubById(w, c)?.name ?? c;
@@ -103,6 +103,65 @@ function TieCard({ w, t, nav }: { w: World; t: Tie; nav: Nav }) {
   );
 }
 
+/** A tie on one line, for Home: the better-placed club, the series score (or the result), the other. */
+function TieLine({ w, t, nav }: { w: World; t: Tie; nav: Nav }) {
+  const games = w.play!.games;
+  const wins = tieScore(games, t);
+  const last = [...t.games].reverse().map((id) => games[id]).find((g) => g.score && !g.off);
+  const me = w.human?.club;
+  const score = (c: string) => (t.bestOf > 1 ? (wins[c] ?? 0) : last ? (last.home === c ? last.score![0] : last.score![1]) : '');
+  const side = (c: string, right = false) => (
+    <button className={`cr-name with-badge cr-tie-club ${right ? 'right' : ''} ${t.winner === c ? 'won' : t.winner ? 'lost' : ''} ${c === me ? 'me' : ''}`} onClick={() => nav.go({ kind: 'club', id: c })}>
+      {!right && <Badge club={clubById(w, c)!} size={20} />}
+      <span className="cr-ellipsis">{nameOf(w, c)}</span>
+      {right && <Badge club={clubById(w, c)!} size={20} />}
+    </button>
+  );
+  return (
+    <div className="cr-tie-line">
+      {side(t.a)}
+      {last ? (
+        <button className="cr-tie-score" onClick={() => nav.go({ kind: 'game', id: String(last.id) })} title={`The box score of ${t.bestOf > 1 ? 'the last game' : 'the game'}, ${shortDate(w.season, last.day)}`}>
+          {score(t.a)}–{score(t.b)}
+        </button>
+      ) : (
+        <b className="muted cr-tie-score">{t.bestOf > 1 ? '0–0' : 'v'}</b>
+      )}
+      {side(t.b, true)}
+    </div>
+  );
+}
+/**
+ * A competition's playoffs for Home: the round under way first, then the ones before it, each tie
+ * with its clubs and series score. Paged to the card's height.
+ */
+export function PlayoffOverview({ w, comp, nav }: { w: World; comp: string; nav: Nav }) {
+  const ties = (w.play?.ties ?? []).filter((t) => t.comp === comp || ((comp === BL_AMERICA || comp === BL_EUROPE) && t.comp === BL_FINAL && (t.a === w.human?.club || t.b === w.human?.club)));
+  const rounds = [...new Set(ties.map((t) => t.round))].reverse();
+  const ordered = rounds.flatMap((r) => ties.filter((t) => t.round === r));
+  const box = useRef<HTMLDivElement>(null);
+  const fit = useFitRows(ordered.length, '.cr-post-box .cr-tie-line', comp, box, 1);
+  const shown = ordered.slice(fit.from, fit.to);
+  return (
+    <>
+      <div className="cr-post-box" ref={box}>
+        {rounds.map((r) => {
+          const these = shown.filter((t) => t.round === r);
+          if (!these.length) return null;
+          return (
+            <div key={r} className="cr-post-round">
+              <span className="cr-label">{ROUND_NAME[r] ?? r}</span>
+              {these.map((t) => (
+                <TieLine key={t.id} w={w} t={t} nav={nav} />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      <Pager fit={fit} total={ordered.length} />
+    </>
+  );
+}
 /** A competition's play-ins and playoffs, round by round in columns. */
 export function Bracket({ w, comp, nav }: { w: World; comp: string; nav: Nav }) {
   const ties = (w.play?.ties ?? []).filter((t) => t.comp === comp || (comp === BL_AMERICA || comp === BL_EUROPE ? t.comp === BL_FINAL : false));
@@ -422,6 +481,73 @@ export function KeyMomentsScreen({
   );
 }
 
+/** Promotion and relegation, one row per divide: America's ladder, then each country's two tiers. */
+function UpAndDown({ w, m }: { w: World; m: ReturnType<typeof movements> }) {
+  const me = w.human?.club;
+  const comp = (id: string) => w.competitions.find((c) => c.id === id)!;
+  // Each divide by its upper league: who came up into it, who went down out of it.
+  const divides = new Map<string, { up: string[]; down: string[]; lower: string }>();
+  for (const mv of m.moves) {
+    const upper = mv.up ? mv.to : mv.from;
+    const lower = mv.up ? mv.from : mv.to;
+    const d = divides.get(upper) ?? { up: [], down: [], lower };
+    (mv.up ? d.up : d.down).push(mv.club);
+    divides.set(upper, d);
+  }
+  const rows = w.competitions
+    .filter((c) => divides.has(c.id))
+    .map((c) => {
+      const d = divides.get(c.id)!;
+      const short = (x: string) => x.replace(/^US /, '').replace(/ · America$/, '');
+      const label = c.country ? country(c.country) : c.kind === 'bigLeague' ? `Big League / ${short(comp(d.lower).name)}` : `${short(c.name)} / ${short(comp(d.lower).name).replace(/^Division /, '')}`;
+      return { id: c.id, label, ...d };
+    });
+  // Big League Europe: the new wildcards (and any licence won) in, the old wildcards (and any licence lost) out.
+  const oldWildcards = w.clubs.filter((c) => c.licence === 'wildcard').map((c) => c.id);
+  rows.unshift({
+    id: 'big-league-europe',
+    label: 'Big League Europe',
+    up: [...m.licenceWon, ...m.wildcards.filter((c) => !oldWildcards.includes(c))],
+    down: [...m.licenceLost, ...oldWildcards.filter((c) => !m.wildcards.includes(c))],
+    lower: '',
+  });
+  const fit = useFitRows(rows.length, '.cr-moves tbody tr', 'moves');
+  const clubs = (ids: string[]) =>
+    !ids.length ? <span className="muted">none</span> : ids.map((c, i) => (
+      <span key={c} className={c === me ? 'me' : ''}>
+        {i ? ', ' : ''}
+        {nameOf(w, c)}
+      </span>
+    ));
+  return (
+    <section className="cr-card cr-table-wrap">
+      <table className="cr-table cr-moves">
+        <thead>
+          <tr>
+            <th className="left" style={{ width: '24%' }}>
+              Where
+            </th>
+            <th className="left">Up</th>
+            <th className="left">Down</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(fit.from, fit.to).map((r) => (
+            <tr key={r.id}>
+              <td className="left wrap muted">{r.label}</td>
+              <td className="left wrap">{clubs(r.up)}</td>
+              <td className="left wrap">{clubs(r.down)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <span className="cr-key">
+        Big League Europe: licences won and new wildcards in, licences lost and wildcards out ({m.wildcards.map((c) => nameOf(w, c)).join(' and ')} next season). America: each league with the one below it; Europe: each country's two tiers.
+        <Pager fit={fit} total={rows.length} />
+      </span>
+    </section>
+  );
+}
 // ---------------------------------------------------------------------------
 // The season review (GAME_FLOW §3.6, the parts that exist now) and "Start the next season"
 
@@ -452,7 +578,6 @@ export function SeasonReview({ w, crumbs, onLeave, onNext }: { w: World; crumbs:
     .slice(0, 5);
   const champs = Object.entries(m.champions);
   const fit = useFitRows(champs.length, '.cr-champions .cr-review-pos', tab);
-  const names = (ids: string[]) => (ids.length ? ids.map((c) => nameOf(w, c)).join(', ') : 'none');
   return (
     <div className="cr cr-review">
       <TopBar
@@ -519,27 +644,7 @@ export function SeasonReview({ w, crumbs, onLeave, onNext }: { w: World; crumbs:
             <Pager fit={fit} total={champs.length} />
           </section>
         )}
-        {tab === 'moves' && (
-          <div className="cr-review-grid two">
-            <section className="cr-card">
-              <h2>Promoted</h2>
-              <p className="cr-moment-line">{names(m.moves.filter((x) => x.up).map((x) => x.club))}</p>
-              <h2>Relegated</h2>
-              <p className="cr-moment-line">{names(m.moves.filter((x) => !x.up).map((x) => x.club))}</p>
-            </section>
-            <section className="cr-card">
-              <h2>Big League Europe</h2>
-              <dl className="cr-facts">
-                <dt>Licences lost</dt>
-                <dd>{names(m.licenceLost)}</dd>
-                <dt>Licences won</dt>
-                <dd>{names(m.licenceWon)}</dd>
-                <dt>Next season's wildcards</dt>
-                <dd>{names(m.wildcards)}</dd>
-              </dl>
-            </section>
-          </div>
-        )}
+        {tab === 'moves' && <UpAndDown w={w} m={m} />}
         {tab === 'players' && (
           <div className="cr-review-grid two">
             <section className="cr-card">

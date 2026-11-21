@@ -384,10 +384,11 @@ const journeys = {
     await page.locator('.slot-picker-box .mm-career-slot', { hasText: /end of the regular season/ }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: /Simulate/ }).click();
     await idle();
-    if (await page.locator('.cr-moment').count()) await check('postseason: moment (your postseason starts)');
     if (await page.locator('.cr-moment').count()) {
-      await page.locator('.cr-moment .cr-start').click();
-      await idle();
+      await check('postseason: moment (your postseason starts)');
+      // Leave: back to the career (Continue would go on to the game day).
+      await page.locator('.tb-back').click();
+      await page.locator('.cr-side').waitFor();
     }
     await page.locator('.cr-nav', { hasText: 'Home' }).click().catch(() => {});
     if (await page.locator('.cr-nav').count()) {

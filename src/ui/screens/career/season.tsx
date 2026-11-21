@@ -2,7 +2,7 @@
 // competition tables that now count, and the season review. Within the screen rules: nothing scrolls
 // (long lists are paged), 14 px, Back in the top bar.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GamePlan } from '../../../engine/types';
 import { longDate, monthOf, shortDate } from '../../../game/season/calendar';
 import {
@@ -29,7 +29,7 @@ import { PlanEditor } from '../../components/PlanEditor';
 import { useMedia } from '../../components/useMedia';
 import { NextIcon, PrevIcon } from '../../icons';
 import { Badge, Pager, useFitRows } from './parts';
-import { Bracket, KeyTag, SituationCard } from './postseason';
+import { Bracket, KeyTag, PlayoffOverview, SituationCard } from './postseason';
 import type { Nav } from './screens';
 
 const TEAM_COLOURS = ['var(--home)', 'var(--away)'];
@@ -77,13 +77,15 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
   const next = nextHumanGame(w);
   const today = humanGameToday(w);
   const played = humanGames(w).filter((g) => g.score);
-  const last = played.slice(-5).reverse();
+  // The last five; three on a touch screen, whose 44 px rows leave the inbox room.
+  const last = played.slice(useMedia('(pointer: coarse)') ? -3 : -5).reverse();
   const comps = competitionsOf(w, me.id);
   const inbox = [...p.inbox].reverse();
   // Inbox messages can be long: it pages down to one at a time if it must.
-  const fit = useFitRows(inbox.length, '.cr-inbox li', p.inbox.length, undefined, 1);
+  const inboxBox = useRef<HTMLDivElement>(null);
+  const fit = useFitRows(inbox.length, '.cr-inbox li', p.inbox.length, inboxBox, 1);
   return (
-    <div className="cr-page">
+    <div className="cr-page cr-page-fill">
       <div className="cr-row-head">
         <h1>Home</h1>
         <span className="cr-sub">{p.phase === 'before' ? 'The season starts with your next Continue.' : p.phase === 'review' ? 'The regular season is over.' : longDate(w.season, p.day)}</span>
@@ -164,9 +166,7 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
           </section>
         </div>
         <div className="cr-home-col">
-          {comps.map((c) => (
-            <MiniTable key={c.id} w={w} comp={c} me={me} nav={nav} />
-          ))}
+          <HomeTables w={w} comps={comps} me={me} nav={nav} />
         </div>
         <div className="cr-home-col cr-home-inbox">
         <SituationCard w={w} />
@@ -175,6 +175,7 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
             <h2>Inbox</h2>
             <Pager fit={fit} total={inbox.length} />
           </div>
+          <div className="cr-inbox-box" ref={inboxBox}>
           {inbox.length ? (
             <ul className="cr-inbox">
               {inbox.slice(fit.from, fit.to).map((m, i) => (
@@ -193,6 +194,7 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
           ) : (
             <span className="cr-sub">Nothing yet. Press Continue to start the season.</span>
           )}
+          </div>
         </section>
         </div>
       </div>
@@ -200,55 +202,96 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
   );
 }
 
-/** Five rows of a table round your place. */
-function MiniTable({ w, comp, me, nav }: { w: World; comp: Competition; me: WorldClub; nav: Nav }) {
-  const rows = table(w, comp.id);
-  // Five rows round your place; three on a short touch screen (its rows are 44 px).
-  const n = useMedia('(pointer: coarse) and (max-height: 800px)') ? 3 : 5;
-  const i = Math.max(0, rows.findIndex((r) => r.club === me.id));
-  const from = Math.max(0, Math.min(rows.length - n, i - Math.floor(n / 2)));
+/**
+ * Your competitions' tables on Home, whole (owner, 20 Nov 2026): a tab for each when you play in two;
+ * a table taller than its card (18 clubs on a laptop, 44 px rows on a tablet) pages.
+ */
+function HomeTables({ w, comps, me, nav }: { w: World; comps: Competition[]; me: WorldClub; nav: Nav }) {
+  const [tab, setTab] = useState(0);
+  const comp = comps[Math.min(tab, comps.length - 1)];
+  const rows = comp ? table(w, comp.id) : [];
+  // Once a competition's postseason has begun, its playoffs are what matter: shown first, the table a switch away.
+  const hasPost = !!comp && (w.play?.ties ?? []).some((t) => t.comp === comp.id);
+  const [showTable, setShowTable] = useState<Record<string, boolean>>({});
+  const post = hasPost && !showTable[comp.id];
+  const box = useRef<HTMLDivElement>(null);
+  const fit = useFitRows(rows.length, '.cr-home-table tbody tr', comp?.id, box);
+  if (!comp) return null;
+  // The page with your club on it first.
+  const mine = Math.max(0, rows.findIndex((r) => r.club === me.id));
+  const size = fit.to - fit.from;
+  const jumped = useRef<string | null>(null);
+  useEffect(() => {
+    // Once per table and page size: open on the page with your club.
+    const key = `${comp?.id}|${size}`;
+    if (!fit.paged || size <= 0 || jumped.current === key) return;
+    jumped.current = key;
+    if (mine >= size) fit.setPage(Math.floor(mine / size));
+  });
   return (
-    <section className="cr-card">
+    <section className="cr-card cr-home-tables">
       <div className="cr-row-head">
-        <h2>{comp.name}</h2>
-        <button className="cr-chip link" onClick={() => nav.go({ kind: 'competition', id: comp.id })}>
-          Full table
-        </button>
+        {comps.length > 1 ? (
+          <div className="cr-tabs wrap" role="tablist" aria-label="Your competitions">
+            {comps.map((c, i) => (
+              <button key={c.id} role="tab" aria-selected={i === tab} className={i === tab ? 'on' : ''} onClick={() => setTab(i)} title={c.name}>
+                {c.kind === 'bigLeague' ? 'Big League' : c.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <h2>{comp.name}</h2>
+        )}
+        {hasPost && (
+          <div className="cr-tabs" role="radiogroup" aria-label="Playoffs or table">
+            {(['Playoffs', 'Table'] as const).map((l) => (
+              <button key={l} role="radio" aria-checked={(l === 'Table') !== post} className={(l === 'Table') !== post ? 'on' : ''} onClick={() => setShowTable((s) => ({ ...s, [comp.id]: l === 'Table' }))}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+        {!post && <Pager fit={fit} total={rows.length} />}
       </div>
-      <table className="cr-table cr-mini">
-        <thead>
-          <tr>
-            <th style={{ width: 30 }}>#</th>
-            <th className="left">Club</th>
-            <th style={{ width: 34 }}>W</th>
-            <th style={{ width: 34 }}>L</th>
-            <th style={{ width: 40 }} title="Games behind the leader">GB</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.slice(from, from + n).map((r, k) => {
-            const club = clubById(w, r.club)!;
-            return (
-              <tr key={r.club} className={r.club === me.id ? 'me' : ''}>
-                <td className="muted">{from + k + 1}</td>
-                <td className="left">
-                  <button className="cr-name with-badge" onClick={() => nav.go({ kind: 'club', id: club.id })}>
-                    <Badge club={club} size={20} />
-                    <span className="cr-ellipsis">{club.name}</span>
-                  </button>
-                </td>
-                <td>{r.won}</td>
-                <td>{r.lost}</td>
-                <td className="muted">{r.behind ? r.behind.toFixed(1).replace(/\.0$/, '') : '—'}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {post ? (
+        <PlayoffOverview w={w} comp={comp.id} nav={nav} />
+      ) : (
+      <div className="cr-home-table-box" ref={box}>
+        <table className="cr-table cr-mini cr-home-table">
+          <thead>
+            <tr>
+              <th style={{ width: 30 }}>#</th>
+              <th className="left">Club</th>
+              <th style={{ width: 34 }}>W</th>
+              <th style={{ width: 34 }}>L</th>
+              <th style={{ width: 40 }} title="Games behind the leader">GB</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(fit.from, fit.to).map((r, k) => {
+              const club = clubById(w, r.club)!;
+              return (
+                <tr key={r.club} className={r.club === me.id ? 'me' : ''}>
+                  <td className="muted">{fit.from + k + 1}</td>
+                  <td className="left">
+                    <button className="cr-name with-badge" onClick={() => nav.go({ kind: 'club', id: club.id })}>
+                      <Badge club={club} size={20} />
+                      <span className="cr-ellipsis">{club.name}</span>
+                    </button>
+                  </td>
+                  <td>{r.won}</td>
+                  <td>{r.lost}</td>
+                  <td className="muted">{r.behind ? r.behind.toFixed(1).replace(/\.0$/, '') : '—'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      )}
     </section>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Tactics
 
