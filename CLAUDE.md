@@ -25,6 +25,24 @@ GAME_FLOW.md §6.1a and §6.1b have three hard rules for every screen, old and n
    left and never hidden, browser back / Escape / swipe all go back, a clickable path to the screen,
    no dead ends or "coming soon" buttons. Run the navigation sweep before reporting screen work.
 
+## The manager test: could a manager decide with what's on screen?
+
+Every screen exists for decisions: sign him or not, at what wage, who starts, which tactic. The
+owner judges every screen by one question: **could a manager actually make this decision with
+what's on screen?** (GAME_FLOW §6.0 lists the decisions per screen.)
+
+- **When the spec doesn't say what a screen shows or how it's laid out, follow Football Manager
+  2024 exactly:** the same columns, views, filters, panels and order, within our screen rules
+  (§6.1a/§6.1b: nothing scrolls, so FM's long lists become pages) and the data the game has. This
+  is not a design decision: don't stop to ask, and say in your report which FM screen you followed.
+- **Data FM shows that we don't have yet:** never fake it; list it in your report.
+- **FM reference screenshots** are in `references/fm/` on the owner's machine (git-ignored, never
+  committed: they are copyrighted). Look at the matching ones before you build or change a screen.
+  If there is none for the screen you are on, say so in the report.
+- **Before reporting screen work, play the decisions yourself** on the screen (e.g. pick and sign
+  the best affordable shooting guard) and report, per decision, what the screen showed you and
+  what was missing compared with FM.
+
 ## Design decisions are not made here
 
 SCOPE.md, GAME_FLOW.md and WORLD_SPEC.md are the design. The owner makes design decisions in the

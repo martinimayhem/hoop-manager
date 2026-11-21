@@ -256,6 +256,21 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 
 ## 6. Screens
 
+### 6.0 The manager test (decided 21 Nov 2026)
+
+Every screen is judged by one question: **could a manager make this decision with what's on
+screen?** When this file doesn't say what a screen shows, it shows what Football Manager 2024
+shows for the same decision (CLAUDE.md, "The manager test"). Each screen's decisions and what they
+need:
+
+| Screen | Decisions | What you need to see (FM equivalent) |
+|---|---|---|
+| **Player page** | Is he good, getting better, worth his money, happy? | Attributes in groups, position fit, overall, stars, this season's and past seasons' stats, contract (wage, end, buyout), morale, personality, status tiles (FM: Player Overview; reference sheet `design/reference-v1.html`) |
+| **Squad** | Who plays where, who is unhappy, whose contract to handle, where we're short | Views (Overview, Stats, Attributes by group, Contracts), morale, fitness and injury, contract end and wage, depth by position (FM: Squad) |
+| **Contract screen** | Keep him? At what wage and length? | His stats and minutes, ability and potential, age, current wage, demand, interest with its reasons, what the deal leaves of the budget or cap (FM: Contract Negotiation + Player Overview) |
+| **Free agents / player search** | Whom to sign, at what price? | §6.4 "Player lists outside your club" (FM: Player Search / Scouting, Overview and attribute views) |
+| **Match preparation, Tactics, Transfers** | (specified when their slices are briefed) | FM's Match Preview, Tactics and Transfers screens until then |
+
 ### 6.1 Look and navigation
 - **Style:** modern dark, sporty: dark background, the club's colours as accents, cards and
   tables, big numbers. Like a sports app, readable for a 13-year-old, dense enough for FM players.
@@ -410,13 +425,19 @@ the way you do in Football Manager, from their numbers:
   own league, **4** for your own region (America or Europe), **6** for anyone else, narrower for
   well-known players (WORLD_SPEC §6). A range is shown as its two ends (e.g. "64–70"), coloured
   by its middle.
-- **Three views, as in the squad table:**
-  - **Overview:** portrait, Player (link), Pos, Age, Nat, Ability and Potential stars, last club
-    (link) and its league, Demand, Interest.
+- **Three views, as in the squad table** (a view menu as in FM's player search):
+  - **Overview:** status tags (injured, unhappy, "won't consider you", shortlisted from W8),
+    portrait, Player (link) with nationality, last club (link) with its league, Pos, Age, Ability
+    and Potential stars, current Salary, Demand, Interest, **Knowledge**. Until scouts arrive
+    (W8) knowledge is "Good" (own league), "Some" (own region) or "Little" (elsewhere) and sets the
+    range widths below; from W8 it comes from scouting, and with no knowledge ability and
+    potential show "Unknown", as in FM.
   - **Stats:** Pos, Player, Age, then last season per game: GP, MIN, PTS, REB, AST, STL, BLK, FG%,
     3P%, FT%.
   - **Attributes:** Pos, Player, OVR range, then the attributes as ranges, short headers as in
-    §6.4 (with E1's group switch).
+    §6.4, one group at a time (as FM's "Defensive" view; E1's group switch).
+- **A strip on top** with what limits you: budget or cap room this season and next, squad places
+  free (e.g. "11 of 13"), and the market's state (FM: the tiles above player search).
 - **Sort** on every column. **Filters:** position; age (any, under 25, 25–30, over 30);
   **"Affordable"** (demand within your budget or cap room; on by default); interest (players who
   won't consider you hidden by default, with a count).

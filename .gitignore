@@ -157,3 +157,6 @@ data/sportvu/
 # Mixamo animation files: Adobe forbids redistributing the raw files (public repo). Only the clips
 # retargeted onto our skeleton (public/3d) are committed.
 assets/animations/
+
+# Football Manager reference screenshots: copyrighted, kept on the owner's machine only (CLAUDE.md)
+references/
