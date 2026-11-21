@@ -343,7 +343,7 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 
 | Sidebar | Screens |
 |---|---|
-| **Home** | **Inbox** (news and decisions, with action buttons), next game card, mini table, objective and job security |
+| **Home** | **Inbox** (news and decisions, with action buttons), next game card, league table, objective and job security. The table card has a tab per competition you are in and shows the **whole table**, paged if it doesn't fit. **During a competition's postseason** its tab shows the **playoffs** instead (current round first, then earlier rounds; each tie one line with the series score, which opens the box score), with a **Playoffs \| Table** switch; the full bracket stays on the competition's Playoffs tab. Owner's request during W2b, recorded 21 Nov 2026 |
 | **Squad** | First team, dev squad, academy, each a sortable table with three **views** (§6.4), **player page** (attributes in 5 groups with scout ranges, personality, history, contract, promises, "talk to him") |
 | **Tactics** | **Game plan** (starting five, rotation, offence, defence, tempo, intensity, key matchup), **training** (team focus, individual focus) |
 | **Schedule** | Calendar of all your competitions, results, key games marked |
