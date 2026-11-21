@@ -613,6 +613,13 @@ You don't run the books: the board does. You influence the club through four cho
 
 Every slice must keep these checks green, or explain why a target needs to change.
 
+**Until W3** (decided 21 Nov 2026): nobody retires and no new players arrive, but everyone gets a
+year older each season (ages stay real; they are not frozen). The checks that need a living
+population (wages stay stable, interest works, average age, population, rating inflation) are
+therefore judged **from W3 on**. In W2b the twenty-season run must stay error-free with squads at
+13 and **reports** the average wage per league each season without failing on it; the wage check
+is applied to **seasons 1–3** (season 3 within ±10% of season 1).
+
 ---
 
 ## 14. Technical design
