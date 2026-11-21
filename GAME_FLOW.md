@@ -342,11 +342,11 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 11. **Nothing is cut off.** No text or control is clipped, overlapped or pushed outside its box or
     the window at any of the four sizes; long names end in "…" with the full name on hover and on
     the linked page. Checked by the no-scroll sweep. Decided 21 Nov 2026.
-9. **Pop-ups** close with an X top right, Escape, or tapping outside, unless they ask for a decision.
-10. **The same rules for the Quick League and the Friendly match** while they still exist.
-11. **Checked automatically:** a navigation sweep visits every screen and fails if Back is missing or
+12. **Pop-ups** close with an X top right, Escape, or tapping outside, unless they ask for a decision.
+13. **The same rules for the Quick League and the Friendly match** while they still exist.
+14. **Checked automatically:** a navigation sweep visits every screen and fails if Back is missing or
     not in its place, if browser back doesn't return to the previous screen, if a screen has no way
-    out, or if a sidebar item or button leads nowhere.
+    out, or if a sidebar item, button or name link leads nowhere.
 
 ### 6.2 Screen map
 
