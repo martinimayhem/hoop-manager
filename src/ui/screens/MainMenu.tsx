@@ -102,6 +102,9 @@ export function MainMenu({
     };
   }, []);
   const used = careers.filter((s) => s.status !== 'empty');
+  // The game you played last, a career or a Quick League game: Continue carries on with it.
+  const lastCareer = careers.flatMap((s) => (s.status === 'ok' ? [s] : [])).sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))[0];
+  const careerFirst = !!lastCareer && (!latest || lastCareer.savedAt > latest.savedAt);
   // A one-off message from the screen before ("Your career is saved"), shown for a few seconds.
   const nav = useNav();
   const [flash] = useState(nav.flash);
@@ -127,13 +130,28 @@ export function MainMenu({
 
       <div className="mm-cols">
       <div className="mm-col">
-      {latest &&
+      {careerFirst && lastCareer && (
+        <section className="panel mm-continue">
+          <div>
+            <div className="mm-kicker">Continue · career</div>
+            <div className="mm-club">{lastCareer.summary.club}</div>
+            <div className="muted">
+              {lastCareer.summary.league}
+              {lastCareer.summary.manager ? ` · manager ${lastCareer.summary.manager}` : ''} · season {lastCareer.summary.season}–{String(lastCareer.summary.season + 1).slice(2)}
+            </div>
+          </div>
+          <button className="primary big" onClick={() => onCareerOpen(lastCareer.data, lastCareer.slot)}>
+            Continue <NextIcon />
+          </button>
+        </section>
+      )}
+      {!careerFirst && latest &&
         (() => {
           const x = summarise(latest.data);
           return (
             <section className="panel mm-continue">
               <div>
-                <div className="mm-kicker">Continue</div>
+                <div className="mm-kicker">Continue · Quick League</div>
                 <div className="mm-club">{x.club}</div>
                 <div className="muted">
                   {x.league}
