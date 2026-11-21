@@ -257,6 +257,25 @@ describe('the next season', () => {
     const someone = Object.values(next.players).find((wp) => wp.career?.length)!;
     expect(someone.career![0].season).toBe(done.season);
   });
+
+  it('WHEN the next season starts THEN first-team contracts count down (dev squads roll on), and Continue stops for your contracts, then the free agents', async () => {
+    for (const c of done.clubs) {
+      for (const id of c.roster) expect(next.players[id].contract!.years).toBe(done.players[id].contract!.years - 1);
+      for (const id of c.dev) expect(next.players[id].contract!.years).toBe(done.players[id].contract!.years);
+    }
+    expect(playOf(next).offseason?.step).toBe('contracts');
+    const r = await advance(next, simulateInputs);
+    expect(r.stop).toBe('offseason');
+    expect(playOf(r.w).phase).toBe('before');
+  });
+
+  it('WHEN your regular season ends THEN the inbox lists your players whose contract runs out', () => {
+    const me = done.human!.club;
+    const last = done.clubs.find((c) => c.id === me)!.roster.filter((id) => done.players[id].contract!.years === 1);
+    const msg = playOf(done).inbox.find((m) => m.text.startsWith('Contracts:'))!;
+    expect(msg).toBeTruthy();
+    for (const id of last) expect(msg.text).toContain(done.players[id].p.name);
+  });
 });
 
 describe('Key moments', () => {

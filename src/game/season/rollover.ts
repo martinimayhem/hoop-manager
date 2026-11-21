@@ -5,8 +5,8 @@
 // tier); Big League Europe licences (lost at a third bottom-2 finish within the last 5 seasons, to that
 // season's best wildcard club) and the 2 wildcards; money that follows the tier, with the parachute;
 // the season archived; each player's season added to his career. Then a new season with new
-// schedules. Players don't change yet (W3); contracts are left as they are until their expiry is
-// designed (owner, 19 Nov 2026).
+// schedules. Players don't develop yet (W3); contracts count down and the offseason opens: the
+// contract screen, then the free-agent screen (WORLD_SPEC §7.0, contracts.ts).
 
 import { MID_LEVEL } from '../world/money';
 import { levelBudget } from '../world/generate';
@@ -15,6 +15,7 @@ import type { Competition, World, WorldClub } from '../world/types';
 import { BL_AMERICA, BL_EUROPE, BL_FINAL, cupsOf } from './post';
 import { playOf, startSeason, table, type Row } from './play';
 import { BIG_LEAGUE, STAT_KEYS, type SeasonArchive } from './types';
+import { countDown, openOffseason } from './contracts';
 
 /** How many seasons count for a licence's bottom-2 finishes, and how many lose it. */
 export const LICENCE_WINDOW = 5;
@@ -240,7 +241,7 @@ export function startNextSeason(w: World): World {
   }
   for (const c of clubs) if (c.moneySystem === 'cap') c.midLevelLeft = MID_LEVEL;
 
-  const next: World = {
+  const next: World = countDown({
     ...w,
     season: w.season + 1,
     clubs,
@@ -248,10 +249,10 @@ export function startNextSeason(w: World): World {
     players,
     history: [...(w.history ?? []), arch],
     play: undefined,
-  };
-  // Squads stay as they are, so your plan and how you like to play carry over.
+  });
+  // Your plan and how you like to play carry over (a plan that no longer fits the squad is made again).
   const fresh = startSeason(next);
-  return { ...fresh, play: { ...playOf(fresh), plan: p.plan, mode: p.mode } };
+  return openOffseason({ ...fresh, play: { ...playOf(fresh), plan: p.plan, mode: p.mode } });
 }
 
 /** Whether a competition is one of the Big League's (for screens). */

@@ -5,11 +5,12 @@
 // tests use one in memory.
 
 import { startSeason } from '../season/play';
+import { fitMarket } from './generate';
 import { clubById, competitionsOf } from './query';
 import { REGION_NAME, type World } from './types';
 
-/** The career save format this version of the game writes (W1 version 2 started again at 1; 2: the season, slice W2a; 3: postseason, cups, history, slice W2b). */
-export const WORLD_FORMAT = 3;
+/** The career save format this version of the game writes (W1 version 2 started again at 1; 2: the season, slice W2a; 3: postseason, cups, history, slice W2b; 4: the wage market, contracts running out). */
+export const WORLD_FORMAT = 4;
 export const WORLD_SLOTS = 3;
 
 /** Where the bytes go: IndexedDB in the browser, a Map in tests. */
@@ -53,6 +54,8 @@ const MIGRATIONS: Record<number, (file: WorldFile) => WorldFile> = {
     const play = { ...p, ties: p.ties ?? [], made: p.made ?? {}, moment: null, noCups: true as const, ...(p.phase === 'review' ? { phase: 'regular' as const, done: true } : {}) };
     return { ...f, format: 3, data: { ...f.data, play } };
   },
+  // The wage market (WORLD_SPEC §7.1): fitted from the save's current contracts, then stored.
+  3: (f) => ({ ...f, format: 4, data: { ...f.data, market: f.data.market ?? fitMarket(f.data) } }),
 };
 
 export function summariseWorld(w: World): WorldSummary {

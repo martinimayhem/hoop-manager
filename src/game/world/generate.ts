@@ -40,7 +40,7 @@ export const WILDCARDS = 2;
  * Where a club starts, for its size and money: the Big League (America or Europe), US Division 2–4,
  * a national first tier (outside the Big League) or second tier.
  */
-type Level = 'blA' | 'blE' | 'us2' | 'us3' | 'us4' | 'n1' | 'n2';
+export type Level = 'blA' | 'blE' | 'us2' | 'us3' | 'us4' | 'n1' | 'n2';
 
 /** How good a level's players are: the base rating band before position offsets (see pool.ts TEMPLATES). */
 const QUALITY: Record<Level, [number, number]> = { blA: [57, 69], blE: [57, 69], us2: [52, 63], us3: [45, 55], us4: [38, 48], n1: [50, 61], n2: [43, 53] };
@@ -58,10 +58,10 @@ const BUDGET: Record<Exclude<Level, 'blA'>, [number, number]> = {
   n2: [1e6, 5e6],
 };
 /** How much a level's buyout fees weigh: smaller clubs ask less (GAME_FLOW §4.2). */
-const BUYOUT_SCALE: Record<Exclude<Level, 'blA'>, number> = { blE: 1.1, us2: 1, us3: 0.85, us4: 0.7, n1: 1, n2: 0.8 };
+export const BUYOUT_SCALE: Record<Exclude<Level, 'blA'>, number> = { blE: 1.1, us2: 1, us3: 0.85, us4: 0.7, n1: 1, n2: 0.8 };
 
 /** How strong and rich each country's leagues are, and how famous its basketball is (tune). */
-const COUNTRY: Record<string, { quality: number; money: number; fame: number }> = {
+export const COUNTRY: Record<string, { quality: number; money: number; fame: number }> = {
   ES: { quality: 2, money: 1, fame: 90 },
   TR: { quality: 2, money: 1, fame: 87 },
   GR: { quality: 1, money: 0.9, fame: 87 },
@@ -606,7 +606,8 @@ export function createWorld(seed: number): World {
     }
   }
 
-  return { kind: 'world', seed, season: START_SEASON, clubs, competitions, players: m.players, colleges, freeAgents, human: null };
+  const world: World = { kind: 'world', seed, season: START_SEASON, clubs, competitions, players: m.players, colleges, freeAgents, human: null };
+  return { ...world, market: fitMarket(world) };
 }
 
 /** A buyout fee's base, in wages, by the seasons left on the contract (about a wage for 3 years; tune). */
@@ -626,4 +627,44 @@ export function thresholdCounted(squad: { wage: number; age: number }[]): { sum:
   );
   const indices = squad.map((_, i) => i).filter((i) => !anchors.has(i) && squad[i].age >= THRESHOLD_MIN_AGE);
   return { sum: indices.reduce((s, i) => s + squad[i].wage, 0), indices };
+}
+
+/** A club's league for pay (WORLD_SPEC §7.1): its Big League conference, else its league. */
+export function payKey(comps: Competition[], clubId: string): string {
+  const bl = comps.find((c) => c.kind === 'bigLeague' && c.clubs.includes(clubId));
+  if (bl) return bl.id;
+  return comps.find((c) => (c.kind === 'usDivision' || c.kind === 'nationalLeague') && c.clubs.includes(clubId))?.id ?? '';
+}
+
+/**
+ * The wage market (WORLD_SPEC §7.1): least squares of ln(wage) on overall over every first-team
+ * contract, and each league's pay level (the average of wage ÷ market wage over its first teams).
+ * Done once, when a world is made (or an older save is first loaded), and stored.
+ */
+export function fitMarket(w: World): { a: number; b: number; pay: Record<string, number> } {
+  const pts: { x: number; y: number; key: string; wage: number }[] = [];
+  for (const club of w.clubs) {
+    const key = payKey(w.competitions, club.id);
+    for (const id of club.roster) {
+      const wp = w.players[id];
+      if (!wp?.contract?.wage) continue;
+      pts.push({ x: overall(wp), y: Math.log(wp.contract.wage), key, wage: wp.contract.wage });
+    }
+  }
+  const n = pts.length;
+  const mx = pts.reduce((s, p) => s + p.x, 0) / n;
+  const my = pts.reduce((s, p) => s + p.y, 0) / n;
+  const sxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+  const sxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+  const b = sxy / sxx;
+  const a = my - b * mx;
+  const sums = new Map<string, { s: number; n: number }>();
+  for (const p of pts) {
+    const r = p.wage / Math.exp(a + b * p.x);
+    const e = sums.get(p.key) ?? { s: 0, n: 0 };
+    sums.set(p.key, { s: e.s + r, n: e.n + 1 });
+  }
+  const pay: Record<string, number> = {};
+  for (const [k, v] of sums) pay[k] = v.s / v.n;
+  return { a, b, pay };
 }

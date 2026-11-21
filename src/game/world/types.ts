@@ -172,4 +172,10 @@ export interface World {
   play?: SeasonPlay;
   /** Seasons gone by (slice W2b). */
   history?: SeasonArchive[];
+  /**
+   * The wage market (WORLD_SPEC §7.1): market wage = e^(a + b × overall), fitted once over the first
+   * teams' contracts when the world was made (never refitted), and each league's pay level (the average
+   * wage ÷ market wage of its first teams), by league id (a Big League club: its conference).
+   */
+  market?: { a: number; b: number; pay: Record<string, number> };
 }

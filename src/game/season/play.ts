@@ -268,7 +268,7 @@ function addInbox(w: World, item: InboxItem): World {
 /** The season's first day. */
 export function beginSeason(w: World): World {
   const p = playOf(w);
-  if (p.phase !== 'before') return w;
+  if (p.phase !== 'before' || p.offseason) return w;
   const started: World = withPost({ ...w, play: { ...p, phase: 'regular', day: 0, done: false } });
   return addInbox(started, { day: 0, kind: 'start', text: `The ${w.season}–${String(w.season + 1).slice(2)} season starts today, ${shortDate(w.season, 0)}. Your first game: ${firstGameText(started)}.` });
 }
@@ -287,11 +287,26 @@ export function withPost(w: World): World {
 
 /** Today's games are all played: the day is over (the next rounds are made), and the season too after its last game. */
 export function closeDay(w: World): World {
-  const closed = withPost({ ...w, play: { ...playOf(w), done: true } });
+  let closed = withPost({ ...w, play: { ...playOf(w), done: true } });
+  closed = expiringNews(closed);
   const p = playOf(closed);
   if (p.games.some((g) => !g.score && !g.off)) return closed;
   const ended: World = { ...closed, play: { ...p, phase: 'review', moment: null } };
   return addInbox(ended, { day: p.day, kind: 'end', text: `The season is over. Your season review is ready.` });
+}
+
+/** When your regular season is over: an inbox message lists your players whose contract is expiring (WORLD_SPEC §7.0). */
+function expiringNews(w: World): World {
+  const p = playOf(w);
+  if (!w.human || p.made?.expiring || !regularOver(w)) return w;
+  const club = clubById(w, w.human.club)!;
+  const last = club.roster.map((id) => w.players[id]).filter((wp) => (wp.contract?.years ?? 0) === 1);
+  const names = last.map((wp) => wp.p.name);
+  const text = names.length
+    ? `Contracts: ${names.length === 1 ? '1 of your players’ contracts runs' : `${names.length} of your players’ contracts run`} out this summer: ${names.join(', ')}. Before the new season you offer each a new deal or let him go.`
+    : 'Contracts: none of your players’ contracts run out this summer.';
+  const marked: World = { ...w, play: { ...p, made: { ...(p.made ?? {}), expiring: true } } };
+  return addInbox(marked, { day: Math.max(0, p.day), kind: 'news', text });
 }
 
 /** Whether your competitions' regular seasons are over (every regular-season game of your leagues played). */
@@ -315,8 +330,8 @@ export function inputsToday(w: World, withoutHuman = false): SimInput[] {
     .map((g) => inputFor(w, g));
 }
 
-/** Why Continue stopped: your game day, the season's first day, something to read (a draw, the postseason, knocked out), a target reached, or the end of the season. */
-export type Stop = 'gameDay' | 'firstDay' | 'moment' | 'reached' | 'end';
+/** Why Continue stopped: your game day, the season's first day, something to read (a draw, the postseason, knocked out), a target reached, the end of the season, or the offseason's contract and free-agent screens. */
+export type Stop = 'gameDay' | 'firstDay' | 'moment' | 'reached' | 'end' | 'offseason';
 
 /**
  * continue: day by day, stopping for you (GAME_FLOW §3.3). Your games are simulated too in the others:
@@ -359,6 +374,8 @@ export async function advance(w: World, sim: (inputs: SimInput[]) => Promise<Gam
     return null;
   };
   let cur = w;
+  // Before the season: your contracts and free agents first (WORLD_SPEC §7.0).
+  if (playOf(cur).offseason) return { w: cur, stop: 'offseason' };
   if (playOf(cur).phase === 'before') {
     cur = beginSeason(cur);
     if (mode === 'continue') return { w: cur, stop: stopsFor(cur) ?? 'firstDay' };

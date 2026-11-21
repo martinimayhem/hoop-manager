@@ -3,6 +3,7 @@
 // Plain data inside the World, saved with it.
 
 import type { GamePlan, PlayerStats, TeamExtras } from '../../engine/types';
+import type { Offseason } from './contracts';
 
 /** The Big League's games (both conferences play one schedule; each conference has its own table). */
 export const BIG_LEAGUE = 'big-league';
@@ -105,6 +106,8 @@ export interface SeasonPlay {
   moment?: Moment | null;
   /** A season started before cups existed (a W2a save) has none. */
   noCups?: true;
+  /** Before the season (slice W2b, WORLD_SPEC §7.0): the contract screen, then the free-agent screen. */
+  offseason?: Offseason;
 }
 
 /** A season gone by (slice W2b §7): kept small. */
