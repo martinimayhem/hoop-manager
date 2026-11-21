@@ -398,6 +398,34 @@ First team / Dev squad / Academy tabs. Decided 18 Nov 2026.
 - Every column sorts. Other clubs' players show **scout ranges** for numbers, as everywhere else.
   Stars are always your staff's estimate (§6.5).
 - **Personality stays on the player page only**, not in a table.
+
+**Player lists outside your club: free agents, player search, contract screen** (decided 21 Nov
+2026, after the owner's play-test: "how am I to select the right players?"). You choose players
+the way you do in Football Manager, from their numbers:
+
+- **Stats are public and exact.** Every player's season stats (games, minutes, points, rebounds,
+  assists, steals, blocks, FG%, 3P%, FT%) and his club history are shown exactly, for every
+  player, never as ranges. Only abilities, potential and attributes are scout ranges.
+- **Ranges are usable before scouting (until W8):** half-width at most **2** for players from your
+  own league, **4** for your own region (America or Europe), **6** for anyone else, narrower for
+  well-known players (WORLD_SPEC §6). A range is shown as its two ends (e.g. "64–70"), coloured
+  by its middle.
+- **Three views, as in the squad table:**
+  - **Overview:** portrait, Player (link), Pos, Age, Nat, Ability and Potential stars, last club
+    (link) and its league, Demand, Interest.
+  - **Stats:** Pos, Player, Age, then last season per game: GP, MIN, PTS, REB, AST, STL, BLK, FG%,
+    3P%, FT%.
+  - **Attributes:** Pos, Player, OVR range, then the attributes as ranges, short headers as in
+    §6.4 (with E1's group switch).
+- **Sort** on every column. **Filters:** position; age (any, under 25, 25–30, over 30);
+  **"Affordable"** (demand within your budget or cap room; on by default); interest (players who
+  won't consider you hidden by default, with a count).
+- **The selected player** opens in a side panel: portrait, name (link), stars, last club, the
+  attribute groups with their ranges, **the last three seasons' stats**, two or three
+  strengths and weaknesses from his attributes, his interest with the factors behind it (+ and −
+  lines), and the offer controls. **"Compare"** puts him next to your best player at his position:
+  ranges, stats and wage side by side.
+- Everything fits without scrolling (§6.1a); the table pages.
 - Each view fits **768 px** without sideways scrolling.
 - The chosen view is remembered on this device.
 - **From W2:** a fourth view, **Season stats** (games, minutes, points, rebounds, assists, shooting
