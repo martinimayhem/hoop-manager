@@ -333,7 +333,8 @@ on it and does not replace it.
     could never keep its stars. Other signings need cap room or are minimum contracts. Full Bird
     rules, the mid-level and buyouts stay in W5.
   - **Budget system (everyone else):** the new payroll must fit the club's wage budget; a club already
-    over it (after promotion or relegation) can only offer minimum deals.
+    over it (after promotion or relegation) can only offer minimum deals (1% of
+    its budget, §7.1).
 - **AI clubs decide automatically:** an AI club re-signs an expiring player if he is among its 10 best
   players and his demand fits its money rules above; otherwise he leaves.
 - **Free-agent list:** players nobody re-signs join the existing free agents (§1.4). After the
@@ -350,7 +351,41 @@ on it and does not replace it.
   years** in the budget system, where every contract also has a **buyout fee**. The limits come
   from the cap or the club budget (GAME_FLOW.md §4).
 - **Wage demand** comes from the player's value (ability, potential, age), reputation and the
-  tier of the club he'd join. Better clubs can pay less to stars who want to win.
+  tier of the club he'd join. Better clubs can pay less to stars who want to win. The formula
+  (decided 21 Nov 2026, first built in W2b for §7.0; W5 builds on it):
+
+  **demand = market wage × league pay level × age and potential × reputation × situation**, then
+  limited and rounded:
+
+  1. **Market wage** = e^(a + b × overall). At world creation, `a` and `b` are fitted (least squares
+     on ln(wage) against overall) over every first-team contract the generator made, and stored in
+     the world; they are never refitted, so wages don't drift. (Measured 21 Nov 2026 on three
+     seeds: a ≈ 1.94, b ≈ 0.177, i.e. about ×2.4 for every 5 overall points; it explains 87% of
+     the generator's wages.)
+  2. **League pay level** of the club he'd join: also measured at world creation and stored, one
+     number per league, the average of wage ÷ market wage over that league's first teams (Big
+     League America ≈ 1.9, Big League Europe ≈ 1.1, US Divisions 2–4 ≈ 1.3–1.6, European tier 1
+     ≈ 1.15, tier 2 ≈ 0.7). A Big League Europe club's league is the Big League.
+  3. **Age and potential:** under 25: × (1 + 0.02 × (potential − overall)), at most × 1.2; over 30:
+     × (1 − 0.05 × (age − 30)), at least × 0.6. The player knows his own potential (the true value,
+     not a scout estimate).
+  4. **Reputation** (1–99): × (0.85 + 0.3 × reputation ÷ 99).
+  5. **Situation:** a player of 28 or older joining or staying at a **contender** (top 4 of its
+     league or a title last season) asks × 0.9 ("wants to win"); a player re-signing who played
+     under 15 minutes a game although he is among the club's 8 best asks × 1.15 to stay ("wants a
+     bigger role").
+  6. **Limits:** cap system between the minimum contract (1% of C) and the maximum (30% of C);
+     budget system between the club's **minimum deal** (1% of its budget, like a dev-squad wage)
+     and 30% of C. Rounded down to a tidy figure.
+
+  Examples (21 Nov 2026 world): a 27-year-old 86 star in Big League America asks the maximum
+  ($30M); a 26-year-old 76 starter there about $9.6M; a 22-year-old 74 with potential 84 at a
+  Big League Europe club about $4.5M; a 33-year-old 72 centre in a European first tier about
+  $2.5M; a 24-year-old 62 starter in US Division 4 about $0.5M. All *(tune)*.
+
+- **Answering an offer:** at or above his demand he says yes; from 85% of it he asks for his
+  demand; below 85% he says no. Always with a one-line reason from the factor that weighs most
+  ("wants a bigger role", "wants to win", "wants more money", "the club can't afford him").
 - **Extensions:** in the last year of a contract you can offer an extension. The player says yes,
   no, or asks for more, and always says why ("wants a bigger role", "wants a contender").
 - **Releasing a player** costs his remaining wage for the current season.
@@ -524,6 +559,7 @@ You don't run the books: the board does. You influence the club through four cho
 | Exploit bot | A bot sends 1,000 lopsided trade offers; the AI accepts fewer than 2% |
 | Cap and budgets | No America Big League club above the hard ceiling; at most 1/3 pay luxury tax in a season; European clubs over the threshold pay the tax; no budget-system club below zero |
 | Attributes show in stats | SPEC.md §3.1b, over every league of a season |
+| Wages stay stable | Average wage per league after 20 seasons within ±10% of season 1 *(tune)*; every club keeps 13 players |
 | Speed | One matchday under 1 second in the browser; a whole season fast-forwarded in under 90 seconds in the browser |
 
 Every slice must keep these checks green, or explain why a target needs to change.
