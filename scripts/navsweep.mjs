@@ -250,9 +250,55 @@ async function run(w, h) {
   await screen('career: season review');
   await page.getByRole('button', { name: /Start the next season/ }).click();
   await idle();
+  // Before the new season (WORLD_SPEC §7.0): the contract screen, then the free agents, both Continue stops.
+  await page.locator('.cr-deals').waitFor();
+  await screen('career: contracts');
+  checks++;
+  if (!(await hash(page)).endsWith('/contracts')) fail(size, `the next season opened ${await hash(page)}, not the contract screen`);
+  checks++;
+  if (await page.locator('.cr-sim-end').count()) fail(size, 'Simulate ahead shown during the offseason');
+  // Home and back: Continue goes to the step that is on.
+  await page.locator('.cr-nav', { hasText: 'Home' }).click();
+  await screen('career: home (offseason)');
+  await page.locator('.cr-continue-top').click();
+  await wait(page, 400);
+  checks++;
+  if (!(await hash(page)).endsWith('/contracts')) fail(size, `Continue from Home in the offseason went to ${await hash(page)}`);
+  // Continue on the contract screen: players without a deal are asked about first.
+  await page.locator('.cr-continue-top').click();
+  await wait(page, 400);
+  if (await page.locator('[role="alertdialog"]').count()) {
+    await screen('career: contracts (let them go?)');
+    await page.keyboard.press('Escape');
+    await wait(page, 300);
+    checks++;
+    if ((await page.locator('[role="alertdialog"]').count()) || !(await hash(page)).endsWith('/contracts')) fail(size, 'Escape on the "let them go?" pop-up did not just close it');
+    await page.locator('.cr-continue-top').click();
+    await page.getByRole('alertdialog').getByRole('button', { name: /Let them go/ }).click();
+  }
+  await page.locator('.cr-deals').waitFor();
+  await wait(page, 400);
+  await screen('career: free agents');
+  checks++;
+  if (!(await hash(page)).endsWith('/freeagents')) fail(size, `after the contracts: ${await hash(page)}, not the free agents`);
+  const short = await page.locator('.cr-continue-top').isDisabled();
+  checks++;
+  if (short && !/Sign \d+ more/.test((await page.locator('.cr-continue-top').textContent()) ?? '')) fail(size, 'Continue below 13 players does not say "Sign n more"');
+  if (short) {
+    await page.getByRole('button', { name: /^Auto-fill$/ }).click();
+    await wait(page, 600);
+  }
+  checks++;
+  if (await page.locator('.cr-continue-top').isDisabled()) fail(size, 'Auto-fill did not reach 13 players');
+  await page.locator('.cr-deals .cr-start').click();
+  await idle();
   await screen('career: the next season');
   checks++;
+  if (!(await hash(page)).endsWith('/home')) fail(size, `after free agency: ${await hash(page)}, not Home`);
+  checks++;
   if (!(await page.locator('.cr-continue-top').count())) fail(size, 'no Continue in the new season');
+  checks++;
+  if (!(await page.locator('.cr-sim-end').count())) fail(size, 'no Simulate ahead in the new season');
 
   // The main menu button saves the career and says so.
   await page.locator('.tb-menu').click();

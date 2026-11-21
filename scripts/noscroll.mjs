@@ -451,6 +451,43 @@ const journeys = {
     }
     await button(page, /Start the next season/).click();
     await idle();
+    // Before the new season (WORLD_SPEC §7.0): the contract screen and the free agents.
+    await page.locator('.cr-deals').waitFor();
+    await check('offseason: contracts');
+    if (await page.locator('.cr-deals-list tbody tr').count()) {
+      await page.locator('.cr-deals-list .cr-deal-who').last().click();
+      for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Lower the wage' }).click();
+      await check('offseason: contracts (an offer lowered)');
+      await page.locator('.cr-offer .primary').click();
+      await page.waitForTimeout(300);
+      await check('offseason: contracts (his answer)');
+    }
+    await page.locator('.cr-nav', { hasText: 'Home' }).click();
+    await check('offseason: home');
+    await page.locator('.cr-continue-top').click();
+    await page.locator('.cr-deals').waitFor();
+    await page.locator('.cr-deals .cr-start').click();
+    if (await page.locator('[role="alertdialog"]').count()) {
+      await check('pop-up: let them go?');
+      await page.getByRole('alertdialog').getByRole('button', { name: /Let them go/ }).click();
+    }
+    await page.waitForTimeout(400);
+    await check('offseason: free agents');
+    await page.getByRole('radio', { name: 'C', exact: true }).click();
+    await check('offseason: free agents (centres)');
+    await page.getByRole('radio', { name: 'All' }).click();
+    await page.locator('.cr-toggle', { hasText: /won't consider/ }).click();
+    await check("offseason: free agents (with who won't consider you)");
+    const wont = page.locator('.cr-deals-list tr', { hasText: "Won't consider" }).first();
+    if (await wont.count()) {
+      await wont.locator('.cr-deal-who').click();
+      await check("offseason: free agents (a player who won't consider you)");
+    }
+    if (await page.getByRole('button', { name: /^Auto-fill$/ }).count()) await page.getByRole('button', { name: /^Auto-fill$/ }).click();
+    await page.waitForTimeout(400);
+    await check('offseason: free agents (13 players)');
+    await page.locator('.cr-deals .cr-start').click();
+    await idle();
     await page.locator('.cr-side').waitFor();
     await check('next season: home');
     await page.locator('.cr-nav', { hasText: 'Competitions' }).click();

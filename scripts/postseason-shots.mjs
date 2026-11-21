@@ -197,6 +197,45 @@ try {
   }
   await button(/Start the next season/).click();
   await idle();
+  // Before the new season (WORLD_SPEC §7.0): the contract screen, then the free agents.
+  await page.locator('.cr-deals').waitFor();
+  await shot('contracts');
+  if (await page.locator('.cr-deals-list tbody tr').count()) {
+    await page.locator('.cr-deals-list .cr-deal-who').first().click();
+    await shot('contracts-first');
+    for (let i = 0; i < 2; i++) await page.getByRole('button', { name: 'Lower the wage' }).click();
+    await shot('contracts-asks');
+    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Lower the wage' }).click();
+    await shot('contracts-no');
+    await page.locator('.cr-offer .primary').click();
+    await page.waitForTimeout(300);
+    await shot('contracts-answer-no');
+    await page.getByRole('button', { name: 'His demand' }).click();
+    await page.locator('.cr-offer .primary').click();
+    await page.waitForTimeout(300);
+    await shot('contracts-signed');
+  }
+  await page.locator('.cr-deals .cr-start').click();
+  if (await page.locator('[role="alertdialog"]').count()) {
+    await shot('contracts-let-go');
+    await page.getByRole('alertdialog').getByRole('button', { name: /Let them go/ }).click();
+  }
+  await page.waitForTimeout(400);
+  await shot('freeagents');
+  await page.locator('.cr-toggle', { hasText: /won't consider/ }).click();
+  const wont = page.locator('.cr-deals-list tr', { hasText: "Won't consider" }).first();
+  if (await wont.count()) {
+    await wont.locator('.cr-deal-who').click();
+    await shot('freeagents-wont');
+  }
+  await page.locator('.cr-toggle', { hasText: /won't consider/ }).click();
+  await page.locator('.cr-deals-list .cr-deal-who').nth(2).click();
+  await shot('freeagents-offer');
+  if (await page.getByRole('button', { name: /^Auto-fill$/ }).count()) await page.getByRole('button', { name: /^Auto-fill$/ }).click();
+  await page.waitForTimeout(400);
+  await shot('freeagents-filled');
+  await page.locator('.cr-deals .cr-start').click();
+  await idle();
   await page.locator('.cr-side').waitFor();
   await shot('home-next-season');
   await page.locator('.cr-nav', { hasText: 'Competitions' }).click();
