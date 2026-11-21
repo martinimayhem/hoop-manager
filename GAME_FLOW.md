@@ -333,6 +333,15 @@ tax, two-way contracts, stretch provision, trade kickers, base-year rules.
 7. **No dead ends, no fake buttons.** The sidebar only shows sections that work; Continue only appears
    when it does something. Nothing says "coming soon".
 8. **Sidebar items open the start screen of their section**; the current section is highlighted.
+9. **Every player, club and competition name is a link** to its page, on every screen (tables,
+   inbox, contract and free-agent screens, box scores, news), as in Football Manager. Decided
+   21 Nov 2026.
+10. **One Continue.** On a screen that is itself a Continue stop (contracts, free agents, the draft,
+    a decision), the top bar's Continue *is* that screen's next step and carries its label ("On to
+    free agents"); there is never a second, different Continue on the page. Decided 21 Nov 2026.
+11. **Nothing is cut off.** No text or control is clipped, overlapped or pushed outside its box or
+    the window at any of the four sizes; long names end in "…" with the full name on hover and on
+    the linked page. Checked by the no-scroll sweep. Decided 21 Nov 2026.
 9. **Pop-ups** close with an X top right, Escape, or tapping outside, unless they ask for a decision.
 10. **The same rules for the Quick League and the Friendly match** while they still exist.
 11. **Checked automatically:** a navigation sweep visits every screen and fails if Back is missing or
