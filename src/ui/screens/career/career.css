@@ -2292,3 +2292,187 @@
   padding: 6px 14px 8px;
 }
 
+
+
+/* ---- Contracts and free agents (WORLD_SPEC §7.0, slice W2b) ---- */
+.cr-deals .cr-row-head > div.cr-deals-money {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: auto;
+  text-align: right;
+}
+.cr-deals-go {
+  display: inline-flex;
+  gap: 8px;
+}
+.cr-deals-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
+}
+.cr .cr-card.cr-deals-list {
+  min-height: 0;
+  padding: 10px 14px;
+  gap: 8px;
+}
+.cr-deals-box {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.cr-deals-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cr .cr-deals .cr-table td {
+  height: auto;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.cr .cr-deals .cr-table tr.on td {
+  background: var(--panel-2);
+}
+.cr .cr-name.cr-deal-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  min-height: var(--tap);
+  justify-content: center;
+}
+.cr-deal-interest {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.cr-interest {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--panel-2);
+}
+.cr-interest.keen {
+  color: var(--good);
+}
+.cr-interest.good {
+  color: var(--good);
+  background: #143323;
+}
+.cr-interest.ok {
+  color: var(--cr-blue);
+  background: #16264a;
+}
+.cr-interest.warn {
+  color: var(--warn);
+  background: #3a2a10;
+}
+.cr-interest.bad {
+  color: var(--cr-red);
+  background: #3a1616;
+}
+.cr-deals td.good,
+.cr-offer-note.good {
+  color: var(--good);
+}
+.cr-deals td.warn,
+.cr-offer-note.warn,
+.cr-deals .cr-sub.warn {
+  color: var(--warn);
+}
+.cr-deals td.bad,
+.cr-offer-note.bad {
+  color: var(--cr-red);
+}
+.cr-deals td.muted {
+  color: var(--muted);
+}
+.cr .cr-card.cr-offer {
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 16px;
+  gap: 10px;
+}
+.cr-offer-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cr-offer-head .cr-name b {
+  font-size: 18px;
+}
+.cr-offer-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px 12px;
+}
+.cr-offer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cr-stepper {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cr-stepper > b {
+  min-width: 96px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cr-offer-note {
+  margin: 0;
+  font-weight: 600;
+}
+.cr-offer-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+@media (max-width: 1100px) {
+  .cr-deals-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .cr-offer-facts {
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+}
+
+.cr .cr-deals-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.cr .cr-deals-table td .cr-sub,
+.cr .cr-deals-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cr-offer-actions {
+  margin-top: 4px;
+}
+
+/* The career's top bar: the right side (money, date, Continue) keeps its size; a long path shortens
+   with "…", its last part too (an opponent's player at 1024 px). */
+.cr .tb-right {
+  flex-shrink: 0;
+}
+.cr .tb-crumb:last-child {
+  flex-shrink: 1;
+  min-width: 48px;
+}

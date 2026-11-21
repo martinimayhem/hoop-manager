@@ -88,10 +88,23 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
     <div className="cr-page cr-page-fill">
       <div className="cr-row-head">
         <h1>Home</h1>
-        <span className="cr-sub">{p.phase === 'before' ? 'The season starts with your next Continue.' : p.phase === 'review' ? 'The regular season is over.' : longDate(w.season, p.day)}</span>
+        <span className="cr-sub">{p.offseason ? 'Before the season: contracts, then free agents.' : p.phase === 'before' ? 'The season starts with your next Continue.' : p.phase === 'review' ? 'The regular season is over.' : longDate(w.season, p.day)}</span>
       </div>
       <div className="cr-home">
         <div className="cr-home-col">
+          {p.offseason ? (
+            <section className="cr-card cr-next">
+              <h2>Before the season</h2>
+              <span className="cr-sub">
+                {p.offseason.step === 'contracts'
+                  ? 'Some of your players’ contracts have run out: offer each a new deal or let him go. Then you sign free agents, before the other clubs.'
+                  : 'Sign free agents: you go first, then the other clubs. You need 13 players to start the season.'}
+              </span>
+              <button className="primary cr-start" onClick={() => nav.go({ kind: p.offseason!.step === 'contracts' ? 'contracts' : 'freeagents' })}>
+                {p.offseason.step === 'contracts' ? 'Contracts' : 'Free agents'} <NextIcon />
+              </button>
+            </section>
+          ) : (
           <section className="cr-card cr-next">
             <h2>{p.phase === 'review' ? 'Season over' : today ? 'Your game today' : 'Next game'}</h2>
             {next ? (
@@ -132,6 +145,7 @@ export function HomeScreen({ w, nav, onPrepare }: { w: World; nav: Nav; onPrepar
               <span className="cr-sub">No games left.</span>
             )}
           </section>
+          )}
           <section className="cr-card">
             <h2>Last results</h2>
             {last.length ? (

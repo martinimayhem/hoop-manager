@@ -12,6 +12,8 @@ import { shortDate } from '../../../game/season/calendar';
 import { compName, humanGameToday, isKey, placeIn, playOf, regularOver } from '../../../game/season/play';
 import { cupsOf, stillPlaying } from '../../../game/season/post';
 import { CupScreen, HistoryScreen } from './postseason';
+import { ContractsScreen, FreeAgentsScreen, type DealActions } from './contracts';
+import { offseasonOf, shortOf } from '../../../game/season/contracts';
 import { clubById, competitionById, competitionsOf, leagueOf, moneySummary } from '../../../game/world/query';
 import type { World } from '../../../game/world/types';
 import { TopBar, type Crumb } from '../../components/TopBar';
@@ -42,6 +44,9 @@ function itemOf(w: World, v: View): Item {
     case 'tactics':
     case 'schedule':
       return v.kind;
+    case 'contracts':
+    case 'freeagents':
+      return 'squad';
     case 'club':
       return v.id === w.human?.club ? 'club' : 'competitions';
     case 'player':
@@ -111,6 +116,10 @@ export function crumbsOf(w: World, slot: number, v: View): Crumb[] {
       return [comps, { label: cupsOf(w).find((c) => c.id === v.id)?.name ?? 'Cup', route: at(v) }];
     case 'history':
       return [comps, { label: 'History', route: at(v) }];
+    case 'contracts':
+      return [home, { label: 'Contracts', route: at(v) }];
+    case 'freeagents':
+      return [home, { label: 'Free agents', route: at(v) }];
   }
 }
 
@@ -125,6 +134,8 @@ export interface ShellActions {
   onMenu: () => void;
   /** Days are being played (Continue is busy). */
   busy: boolean;
+  /** Before the new season: the contract and free-agent screens' actions. */
+  deals: DealActions;
 }
 
 export function CareerShell({ world, slot, view, actions }: { world: World; slot: number; view: View; actions: ShellActions }) {
@@ -148,6 +159,9 @@ export function CareerShell({ world, slot, view, actions }: { world: World; slot
   const today = humanGameToday(world);
   // Continue only while it does something (GAME_FLOW §6.1b): hidden once the regular season is over.
   const canContinue = p.phase !== 'review';
+  // Before the new season: Continue goes through the contract and free-agent screens; nothing to simulate yet.
+  const off = offseasonOf(world);
+  const short = off?.step === 'free' && view.kind === 'freeagents' ? shortOf(world, mine.id) : 0;
   const [ahead, setAhead] = useState(false);
   const playing = stillPlaying(world, p.games, p.ties, p.made);
   const choices: { mode: 'toKey' | 'toRegularEnd' | 'toEnd'; label: string; note: string }[] = [
@@ -180,12 +194,14 @@ export function CareerShell({ world, slot, view, actions }: { world: World; slot
             </div>
             {canContinue && (
               <>
-                <button className="cr-sim-end" onClick={() => setAhead(true)} disabled={actions.busy} title="Simulate ahead" aria-label="Simulate ahead" aria-haspopup="dialog">
-                  <FastForward size={18} aria-hidden="true" />
-                  <span className="cr-sim-end-label">Simulate ahead</span>
-                </button>
-                <button className="primary cr-continue-top" onClick={actions.onContinue} disabled={actions.busy}>
-                  {today ? 'Game day' : 'Continue'} <NextIcon />
+                {!off && (
+                  <button className="cr-sim-end" onClick={() => setAhead(true)} disabled={actions.busy} title="Simulate ahead" aria-label="Simulate ahead" aria-haspopup="dialog">
+                    <FastForward size={18} aria-hidden="true" />
+                    <span className="cr-sim-end-label">Simulate ahead</span>
+                  </button>
+                )}
+                <button className="primary cr-continue-top" onClick={actions.onContinue} disabled={actions.busy || short > 0} title={short > 0 ? `Sign ${short} more players first` : undefined}>
+                  {today ? 'Game day' : short > 0 ? `Sign ${short} more` : 'Continue'} <NextIcon />
                 </button>
               </>
             )}
@@ -247,6 +263,8 @@ export function CareerShell({ world, slot, view, actions }: { world: World; slot
           {view.kind === 'game' && <GameScreen key={view.id} w={world} id={view.id} nav={nav} />}
           {view.kind === 'cup' && <CupScreen key={view.id} w={world} id={view.id} nav={nav} />}
           {view.kind === 'history' && <HistoryScreen w={world} nav={nav} />}
+          {view.kind === 'contracts' && <ContractsScreen w={world} nav={nav} actions={actions.deals} />}
+          {view.kind === 'freeagents' && <FreeAgentsScreen w={world} nav={nav} actions={actions.deals} />}
         </main>
       </div>
     </div>

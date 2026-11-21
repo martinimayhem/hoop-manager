@@ -47,6 +47,8 @@ import { KeyMomentsScreen, MomentScreen, SeasonReview } from './postseason';
 import { playToNextStop, type KeyStop } from '../../../game/season/keymoments';
 import { startNextSeason } from '../../../game/season/rollover';
 import { careerStore } from './store';
+import { autoFill, closeContracts, closeFreeAgency, expiring, letGo, offer, offseasonOf } from '../../../game/season/contracts';
+import type { DealActions } from './contracts';
 
 /** Timings for the console and the headless checks (slice brief W2a: a matchday under 1 s). */
 export interface MatchdayTiming {
@@ -132,11 +134,67 @@ export function CareerApp({ initial, slot, view, onWorld }: { initial: World; sl
     if (r.stop === 'gameDay') go({ kind: 'prep' });
     else if (r.stop === 'moment' || (r.stop === 'reached' && playOf(r.w).moment)) go({ kind: 'moment' });
     else if (r.stop === 'end') go({ kind: 'review' });
+    else if (r.stop === 'offseason') go({ kind: offseasonOf(r.w)!.step === 'contracts' ? 'contracts' : 'freeagents' });
     else go({ kind: 'home' });
     setBusy(null);
   };
 
+  // ---- Before the new season (WORLD_SPEC §7.0): the contract screen, then the free-agent screen ----
+  const stepView = (w: World): CareerView | null => {
+    const o = offseasonOf(w);
+    return o ? { kind: o.step === 'contracts' ? 'contracts' : 'freeagents' } : null;
+  };
+  const commitDeal = (w: World) => {
+    setWorld(w);
+    void save(w);
+  };
+  const deals: DealActions = {
+    onOffer: (id, wage, years) => {
+      const r = offer(latest.current, id, wage, years);
+      commitDeal(r.w);
+      return r.talk;
+    },
+    onLetGo: (id, yes) => commitDeal(letGo(latest.current, id, yes)),
+    onContractsDone: () => {
+      const w = latest.current;
+      const me = w.human!.club;
+      const undecided = expiring(w, me).filter((wp) => !offseasonOf(w)!.letGo.includes(wp.p.id));
+      const finish = () => {
+        commitDeal(closeContracts(latest.current));
+        go({ kind: 'freeagents' }, true);
+      };
+      if (!undecided.length) return finish();
+      confirm.ask(
+        {
+          title: undecided.length === 1 ? '1 player has no new deal' : `${undecided.length} players have no new deal`,
+          body: `${undecided.map((wp) => wp.p.name).join(", ")} will leave as free agents. Other clubs can sign them.`,
+          confirm: 'Let them go',
+          cancel: 'Keep talking',
+        },
+        finish,
+      );
+    },
+    onAutoFill: () => commitDeal(autoFill(latest.current)),
+    onFreeDone: () => {
+      setBusy({ title: 'The other clubs sign their free agents', progress: null });
+      // Let the screen show the progress box before the work starts.
+      window.setTimeout(() => {
+        const w = closeFreeAgency(latest.current);
+        commitDeal(w);
+        toHome();
+        setBusy(null);
+      }, 30);
+    },
+  };
+
   const onContinue = () => {
+    const step = stepView(latest.current);
+    if (step) {
+      if (view.kind !== step.kind) go(step);
+      else if (step.kind === 'contracts') deals.onContractsDone();
+      else deals.onFreeDone();
+      return;
+    }
     if (playOf(latest.current).moment) go({ kind: 'moment' });
     else if (humanGameToday(latest.current)) go({ kind: 'prep' });
     else void run('continue');
@@ -409,7 +467,8 @@ export function CareerApp({ initial, slot, view, onWorld }: { initial: World; sl
       const w = startNextSeason(latest.current);
       setWorld(w);
       await save(w);
-      toHome();
+      // First your players whose contract has run out (WORLD_SPEC §7.0).
+      go({ kind: 'contracts' }, true);
       setBusy(null);
     };
     return (
@@ -420,9 +479,12 @@ export function CareerApp({ initial, slot, view, onWorld }: { initial: World; sl
     );
   }
 
+  // The offseason's screens only while that step is on (a reload or an old address goes Home).
+  if ((view.kind === 'contracts' || view.kind === 'freeagents') && stepView(world)?.kind !== view.kind) return <Redirect to={toHome} />;
+
   return (
     <>
-      <CareerShell world={world} slot={slot} view={view} actions={{ onContinue, onSim, onPlan, onPrepare: () => go({ kind: 'prep' }), onMenu: () => void onMenu(), busy: !!busy }} />
+      <CareerShell world={world} slot={slot} view={view} actions={{ onContinue, onSim, onPlan, onPrepare: () => go({ kind: 'prep' }), onMenu: () => void onMenu(), busy: !!busy, deals }} />
       {confirm.dialog}
       {busyBox}
     </>

@@ -28,9 +28,12 @@ export type CareerView =
   | { kind: 'moment' }
   | { kind: 'keymoments' }
   | { kind: 'cup'; id: string }
-  | { kind: 'history' };
+  | { kind: 'history' }
+  /** Before the new season (WORLD_SPEC §7.0): your expiring contracts, then the free agents. */
+  | { kind: 'contracts' }
+  | { kind: 'freeagents' };
 
-const CAREER_KINDS = ['home', 'squad', 'tactics', 'schedule', 'competitions', 'prep', 'match', 'result', 'review', 'moment', 'keymoments', 'history'] as const;
+const CAREER_KINDS = ['home', 'squad', 'tactics', 'schedule', 'competitions', 'prep', 'match', 'result', 'review', 'moment', 'keymoments', 'history', 'contracts', 'freeagents'] as const;
 
 export type Route =
   | { s: 'menu' }
