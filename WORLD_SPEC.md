@@ -327,6 +327,12 @@ on it and does not replace it.
   **offer a new deal** (years within §7.1's limits, yearly wage) or **let him go**. The player
   answers yes, no, or asks for a higher wage you can accept, always with a one-line reason. He
   decides on wage compared with his demand (§7.1) and on last season's playing time.
+  **The screen shows each player's demand before you offer** (decided 21 Nov 2026, as in Football
+  Manager): per player his yearly wage demand with its main reason, his current wage, age,
+  overall and last season's minutes, and what the new deal leaves of your cap room or budget. The
+  offer starts at his demand; while you lower it, the screen says what he will answer (yes / asks
+  for his demand from 85% / no below 85%) before you send it. He accepts any length within §7.1's
+  limits; wishes about contract length come in W5.
 - **Money when re-signing your own players:**
   - **Cap system (America Big League):** you may go over the cap to re-sign **your own** player (a
     simple form of Bird rights), up to the hard ceiling (1.34 C). Without this, a club over the cap
