@@ -327,16 +327,26 @@ on it and does not replace it.
   **offer a new deal** (years within §7.1's limits, yearly wage) or **let him go**. The player
   answers yes, no, or asks for a higher wage you can accept, always with a one-line reason. He
   decides on wage compared with his demand (§7.1) and on last season's playing time.
+  **The screen shows each player's interest and demand before you offer** (decided 21 Nov 2026, as
+  in Football Manager): per player his interest in staying (keen / interested / reluctant / won't
+  consider, with its reason; §7.1) and his yearly wage demand, his current wage, age,
+  overall and last season's minutes, and what the new deal leaves of your cap room or budget. The
+  offer starts at his demand; while you lower it, the screen says what he will answer (yes / asks
+  for his demand from 85% / no below 85%) before you send it. He accepts any length within §7.1's
+  limits; wishes about contract length come in W5.
 - **Money when re-signing your own players:**
   - **Cap system (America Big League):** you may go over the cap to re-sign **your own** player (a
     simple form of Bird rights), up to the hard ceiling (1.34 C). Without this, a club over the cap
     could never keep its stars. Other signings need cap room or are minimum contracts. Full Bird
     rules, the mid-level and buyouts stay in W5.
   - **Budget system (everyone else):** the new payroll must fit the club's wage budget; a club already
-    over it (after promotion or relegation) can only offer minimum deals.
+    over it (after promotion or relegation) can only offer minimum deals (1% of
+    its budget, §7.1).
 - **AI clubs decide automatically:** an AI club re-signs an expiring player if he is among its 10 best
   players and his demand fits its money rules above; otherwise he leaves.
-- **Free-agent list:** players nobody re-signs join the existing free agents (§1.4). After the
+- **Free-agent list:** players nobody re-signs join the existing free agents (§1.4). The list shows
+  each player's interest in your club and his demand; players who won't consider your club can be
+  shown (filter) but not offered a deal, and the screen says why. After the
   re-signing step, **you sign first** (free-agent screen, a Continue stop), then every AI club below
   13 players fills up with the best free agent it can afford, worst-placed club first. A free agent
   accepts an offer at or above his demand.
@@ -350,7 +360,80 @@ on it and does not replace it.
   years** in the budget system, where every contract also has a **buyout fee**. The limits come
   from the cap or the club budget (GAME_FLOW.md §4).
 - **Wage demand** comes from the player's value (ability, potential, age), reputation and the
-  tier of the club he'd join. Better clubs can pay less to stars who want to win.
+  tier of the club he'd join. Better clubs can pay less to stars who want to win. The formula
+  (decided 21 Nov 2026, first built in W2b for §7.0; W5 builds on it):
+
+  **Two steps: first, will he consider the club at all (interest); then, what does he ask
+  (demand).** A Division 4 club can't sign a superstar however much it offers: he won't talk to
+  it. Interest was added on 21 Nov 2026 (owner: "more sophisticated").
+
+  **Step 1: interest.** Every player rates a club he could join (or stay at) from 0 to 100:
+
+  | Factor | Weight | 0 … 100 |
+  |---|---|---|
+  | **League prestige** | 30 | Big League America 100, Big League Europe 90, US Division 2 45, 3 25, 4 10; a European first tier 0.7 × the country's fame (about 42–63), second tier 0.35 × fame |
+  | **Club reputation** | 20 | The club's reputation (1–99) |
+  | **Success** | 15 | Last season's finish in its league (champion 100, last 0), titles count as first; during a season, half last season and half the current table |
+  | **Role** | 15 | Where he'd rank in that squad by overall: starter (top 5) 100, rotation (6–8) 60, bench 20. **At his own club, last season's minutes instead:** 28+ a game 100, 20–28 70, 12–20 40, under 12 10 |
+  | **Facilities** | 10 | Training and medical facilities (1–20), × 5 |
+  | **Home** | 5 | 100 if the club is in his own country |
+  | *His own club only* | + | **Happiness:** morale very low −10, low −5, okay 0, good +5, superb +10. **Loyalty:** + 0.5 × loyalty (1–20) |
+
+  The weights shift with the player and are then scaled back to 100: **under 24** the role counts
+  double ("wants minutes"); **30 or older** success counts double ("wants to win"); **ambition
+  15+** league prestige × 1.5, **ambition 6 or less** × 0.5.
+
+  **What he requires:** R = 15 + 0.65 × standing − 3 × (years over 30) + 0.5 × (ambition − 10),
+  where **standing** (0–100) is half his overall's percentile among all players in the world and
+  half his reputation. A club rated:
+
+  | Rating | Interest | Effect |
+  |---|---|---|
+  | below R − 20 | **Won't consider** | No offer possible, at any wage: "won't consider a Division 4 club", "wants to play in the Big League" |
+  | R − 20 to R | **Reluctant** | Demand × 1.25: "you'll have to convince him" |
+  | R to R + 10 | **Interested** | Demand × 1 |
+  | R + 10 and up | **Keen** | Demand × 0.9: "wants to join a contender", "would love to come home" |
+
+  The reason shown is the factor that helped or hurt most. Checked on 21 Nov 2026 with typical
+  players: a 30-year-old superstar is interested in top Big League clubs on both continents,
+  reluctant at the worst Big League club, and won't consider a European league or US Division 4;
+  a 34-year-old Lithuanian veteran is keen to come home; a 21-year-old prospect prefers a starting
+  role in a national league to the bench of a top club; a journeyman is keen everywhere. All
+  numbers *(tune)*.
+
+  **Step 2: demand = market wage × league pay level × age and potential × reputation × interest**,
+  then limited and rounded:
+
+  1. **Market wage** = e^(a + b × overall). At world creation, `a` and `b` are fitted (least squares
+     on ln(wage) against overall) over every first-team contract the generator made, and stored in
+     the world; they are never refitted, so wages don't drift. (Measured 21 Nov 2026 on three
+     seeds: a ≈ 1.94, b ≈ 0.177, i.e. about ×2.4 for every 5 overall points; it explains 87% of
+     the generator's wages.)
+  2. **League pay level** of the club he'd join: also measured at world creation and stored, one
+     number per league, the average of wage ÷ market wage over that league's first teams (Big
+     League America ≈ 1.9, Big League Europe ≈ 1.1, US Divisions 2–4 ≈ 1.3–1.6, European tier 1
+     ≈ 1.15, tier 2 ≈ 0.7). A Big League Europe club's league is the Big League.
+  3. **Age and potential:** under 25: × (1 + 0.02 × (potential − overall)), at most × 1.2; over 30:
+     × (1 − 0.05 × (age − 30)), at least × 0.6. The player knows his own potential (the true value,
+     not a scout estimate).
+  4. **Reputation** (1–99): × (0.85 + 0.3 × reputation ÷ 99).
+  5. **Interest** (step 1): keen × 0.9, interested × 1, reluctant × 1.25.
+  6. **Limits:** cap system between the minimum contract (1% of C) and the maximum (30% of C);
+     budget system between the club's **minimum deal** (1% of its budget, like a dev-squad wage)
+     and 30% of C. Rounded down to a tidy figure.
+
+  Examples before interest (21 Nov 2026 world): a 27-year-old 86 star in Big League America asks the
+  maximum ($30M); a 26-year-old 76 starter there about $9.6M; a 22-year-old 74 with potential 84
+  at a Big League Europe club about $4.5M; a 33-year-old 72 centre in a European first tier about
+  $2.5M; a 24-year-old 62 starter in US Division 4 about $0.5M. All *(tune)*.
+
+- **The same rules for everyone:** AI clubs only offer to players who would consider them, and a
+  club that is relegated or has a bad season can lose players who no longer want to stay.
+- **Free agents nobody signs** lower R by 10 before the AI clubs' second round of signings (W2b:
+  one extra round; W5: step by step over the free-agency days).
+- **Answering an offer:** at or above his demand he says yes; from 85% of it he asks for his
+  demand; below 85% he says no. Always with a one-line reason from the factor that weighs most
+  ("wants a bigger role", "wants to win", "wants more money", "the club can't afford him").
 - **Extensions:** in the last year of a contract you can offer an extension. The player says yes,
   no, or asks for more, and always says why ("wants a bigger role", "wants a contender").
 - **Releasing a player** costs his remaining wage for the current season.
@@ -524,6 +607,8 @@ You don't run the books: the board does. You influence the club through four cho
 | Exploit bot | A bot sends 1,000 lopsided trade offers; the AI accepts fewer than 2% |
 | Cap and budgets | No America Big League club above the hard ceiling; at most 1/3 pay luxury tax in a season; European clubs over the threshold pay the tax; no budget-system club below zero |
 | Attributes show in stats | SPEC.md §3.1b, over every league of a season |
+| Interest works | No US Division 4 or European second-tier club ever signs a player of standing 80+; at least 90% of the top-100 free agents still sign somewhere |
+| Wages stay stable | Average wage per league after 20 seasons within ±10% of season 1 *(tune)*; every club keeps 13 players |
 | Speed | One matchday under 1 second in the browser; a whole season fast-forwarded in under 90 seconds in the browser |
 
 Every slice must keep these checks green, or explain why a target needs to change.
