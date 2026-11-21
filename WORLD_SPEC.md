@@ -615,7 +615,8 @@ You don't run the books: the board does. You influence the club through four cho
 | Cap and budgets | No America Big League club above the hard ceiling; at most 1/3 pay luxury tax in a season; European clubs over the threshold pay the tax; no budget-system club below zero |
 | Attributes show in stats | SPEC.md §3.1b, over every league of a season |
 | Interest works | No US Division 4 or European second-tier club ever signs a player of standing 80+; at least 90% of the top-100 free agents still sign somewhere |
-| Wages stay stable | Average wage per league after 20 seasons within ±10% of season 1 *(tune)*; every club keeps 13 players |
+| Prices stay stable | Per league, wage ÷ market wage (§7.1) after 20 seasons within ±10% of season 1 *(tune)*; every club keeps 13 players. (Average wage is not the measure: it also moves when better or worse players move between leagues.) |
+| League strength stays stable | Average first-team overall per league after 20 seasons within ±2 of season 1 *(tune)*: talent must not drain down or up the pyramid |
 | Speed | One matchday under 1 second in the browser; a whole season fast-forwarded in under 90 seconds in the browser |
 
 Every slice must keep these checks green, or explain why a target needs to change.
@@ -623,9 +624,12 @@ Every slice must keep these checks green, or explain why a target needs to chang
 **Until W3** (decided 21 Nov 2026): nobody retires and no new players arrive, but everyone gets a
 year older each season (ages stay real; they are not frozen). The checks that need a living
 population (wages stay stable, interest works, average age, population, rating inflation) are
-therefore judged **from W3 on**. In W2b the twenty-season run must stay error-free with squads at
-13 and **reports** the average wage per league each season without failing on it; the wage check
-is applied to **seasons 1–3** (season 3 within ±10% of season 1).
+therefore judged **from W3 on**. In W2b the twenty-season run and the three-season run must stay
+error-free with squads at 13 and **report**, per league and season, the average wage, the price
+(wage ÷ market wage) and the average overall, without failing on them (changed 21 Nov 2026: the
+first three-season run showed prices steady but talent flowing down the pyramid, which only youth
+and retirements can balance). W3's brief must deal with that flow, including the strength of the
+starting free-agent pool.
 
 ---
 
